@@ -58,20 +58,24 @@ User (Telegram / Mission Control chat)
 
 **How routing works:**
 - All user messages go to Em (GPT-5.4). Em is the primary model and the only agent exposed to channels.
-- GPT-5.4 invokes `qwen` or `gemma` via the OpenClaw `agent_to_agent` tool when it wants a local model to do the heavy lifting — e.g. processing long documents, running code-heavy analysis. This is tool-call delegation, not automatic fallback.
+- Em invokes sub-agents via the OpenClaw `sessions_spawn` tool. Use `agents_list` to enumerate available targets.
 - Fallback (on GPT-5.4 API error only): `openai/gpt-5.4-mini`, then `ollama/qwen3:14b`.
-- `qwen` and `gemma` are **not** directly chat-accessible by default. They show as sub-agents in the Mission Control hierarchy view.
+- `qwen`, `gemma`, and `claude-code` are not directly chat-accessible. They appear as sub-agents in the Mission Control hierarchy view.
 
-**Claude Code integration (pending):**
-The `claude-cli` and `claude-code` directories under `~/.openclaw/agents/` are stubs created during setup. Full integration requires the `claude` CLI (`npm install -g @anthropic-ai/claude-code` or via brew). Once installed, add a `claude-code` agent with `openclaw agents add claude-code --model claude-code-backend` and wire it into Em's allowed sub-agents.
+**Claude Code integration (active):**
+`claude` CLI at `/opt/homebrew/bin/claude` (v2.1.114). `claude-code` agent registered in `agents.list` and in `main.subagents.allowAgents`. Em can invoke it via `sessions_spawn(agentId="claude-code", ...)`.
+
+**Critical workspace file — `~/.openclaw/workspace/AGENTS.md`:**
+This file is injected at every session startup. It MUST describe Em's role and sub-agents accurately. The `## Session Startup` and `## Red Lines` sections are re-injected after context compaction. If Em claims it can't find sub-agents, check this file first — bad content here will override Em's understanding of its own capabilities.
 
 **Adding more sub-agents:**
 ```bash
 openclaw agents add <name> --model <provider/model> --workspace ~/.openclaw/agents/<name>/workspace --non-interactive
-# Then allow Em to invoke it:
-openclaw config set tools.agentToAgent.allow '["qwen","gemma","<name>"]' --strict-json
-# And update main's subagents allowlist:
-openclaw config set agents.list ... (see config schema)
+# Allow Em to spawn it:
+openclaw config set agents.list[0].subagents.allowAgents '["qwen","gemma","claude-code","<name>"]' --strict-json
+# Also update cross-agent session access:
+openclaw config set tools.agentToAgent.allow '["qwen","gemma","claude-code","<name>"]' --strict-json
+# Then add a description to ~/.openclaw/workspace/AGENTS.md so Em knows when to use it.
 ```
 
 ## Known gotchas on this Mac
