@@ -594,7 +594,7 @@ function ChatPanel({
     []
   );
 
-  const { messages, sendMessage, status, setMessages, error } = useChat({
+  const { messages, sendMessage, status, setMessages, error, stop, clearError } = useChat({
     transport,
     messages: initialMessages,
   });
@@ -617,6 +617,75 @@ function ChatPanel({
   }, [messages, agentId]);
 
   const isLoading = status === "submitted" || status === "streaming";
+
+  // Mirror isLoading in a ref so visibility-change callbacks see current value
+  // without needing to re-register the event listener on every render.
+  const isLoadingRef = useRef(isLoading);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+
+  // Show a manual "Recover" button if still loading after 3 minutes.
+  // GPT-5.4 reasoning can take 60-120s; 3 min means the stream is almost
+  // certainly stuck/dropped.
+  const [showRecoverButton, setShowRecoverButton] = useState(false);
+  useEffect(() => {
+    if (!isLoading) { setShowRecoverButton(false); return; }
+    const t = setTimeout(() => { if (isLoadingRef.current) setShowRecoverButton(true); }, 3 * 60 * 1000);
+    return () => clearTimeout(t);
+  }, [isLoading]);
+
+  // Fetch the last completed assistant message from the gateway session file.
+  // The gateway persists every response to disk even if the SSE stream was
+  // dropped by the browser — so this lets us recover after a tab switch.
+  const recoverLastResponse = useCallback(async () => {
+    const sessionKey = chatSessionKeyRef.current;
+    if (!sessionKey || !isLoadingRef.current) return;
+    try {
+      const res = await fetch(
+        `/api/chat/last-response?agentId=${encodeURIComponent(agentId)}&sessionKey=${encodeURIComponent(sessionKey)}`,
+      );
+      if (!res.ok) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await res.json() as { text: string };
+      if (!data.text) return;
+
+      // Abort the in-flight stream, then inject the recovered message.
+      stop();
+      await new Promise<void>((r) => setTimeout(r, 200));
+      clearError();
+
+      const recovered = {
+        id: crypto.randomUUID(),
+        role: "assistant" as const,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        parts: [{ type: "text" as const, text: data.text }] as any[],
+        createdAt: new Date(),
+      };
+
+      // Drop a trailing empty/partial assistant message if present, then append.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cur = messages as any[];
+      const last = cur[cur.length - 1];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hasText = (m: any) => Array.isArray(m?.parts) && m.parts.some((p: any) => p.type === "text" && p.text?.trim());
+      const base = last?.role === "assistant" && !hasText(last) ? cur.slice(0, -1) : cur;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setMessages([...base, recovered] as any);
+      setShowRecoverButton(false);
+    } catch { /* recovery failed silently */ }
+  }, [agentId, messages, stop, clearError, setMessages]);
+
+  // Auto-recover when the tab becomes visible and a request was in-flight.
+  // Chrome throttles/drops SSE connections in backgrounded tabs; the gateway
+  // already has the completed response on disk by the time the user returns.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && isLoadingRef.current) {
+        void recoverLastResponse();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [recoverLastResponse]);
   const noApiKeys = modelsLoaded && availableModels.length === 0;
 
   // ── Detect new assistant messages → trigger unread notification ──
@@ -944,6 +1013,21 @@ function ChatPanel({
                 </div>
               );
             })}
+
+            {/* Stale-stream recovery banner — shown when loading >3 min with no completion */}
+            {isLoading && showRecoverButton && (
+              <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+                <span className="text-amber-400/80">Still waiting for a response&hellip;</span>
+                <button
+                  type="button"
+                  onClick={() => void recoverLastResponse()}
+                  className="ml-auto flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-xs text-amber-400 transition-colors hover:bg-amber-500/20"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Recover last response
+                </button>
+              </div>
+            )}
 
             {/* Loading indicator — only when waiting for first token, not during streaming */}
             {status === "submitted" && (
