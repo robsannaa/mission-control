@@ -168,6 +168,10 @@ async function* parseOpenResponsesStream(
   let buffer = "";
   // Track in-flight tool calls so we can emit start/end markers
   const activeCalls = new Map<string, string>(); // callId → toolName
+  // Track stream state for commentary-fallback detection
+  let accumulatedDeltaText = "";
+  let finalDoneText: string | null = null;
+  let completedStatus: string | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -184,14 +188,39 @@ async function* parseOpenResponsesStream(
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const data = line.slice(6);
-      if (data === "[DONE]") return;
+      if (data === "[DONE]") {
+        // Before returning: if the response failed but we streamed real text,
+        // the commentary content is already in the client's buffer. Add a
+        // subtle note so the user knows the primary model was unavailable.
+        if (
+          completedStatus === "failed" &&
+          accumulatedDeltaText.trim() &&
+          (finalDoneText === "No response from OpenClaw." || !finalDoneText)
+        ) {
+          yield "\n\n*[⚡ via fallback model — primary unavailable]*";
+        }
+        return;
+      }
 
       try {
         const event = JSON.parse(data);
 
-        // ── Text deltas (existing) ──
+        // ── Text deltas ──
         if (event.type === "response.output_text.delta" && event.delta) {
+          accumulatedDeltaText += event.delta;
           yield event.delta;
+          continue;
+        }
+
+        // ── Track final done text (to detect "No response from OpenClaw." override) ──
+        if (event.type === "response.output_text.done") {
+          finalDoneText = typeof event.text === "string" ? event.text : null;
+          continue;
+        }
+
+        // ── Track overall completion status ──
+        if (event.type === "response.completed") {
+          completedStatus = event.response?.status ?? null;
           continue;
         }
 
@@ -293,20 +322,6 @@ type SubagentSessionRecord = {
   sessionFile?: string;
 };
 
-/**
- * Return the list of sub-agent IDs to scan (all agent dirs except the orchestrator).
- */
-function listSubagentIds(orchAgentId: string): string[] {
-  try {
-    const agentsDir = path.join(getOpenClawHome(), "agents");
-    return fs
-      .readdirSync(agentsDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && e.name !== orchAgentId)
-      .map((e) => e.name);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Poll ~/.openclaw/agents/{agentId}/sessions/sessions.json until a session
@@ -370,77 +385,20 @@ function readSubagentSessionText(sessionFile: string): string | null {
   return null;
 }
 
-/**
- * Scan all sub-agent directories for a session that started after
- * requestStartTime and has since completed.
- *
- * Strategy: check for 10s for any new session to appear (bail if none),
- * then wait up to 80s more for it to complete. Avoids a flat 90s wait
- * on every request that had no delegation.
- */
-async function findAnySubagentResult(
-  orchAgentId: string,
-  requestStartTime: number,
-): Promise<{ agentId: string; text: string } | null> {
-  const ids = listSubagentIds(orchAgentId);
-  if (ids.length === 0) return null;
-
-  const findSessionDeadline = Date.now() + 10_000;
-  const completionDeadline = Date.now() + 90_000;
-  let foundSession: { id: string; sessionFile: string } | null = null;
-
-  // Phase 1: wait up to 10s for any new sub-agent session to appear
-  while (!foundSession && Date.now() < findSessionDeadline) {
-    await delay(2000);
-    for (const id of ids) {
-      const sessionsJsonPath = path.join(getOpenClawHome(), "agents", id, "sessions", "sessions.json");
-      try {
-        const raw = fs.readFileSync(sessionsJsonPath, "utf-8");
-        const sessions = JSON.parse(raw) as Record<string, SubagentSessionRecord>;
-        const candidates = Object.values(sessions)
-          .filter((s) => s.startedAt && s.startedAt > requestStartTime - 5_000 && s.sessionFile)
-          .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
-        if (candidates[0]?.sessionFile) {
-          foundSession = { id, sessionFile: candidates[0].sessionFile };
-          break;
-        }
-      } catch { /* not readable */ }
-    }
-  }
-
-  if (!foundSession) return null; // no delegation detected — return quickly
-
-  // Phase 2: wait up to total 90s for the found session to complete
-  while (Date.now() < completionDeadline) {
-    // Check if endedAt is set in sessions.json
-    const sessionsJsonPath = path.join(getOpenClawHome(), "agents", foundSession.id, "sessions", "sessions.json");
-    try {
-      const raw = fs.readFileSync(sessionsJsonPath, "utf-8");
-      const sessions = JSON.parse(raw) as Record<string, SubagentSessionRecord>;
-      const candidates = Object.values(sessions)
-        .filter((s) => s.startedAt && s.startedAt > requestStartTime - 5_000 && s.sessionFile && s.endedAt)
-        .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
-      if (candidates[0]?.sessionFile) {
-        const text = readSubagentSessionText(candidates[0].sessionFile);
-        if (text) return { agentId: foundSession.id, text };
-      }
-    } catch { /* not readable */ }
-    await delay(2000);
-  }
-
-  return null;
-}
 
 /**
- * After Em's first stream completes and sessions_spawn was detected,
- * poll for the sub-agent result then fire a second Em turn and pipe
+ * After Em's first stream completes and sessions_spawn was detected in the
+ * stream, poll for the sub-agent result then fire a second Em turn and pipe
  * its response into the already-open stream controller.
+ *
+ * If spawnedAgentId is null (no sessions_spawn detected), returns immediately
+ * — avoids a 10 s scan on every non-delegation request.
  */
 async function autoRelaySubagentResult(
   ctrl: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
   opts: {
-    spawnedAgentId: string | null; // null = scan all sub-agents
+    spawnedAgentId: string | null;
     requestStartTime: number;
     orchAgentId: string;
     sessionKey: string | undefined;
@@ -449,22 +407,16 @@ async function autoRelaySubagentResult(
     gwHeaders: Record<string, string>;
   },
 ): Promise<void> {
-  const { spawnedAgentId, requestStartTime, orchAgentId, sessionKey, gwUrl, token, gwHeaders } = opts;
+  const { spawnedAgentId, requestStartTime, sessionKey, gwUrl, token, gwHeaders } = opts;
 
-  let result: string | null = null;
-  let resolvedAgentId = spawnedAgentId ?? "sub-agent";
+  // Only relay when sessions_spawn was explicitly detected in the stream.
+  if (!spawnedAgentId) return;
 
-  if (spawnedAgentId) {
-    result = await pollForSubagentResult(spawnedAgentId, requestStartTime);
-  } else {
-    const found = await findAnySubagentResult(orchAgentId, requestStartTime);
-    if (found) { result = found.text; resolvedAgentId = found.agentId; }
-  }
-
+  const result = await pollForSubagentResult(spawnedAgentId, requestStartTime);
   if (!result) return;
 
   // Fire a second orchestrator turn with the sub-agent result
-  const continuationInput = `[Subagent ${resolvedAgentId} completed its task. Result: "${result}" — please relay this to the user now.]`;
+  const continuationInput = `[Subagent ${spawnedAgentId} completed its task. Result: "${result}" — please relay this to the user now.]`;
 
   const headers: Record<string, string> = { ...gwHeaders, "Content-Type": "application/json" };
   if (sessionKey) headers["x-openclaw-session-key"] = sessionKey;
@@ -477,7 +429,7 @@ async function autoRelaySubagentResult(
       method: "POST",
       headers,
       body: JSON.stringify({
-        model: `openclaw:${orchAgentId}`,
+        model: `openclaw:${opts.orchAgentId}`,
         input: continuationInput,
         stream: true,
       }),
@@ -576,10 +528,7 @@ async function tryStreamingResponse(
         })) {
           ctrl.enqueue(encoder.encode(delta));
         }
-        // Auto-relay the first sub-agent response back through Em.
-        // If sessions_spawn was detected in the stream, target that specific agent.
-        // Otherwise scan all sub-agent directories (handles cases where the model
-        // used text-based delegation without a tool call).
+        // Auto-relay the sub-agent result when sessions_spawn was detected.
         await autoRelaySubagentResult(ctrl, encoder, {
           spawnedAgentId: spawnedAgentIds.length > 0 ? spawnedAgentIds[0] : null,
           requestStartTime,
