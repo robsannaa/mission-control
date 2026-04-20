@@ -564,7 +564,7 @@ function ChatPanel({
 
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport,
-    initialMessages,
+    messages: initialMessages,
   });
 
   // Persist messages to localStorage so nav away and back restores history.

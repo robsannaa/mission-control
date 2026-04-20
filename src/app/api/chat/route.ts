@@ -68,7 +68,7 @@ function buildUserTurnItems(msg: Message): { textParts: string[]; fileParts: str
         fileParts.push(dataUrlToSafeMessagePart(p.url, name));
         const mime = p.mimeType || guessMime(p.url, p.filename);
         if (mime.startsWith("image/")) {
-          orContent.push({ type: "image_url", image_url: { url: p.url } });
+          orContent.push({ type: "input_image", source: { type: "url", url: p.url } });
         } else {
           const base64Match = p.url.match(/^data:[^;]+;base64,(.+)$/);
           if (base64Match) {
