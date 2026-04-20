@@ -1,6 +1,8 @@
 import { runOpenResponsesText, guessMime } from "@/lib/openresponses";
-import { getGatewayUrl, getGatewayToken } from "@/lib/paths";
+import { getGatewayUrl, getGatewayToken, getOpenClawHome } from "@/lib/paths";
 import { waitForResponsesEndpoint, triggerResponsesEndpointSetup } from "@/app/api/gateway/route";
+import fs from "fs";
+import path from "path";
 
 /**
  * Chat endpoint that sends a message to an OpenClaw agent and returns the response.
@@ -160,6 +162,7 @@ function toolDisplayName(name: string): string {
  */
 async function* parseOpenResponsesStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
+  opts?: { onSpawn?: (agentId: string) => void },
 ): AsyncGenerator<string> {
   const decoder = new TextDecoder();
   let buffer = "";
@@ -231,6 +234,7 @@ async function* parseOpenResponsesStream(
         if (event.type === "response.function_call_arguments.done") {
           const callId = event.call_id || "";
           if (callId && activeCalls.has(callId)) {
+            const callName = activeCalls.get(callId);
             try {
               const args = typeof event.arguments === "string"
                 ? event.arguments
@@ -238,6 +242,13 @@ async function* parseOpenResponsesStream(
               // Emit args as a detail line inside the tool block
               if (args && args !== "{}") {
                 yield `\n\u{200B}[[TOOL_ARGS:${callId}:${args}]]\u{200B}\n`;
+              }
+              // Capture sessions_spawn agentId for auto-relay
+              if (callName === "sessions_spawn" && opts?.onSpawn) {
+                try {
+                  const parsed = JSON.parse(args) as { agentId?: string };
+                  if (parsed.agentId) opts.onSpawn(parsed.agentId);
+                } catch { /* ignore malformed args */ }
               }
             } catch { /* skip malformed args */ }
           }
@@ -271,6 +282,131 @@ async function* parseOpenResponsesStream(
         }
       }
     }
+  }
+}
+
+// ── Sub-agent auto-relay helpers ─────────────────────
+
+type SubagentSessionRecord = {
+  startedAt?: number;
+  endedAt?: number;
+  sessionFile?: string;
+};
+
+/**
+ * Poll ~/.openclaw/agents/{agentId}/sessions/sessions.json until a session
+ * started after `requestStartTime` finishes, then return its final assistant
+ * message text.  Returns null on timeout.
+ */
+async function pollForSubagentResult(
+  spawnedAgentId: string,
+  requestStartTime: number,
+  timeoutMs = 90_000,
+): Promise<string | null> {
+  const sessionsJsonPath = path.join(
+    getOpenClawHome(),
+    "agents",
+    spawnedAgentId,
+    "sessions",
+    "sessions.json",
+  );
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    await delay(2000);
+    try {
+      const raw = fs.readFileSync(sessionsJsonPath, "utf-8");
+      const sessions = JSON.parse(raw) as Record<string, SubagentSessionRecord>;
+
+      // Find completed sub-agent sessions started after our request began
+      const candidates = Object.values(sessions)
+        .filter((s) => s.startedAt && s.startedAt > requestStartTime - 5_000 && s.sessionFile && s.endedAt)
+        .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+
+      for (const session of candidates) {
+        if (!session.sessionFile) continue;
+        try {
+          const lines = fs.readFileSync(session.sessionFile, "utf-8").split("\n").filter(Boolean);
+          for (let i = lines.length - 1; i >= 0; i--) {
+            try {
+              const event = JSON.parse(lines[i]) as {
+                type: string;
+                message?: { role: string; content: unknown };
+              };
+              if (event.type !== "message" || event.message?.role !== "assistant") continue;
+              const content = event.message.content;
+              let text = "";
+              if (Array.isArray(content)) {
+                text = (content as Array<{ type: string; text?: string }>)
+                  .filter((c) => c.type === "text" || c.type === "output_text")
+                  .map((c) => c.text ?? "")
+                  .join("");
+              } else if (typeof content === "string") {
+                text = content;
+              }
+              if (text.trim()) return text.trim();
+            } catch { /* skip malformed line */ }
+          }
+        } catch { /* session file not readable */ }
+      }
+    } catch { /* sessions.json not readable */ }
+  }
+
+  return null;
+}
+
+/**
+ * After Em's first stream completes and sessions_spawn was detected,
+ * poll for the sub-agent result then fire a second Em turn and pipe
+ * its response into the already-open stream controller.
+ */
+async function autoRelaySubagentResult(
+  ctrl: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  opts: {
+    spawnedAgentId: string;
+    requestStartTime: number;
+    orchAgentId: string;
+    sessionKey: string | undefined;
+    gwUrl: string;
+    token: string;
+    gwHeaders: Record<string, string>;
+  },
+): Promise<void> {
+  const { spawnedAgentId, requestStartTime, orchAgentId, sessionKey, gwUrl, token, gwHeaders } = opts;
+
+  const result = await pollForSubagentResult(spawnedAgentId, requestStartTime);
+  if (!result) return;
+
+  // Fire a second orchestrator turn with the sub-agent result
+  const continuationInput = `[Subagent ${spawnedAgentId} completed its task. Result: "${result}" — please relay this to the user now.]`;
+
+  const headers: Record<string, string> = { ...gwHeaders, "Content-Type": "application/json" };
+  if (sessionKey) headers["x-openclaw-session-key"] = sessionKey;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const secondController = new AbortController();
+  const secondTimeout = setTimeout(() => secondController.abort(), 120_000);
+  try {
+    const secondRes = await fetch(`${gwUrl}/v1/responses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: `openclaw:${orchAgentId}`,
+        input: continuationInput,
+        stream: true,
+      }),
+      signal: secondController.signal,
+    });
+    if (secondRes.ok && secondRes.body) {
+      const secondReader = secondRes.body.getReader();
+      for await (const delta of parseOpenResponsesStream(secondReader)) {
+        ctrl.enqueue(encoder.encode(delta));
+      }
+    }
+  } catch { /* continuation failed — stream what we have */ }
+  finally {
+    clearTimeout(secondTimeout);
   }
 }
 
@@ -342,12 +478,30 @@ async function tryStreamingResponse(
   // Stream text deltas as plain text for TextStreamChatTransport
   const reader = gwRes.body.getReader();
   const encoder = new TextEncoder();
+  const requestStartTime = Date.now();
+  const spawnedAgentIds: string[] = [];
+  // Headers for sub-agent relay (without session-key — added per-request in autoRelaySubagentResult)
+  const baseHeaders: Record<string, string> = { "x-openclaw-agent-id": agentId };
 
   const stream = new ReadableStream({
     async start(ctrl) {
       try {
-        for await (const delta of parseOpenResponsesStream(reader)) {
+        for await (const delta of parseOpenResponsesStream(reader, {
+          onSpawn: (spawned) => spawnedAgentIds.push(spawned),
+        })) {
           ctrl.enqueue(encoder.encode(delta));
+        }
+        // Auto-relay the first sub-agent response back through Em
+        if (spawnedAgentIds.length > 0) {
+          await autoRelaySubagentResult(ctrl, encoder, {
+            spawnedAgentId: spawnedAgentIds[0],
+            requestStartTime,
+            orchAgentId: agentId,
+            sessionKey,
+            gwUrl,
+            token,
+            gwHeaders: baseHeaders,
+          });
         }
       } catch {
         // Stream interrupted — ok
