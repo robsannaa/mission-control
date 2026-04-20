@@ -7,7 +7,7 @@ Ben-specific setup notes layered on top of the upstream `README.md`. Everything 
 - OpenClaw is installed at `~/.openclaw` (29 MB, 3 agents: `main`/`claude-cli`/`claude-code`).
 - Gateway is running on `127.0.0.1:18789` (token auth, loopback bind).
 - Gateway token lives in `~/.openclaw/openclaw.json` under `gateway.auth.token`. Mission Control auto-reads it — you should not have to paste it anywhere.
-- Primary model `ollama/qwen3:14b`, fallback `openai/gpt-5.4`. Ollama is expected at `127.0.0.1:11434`.
+- Primary model `openai/gpt-5.4` (orchestrator). Sub-agents: `qwen` (ollama/qwen3:14b), `gemma` (ollama/gemma4, still downloading). Fallbacks on GPT-5.4 failure: gpt-5.4-mini → qwen3:14b. Ollama at `127.0.0.1:11434`.
 - Agent `main` (Em) is Telegram-fronting; the bot token is configured.
 
 If `openclaw gateway status` shows `offline`, run `openclaw gateway start` first. Check with:
@@ -40,24 +40,39 @@ cd openclaw-mission-control
 Open `http://127.0.0.1:3000` and verify:
 
 1. **Dashboard** — gateway indicator green, 3 agents listed (`main`, `claude-cli`, `claude-code`), Ollama reachable.
-2. **Agents** — org chart renders. Em (`main`) sits at the top, claude-cli and claude-code appear as siblings. Click a node → agent details + "Start / Stop" controls.
+2. **Agents** — org chart renders. Em (`main`, GPT-5.4) is marked "Orchestrator". `qwen` and `gemma` appear as "Sub-agent" nodes with animated "invokes" edges from Em. Click a node → agent details.
 3. **Tasks** — empty Kanban (Backlog / In Progress / Review / Done). Try creating a card; it should land as a file in `~/.openclaw/workspace`.
 4. **Memory** — `MEMORY.md` (Ben's long-term memory) loads. Daily notes directory is at `~/.openclaw/workspace/memory/` (created on first write).
 5. **Channels** — Telegram shows "connected" for agent `main`. No re-pairing needed.
 6. **Cron** — empty list. Heartbeat is running inside the gateway process.
 7. **Doctor** — run it once. Expect all green except possibly Tailscale (off by default in `openclaw.json`).
 
-## Expected agent hierarchy (the "org chart")
-
-Given the current `~/.openclaw/agents/` layout:
+## Agent architecture (orchestrator + sub-agents)
 
 ```
-Em (main)            ← orchestrator, Telegram front-door
-  ├── claude-cli     ← worker (Claude via CLI)
-  └── claude-code    ← worker (Claude Code; owns the Krasyn repo)
+User (Telegram / Mission Control chat)
+  └── Em (main) — openai/gpt-5.4  ← orchestrator, Telegram front-door
+        ├── qwen  — ollama/qwen3:14b   ← local heavy lifting (coding, long context)
+        └── gemma — ollama/gemma4      ← local fast tasks (gemma4 pulling ~9.6 GB)
 ```
 
-Add more workers by dropping a new agent folder under `~/.openclaw/agents/<name>/` with its own `openclaw.json`. Mission Control will pick it up on next refresh.
+**How routing works:**
+- All user messages go to Em (GPT-5.4). Em is the primary model and the only agent exposed to channels.
+- GPT-5.4 invokes `qwen` or `gemma` via the OpenClaw `agent_to_agent` tool when it wants a local model to do the heavy lifting — e.g. processing long documents, running code-heavy analysis. This is tool-call delegation, not automatic fallback.
+- Fallback (on GPT-5.4 API error only): `openai/gpt-5.4-mini`, then `ollama/qwen3:14b`.
+- `qwen` and `gemma` are **not** directly chat-accessible by default. They show as sub-agents in the Mission Control hierarchy view.
+
+**Claude Code integration (pending):**
+The `claude-cli` and `claude-code` directories under `~/.openclaw/agents/` are stubs created during setup. Full integration requires the `claude` CLI (`npm install -g @anthropic-ai/claude-code` or via brew). Once installed, add a `claude-code` agent with `openclaw agents add claude-code --model claude-code-backend` and wire it into Em's allowed sub-agents.
+
+**Adding more sub-agents:**
+```bash
+openclaw agents add <name> --model <provider/model> --workspace ~/.openclaw/agents/<name>/workspace --non-interactive
+# Then allow Em to invoke it:
+openclaw config set tools.agentToAgent.allow '["qwen","gemma","<name>"]' --strict-json
+# And update main's subagents allowlist:
+openclaw config set agents.list ... (see config schema)
+```
 
 ## Known gotchas on this Mac
 

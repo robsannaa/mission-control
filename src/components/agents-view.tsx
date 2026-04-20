@@ -272,9 +272,10 @@ function AgentNodeComponent({ data }: NodeProps) {
     agent: Agent;
     idx: number;
     selected: boolean;
+    role: "orchestrator" | "sub-agent" | "standalone";
     onClick: () => void;
   };
-  const { agent, idx, selected } = d;
+  const { agent, idx, selected, role } = d;
   const sc = STATUS_COLORS[agent.status] || STATUS_COLORS.unknown;
 
   return (
@@ -291,6 +292,27 @@ function AgentNodeComponent({ data }: NodeProps) {
       <Handle type="source" position={Position.Right} className="!bg-blue-500 !border-blue-400 !w-2 !h-2" />
       <Handle type="source" position={Position.Right} id="sub" className="!bg-[var(--accent-brand)] !border-[var(--accent-brand)] !w-2 !h-2" />
       <Handle type="target" position={Position.Left} id="parent" className="!bg-[var(--accent-brand)] !border-[var(--accent-brand)] !w-2 !h-2" />
+
+      {/* Role badge */}
+      {role !== "standalone" && (
+        <div className="mb-1.5">
+          {role === "orchestrator" ? (
+            <span
+              className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300 uppercase tracking-wide"
+              title="This agent orchestrates other agents via agent_to_agent tool calls"
+            >
+              ⬡ Orchestrator
+            </span>
+          ) : (
+            <span
+              className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 uppercase tracking-wide"
+              title="Invoked by the orchestrator agent via tool call — not the primary chat target"
+            >
+              ↳ Sub-agent
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center gap-2">
@@ -597,10 +619,7 @@ function buildGraph(
     if (dagreGraph) dagreGraph.setEdge(gatewayId, `agent-${agent.id}`);
   }
 
-  // Gateway → sub-agents (so they're at the same rank as their peers)
-  for (const sub of subAgents) {
-    if (dagreGraph) dagreGraph.setEdge(gatewayId, `agent-${sub.id}`);
-  }
+  // Sub-agents rank after their parent, not after gateway — skip gateway edge for them
 
   // Parent → sub-agent (register all delegation pairs for dagre)
   for (const parent of agents) {
@@ -676,6 +695,12 @@ function buildGraph(
     const nodeId = `agent-${agent.id}`;
     const idx = agents.indexOf(agent);
     const isSub = subagentIds.has(agent.id);
+    const isOrchestrator = agent.subagents.length > 0;
+    const role: "orchestrator" | "sub-agent" | "standalone" = isOrchestrator
+      ? "orchestrator"
+      : isSub
+        ? "sub-agent"
+        : "standalone";
     const fallbackIdx = isSub ? subAgents.indexOf(agent) : topLevelAgents.indexOf(agent);
     const fallbackY = FALLBACK_GATEWAY_Y + fallbackIdx * FALLBACK_AGENT_SPACING_Y;
 
@@ -686,21 +711,24 @@ function buildGraph(
       data: {
         agent,
         idx,
+        role,
         selected: selectedId === agent.id,
         onClick: () => onSelectAgent(agent.id),
       },
       draggable: true,
     });
 
-    // Gateway → Agent
-    edges.push({
-      id: `gw-${agent.id}`,
-      source: gatewayId,
-      target: nodeId,
-      type: "default",
-      style: gatewayEdgeStyle,
-      markerEnd: gatewayEdgeMarker,
-    });
+    // Gateway → Agent edge (skip for configured sub-agents — they connect via delegation edges)
+    if (!isSub) {
+      edges.push({
+        id: `gw-${agent.id}`,
+        source: gatewayId,
+        target: nodeId,
+        type: "default",
+        style: gatewayEdgeStyle,
+        markerEnd: gatewayEdgeMarker,
+      });
+    }
   }
 
   // ── 3. Sub-agent delegation edges ──
@@ -719,7 +747,7 @@ function buildGraph(
         type: "default",
         animated: true,
         style: { stroke: AGENT_GRAPH_COLORS.delegation, strokeWidth: 1.5, strokeDasharray: "5 4" },
-        label: "delegates",
+        label: "invokes",
         labelStyle: { fill: AGENT_GRAPH_COLORS.delegationLabel, fontSize: 10 },
         labelBgStyle: { fill: "var(--card)", fillOpacity: 0.9 },
         markerEnd: {
