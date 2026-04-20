@@ -107,25 +107,55 @@ function loadStoredSessionKey(agentId: string): string {
   return k;
 }
 
+// Current stored-message format version. Bump when the shape changes incompatibly.
+const CHAT_MSGS_VERSION = 2;
+
+/**
+ * Strip file parts from a stored message's parts array.
+ * File attachments (images, docs) are data-URL blobs that become large in
+ * localStorage and can produce malformed payloads when replayed as history.
+ * We keep text parts so conversation context survives; the binary data doesn't.
+ */
+function sanitizeParts(parts: unknown[]): unknown[] {
+  return parts.filter(
+    (p) => p && typeof p === "object" && (p as Record<string, unknown>).type !== "file"
+  );
+}
+
 function loadStoredMessages(agentId: string): unknown[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(CHAT_MSGS_LS(agentId));
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
-    if (!Array.isArray(parsed)) return [];
+    const stored = JSON.parse(raw) as { v?: number; msgs?: unknown[] } | unknown[];
+    // Support both versioned { v, msgs } and legacy plain-array shapes
+    const arr: unknown[] = Array.isArray(stored)
+      ? stored
+      : Array.isArray((stored as { msgs?: unknown[] }).msgs)
+        ? (stored as { msgs: unknown[] }).msgs
+        : [];
+    if (!Array.isArray(arr) || arr.length === 0) return [];
     const cutoff = Date.now() - CHAT_MSG_TTL_MS;
-    return parsed
+    const sanitized = arr
       .filter((m) => {
-        if (!m.createdAt) return true;
-        const t = typeof m.createdAt === "string" ? Date.parse(m.createdAt as string) : Number(m.createdAt);
+        if (!m || typeof m !== "object") return false;
+        const msg = m as Record<string, unknown>;
+        if (!msg.createdAt) return true;
+        const t = typeof msg.createdAt === "string" ? Date.parse(msg.createdAt) : Number(msg.createdAt);
         return isNaN(t) || t > cutoff;
       })
       .slice(-CHAT_MSGS_MAX)
-      .map((m) => ({
-        ...m,
-        createdAt: m.createdAt ? new Date(m.createdAt as string | number) : undefined,
-      }));
+      .map((m) => {
+        const msg = { ...(m as Record<string, unknown>) };
+        // Strip file/image parts — data URLs are large and can cause gateway rejections
+        // when replayed as multi-turn history. Text parts are preserved.
+        if (Array.isArray(msg.parts)) {
+          msg.parts = sanitizeParts(msg.parts as unknown[]);
+        }
+        msg.createdAt = msg.createdAt ? new Date(msg.createdAt as string | number) : undefined;
+        return msg;
+      });
+    return sanitized;
   } catch { return []; }
 }
 
@@ -482,6 +512,7 @@ function ChatPanel({
   modelsLoaded,
   isPostOnboarding,
   onClearPostOnboarding,
+  onRegisterClear,
 }: {
   agentId: string;
   agentName: string;
@@ -494,6 +525,7 @@ function ChatPanel({
   modelsLoaded: boolean;
   isPostOnboarding: boolean;
   onClearPostOnboarding: () => void;
+  onRegisterClear: (fn: () => void) => void;
 }) {
   const postOnboardingStarterPrompt = "Say hello and tell me how you can help me today.";
   const timeFormat = useSyncExternalStore(
@@ -568,10 +600,19 @@ function ChatPanel({
   });
 
   // Persist messages to localStorage so nav away and back restores history.
+  // File parts are stripped before storage — data URLs are large and cause
+  // gateway rejections when replayed as history context.
   useEffect(() => {
     if (messages.length === 0) return;
     try {
-      localStorage.setItem(CHAT_MSGS_LS(agentId), JSON.stringify(messages.slice(-CHAT_MSGS_MAX)));
+      const toStore = messages.slice(-CHAT_MSGS_MAX).map((m) => {
+        const msg = { ...m } as Record<string, unknown>;
+        if (Array.isArray(msg.parts)) {
+          msg.parts = sanitizeParts(msg.parts as unknown[]);
+        }
+        return msg;
+      });
+      localStorage.setItem(CHAT_MSGS_LS(agentId), JSON.stringify({ v: CHAT_MSGS_VERSION, msgs: toStore }));
     } catch { /* localStorage full or unavailable */ }
   }, [messages, agentId]);
 
@@ -688,6 +729,11 @@ function ChatPanel({
     } catch { /* ignore */ }
     setTimeout(() => inputRef.current?.focus(), 100);
   }, [agentId, setMessages]);
+
+  // Register clearChat with the parent so the header can invoke it.
+  useEffect(() => {
+    onRegisterClear(clearChat);
+  }, [clearChat, onRegisterClear]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1187,6 +1233,8 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
   const [mountedAgents, setMountedAgents] = useState<Set<string>>(
     new Set(["main"])
   );
+  // Holds clearChat callbacks registered by each mounted ChatPanel
+  const clearChatFnsRef = useRef(new Map<string, () => void>());
 
   // Fetch chat bootstrap data on mount (gateway config + sessions only)
   const bootstrapLoadedRef = useRef(false);
@@ -1309,7 +1357,7 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
       <div className="shrink-0 border-b border-stone-200 bg-stone-50 px-4 py-3 md:px-6 dark:border-stone-700 dark:bg-stone-900">
         <div className="flex items-center gap-2.5">
           <span className="text-sm">{currentAgent?.emoji || "🤖"}</span>
-          <div className="flex flex-col min-w-0">
+          <div className="flex flex-col min-w-0 flex-1">
             <span className="text-sm font-medium text-stone-700 dark:text-stone-200">
               {currentAgentTitle}
               {currentAgent && currentAgent.id !== currentAgentTitle && (
@@ -1324,6 +1372,15 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
               </span>
             )}
           </div>
+          {/* Clear conversation — always reachable from header as an escape hatch */}
+          <button
+            type="button"
+            title="Clear conversation"
+            onClick={() => clearChatFnsRef.current.get(selectedAgent)?.()}
+            className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-muted hover:text-foreground/70"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
@@ -1424,6 +1481,7 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
               modelsLoaded={modelsLoaded}
               isPostOnboarding={isPostOnboarding}
               onClearPostOnboarding={clearPostOnboarding}
+              onRegisterClear={(fn) => clearChatFnsRef.current.set(agentId, fn)}
             />
           );
         })
