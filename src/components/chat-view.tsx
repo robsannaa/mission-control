@@ -90,6 +90,45 @@ function createChatSessionKey(agentId: string) {
   return `agent:${agentId}:mission-control:${suffix}`;
 }
 
+// ── Per-agent localStorage persistence ─────────────
+const CHAT_SESSION_LS = (id: string) => `openclaw-session:${id}`;
+const CHAT_MSGS_LS = (id: string) => `openclaw-msgs:${id}`;
+const CHAT_MSGS_MAX = 100;
+const CHAT_MSG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function loadStoredSessionKey(agentId: string): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const s = localStorage.getItem(CHAT_SESSION_LS(agentId));
+    if (s && s.startsWith(`agent:${agentId}:mission-control:`)) return s;
+  } catch { /* localStorage unavailable */ }
+  const k = createChatSessionKey(agentId);
+  try { localStorage.setItem(CHAT_SESSION_LS(agentId), k); } catch { /* ignore */ }
+  return k;
+}
+
+function loadStoredMessages(agentId: string): unknown[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CHAT_MSGS_LS(agentId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
+    if (!Array.isArray(parsed)) return [];
+    const cutoff = Date.now() - CHAT_MSG_TTL_MS;
+    return parsed
+      .filter((m) => {
+        if (!m.createdAt) return true;
+        const t = typeof m.createdAt === "string" ? Date.parse(m.createdAt as string) : Number(m.createdAt);
+        return isNaN(t) || t > cutoff;
+      })
+      .slice(-CHAT_MSGS_MAX)
+      .map((m) => ({
+        ...m,
+        createdAt: m.createdAt ? new Date(m.createdAt as string | number) : undefined,
+      }));
+  } catch { return []; }
+}
+
 /** Convert File[] to FileUIPart[] (data URLs) for sendMessage */
 async function filesToUIParts(files: File[]): Promise<Array<{ type: "file"; mediaType: string; filename?: string; url: string }>> {
   return Promise.all(
@@ -465,9 +504,10 @@ function ChatPanel({
   const [inputValue, setInputValue] = useState(() =>
     isPostOnboarding && isSelected ? postOnboardingStarterPrompt : ""
   );
-  const chatSessionKeyRef = useRef(
-    typeof window === "undefined" ? "" : createChatSessionKey(agentId)
-  );
+  const chatSessionKeyRef = useRef(loadStoredSessionKey(agentId));
+  // Load prior messages once on mount so navigation away and back restores history.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [initialMessages] = useState<any[]>(() => loadStoredMessages(agentId));
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -485,6 +525,7 @@ function ChatPanel({
     if (existing) return existing;
     const next = createChatSessionKey(agentId);
     chatSessionKeyRef.current = next;
+    try { localStorage.setItem(CHAT_SESSION_LS(agentId), next); } catch { /* ignore */ }
     return next;
   }, [agentId]);
 
@@ -523,7 +564,16 @@ function ChatPanel({
 
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport,
+    initialMessages,
   });
+
+  // Persist messages to localStorage so nav away and back restores history.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    try {
+      localStorage.setItem(CHAT_MSGS_LS(agentId), JSON.stringify(messages.slice(-CHAT_MSGS_MAX)));
+    } catch { /* localStorage full or unavailable */ }
+  }, [messages, agentId]);
 
   const isLoading = status === "submitted" || status === "streaming";
   const noApiKeys = modelsLoaded && availableModels.length === 0;
@@ -630,7 +680,12 @@ function ChatPanel({
   const clearChat = useCallback(() => {
     setMessages([]);
     prevMsgCountRef.current = 0;
-    chatSessionKeyRef.current = createChatSessionKey(agentId);
+    const newKey = createChatSessionKey(agentId);
+    chatSessionKeyRef.current = newKey;
+    try {
+      localStorage.setItem(CHAT_SESSION_LS(agentId), newKey);
+      localStorage.removeItem(CHAT_MSGS_LS(agentId));
+    } catch { /* ignore */ }
     setTimeout(() => inputRef.current?.focus(), 100);
   }, [agentId, setMessages]);
 
