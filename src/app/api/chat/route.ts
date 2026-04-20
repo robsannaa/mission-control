@@ -53,53 +53,88 @@ function normalizeRequestedSessionKey(raw: unknown): string | undefined {
 }
 
 
+function buildUserTurnItems(msg: Message): { textParts: string[]; fileParts: string[]; orContent: unknown[] } {
+  const textParts: string[] = [];
+  const fileParts: string[] = [];
+  const orContent: unknown[] = [];
+
+  if (msg.parts) {
+    for (const p of msg.parts) {
+      if (p.type === "text" && p.text) {
+        textParts.push(p.text);
+        orContent.push({ type: "text", text: p.text });
+      } else if (p.type === "file" && p.url) {
+        const name = (p.filename || "file").replace(/\s+/g, " ");
+        fileParts.push(dataUrlToSafeMessagePart(p.url, name));
+        const mime = p.mimeType || guessMime(p.url, p.filename);
+        if (mime.startsWith("image/")) {
+          orContent.push({ type: "image_url", image_url: { url: p.url } });
+        } else {
+          const base64Match = p.url.match(/^data:[^;]+;base64,(.+)$/);
+          if (base64Match) {
+            orContent.push({ type: "text", text: `[Attached file: ${name}]` });
+          }
+        }
+      }
+    }
+  } else if (msg.content) {
+    textParts.push(msg.content);
+    orContent.push({ type: "text", text: msg.content });
+  }
+
+  return { textParts, fileParts, orContent };
+}
+
 function extractContent(messages: Message[]): {
   plainText: string;
   openResponsesInput: unknown;
 } {
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-  const textParts: string[] = [];
-  const fileParts: string[] = [];
-  const orItems: unknown[] = [];
 
-  if (lastUserMsg?.parts) {
-    for (const p of lastUserMsg.parts) {
-      if (p.type === "text" && p.text) {
-        textParts.push(p.text);
-        orItems.push({ type: "message", role: "user", content: p.text });
-      } else if (p.type === "file" && p.url) {
-        const name = (p.filename || "file").replace(/\s+/g, " ");
-        fileParts.push(dataUrlToSafeMessagePart(p.url, name));
-
-        // Build native OpenResponses input items for files
-        const mime = p.mimeType || guessMime(p.url, p.filename);
-        if (mime.startsWith("image/")) {
-          orItems.push({ type: "input_image", source: { type: "url", url: p.url } });
-        } else {
-          const base64Match = p.url.match(/^data:[^;]+;base64,(.+)$/);
-          if (base64Match) {
-            orItems.push({
-              type: "input_file",
-              source: { type: "base64", media_type: mime, data: base64Match[1], filename: name },
-            });
-          }
-        }
-      }
-    }
-  } else if (lastUserMsg?.content) {
-    textParts.push(lastUserMsg.content);
-    orItems.push({ type: "message", role: "user", content: lastUserMsg.content });
-  }
-
-  const textBlock = textParts.join("").trim();
-  const fileBlock = fileParts.length ? "\n\n" + fileParts.join("\n\n---\n\n") : "";
+  // plainText is always derived from the last user message (for empty-check)
+  const lastTurn = lastUserMsg ? buildUserTurnItems(lastUserMsg) : { textParts: [], fileParts: [], orContent: [] };
+  const textBlock = lastTurn.textParts.join("").trim();
+  const fileBlock = lastTurn.fileParts.length ? "\n\n" + lastTurn.fileParts.join("\n\n---\n\n") : "";
   const plainText = (textBlock + fileBlock).trim();
 
-  // Flatten simple text-only to a plain string
+  // For multi-turn conversations, build the full history so the model has context
+  // even when the gateway session is cold (e.g. first load or after clearChat).
+  const conversationTurns = messages.filter(
+    (m) => m.role === "user" || m.role === "assistant"
+  );
+
+  const orItems: unknown[] = [];
+  for (const msg of conversationTurns) {
+    if (msg.role === "assistant") {
+      const text =
+        msg.parts
+          ?.filter((p) => p.type === "text")
+          .map((p) => p.text ?? "")
+          .join("") || msg.content || "";
+      if (text.trim()) {
+        orItems.push({ type: "message", role: "assistant", content: text.trim() });
+      }
+      continue;
+    }
+    // user turn
+    const { orContent } = buildUserTurnItems(msg);
+    if (orContent.length === 0) continue;
+    const content =
+      orContent.length === 1 && (orContent[0] as { type: string }).type === "text"
+        ? (orContent[0] as { type: string; text: string }).text
+        : orContent;
+    orItems.push({ type: "message", role: "user", content });
+  }
+
+  // Single text-only turn → plain string (gateway accepts both forms)
   const openResponsesInput =
-    orItems.length === 1 && (orItems[0] as { type: string }).type === "message"
+    orItems.length === 1 &&
+    (orItems[0] as { type: string; role: string; content: unknown }).role === "user" &&
+    typeof (orItems[0] as { content: unknown }).content === "string"
       ? (orItems[0] as { content: string }).content
-      : orItems;
+      : orItems.length > 0
+        ? orItems
+        : plainText;
 
   return { plainText, openResponsesInput };
 }
