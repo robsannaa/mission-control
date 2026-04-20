@@ -1309,14 +1309,21 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
       <div className="shrink-0 border-b border-stone-200 bg-stone-50 px-4 py-3 md:px-6 dark:border-stone-700 dark:bg-stone-900">
         <div className="flex items-center gap-2.5">
           <span className="text-sm">{currentAgent?.emoji || "🤖"}</span>
-          <span className="text-sm font-medium text-stone-700 dark:text-stone-200">
-            {currentAgentTitle}
-          </span>
-          {showSecondaryModelLabel && (
-            <span className="text-xs text-muted-foreground">
-              {currentAgentModelLabel}
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-medium text-stone-700 dark:text-stone-200">
+              {currentAgentTitle}
+              {currentAgent && currentAgent.id !== currentAgentTitle && (
+                <span className="ml-1.5 text-xs font-normal text-muted-foreground/60">
+                  ({currentAgent.id})
+                </span>
+              )}
             </span>
-          )}
+            {currentAgentModelLabel && (
+              <span className="text-[10px] text-muted-foreground/70 leading-tight">
+                {currentAgentModelLabel}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

@@ -68,7 +68,8 @@ function buildUserTurnItems(msg: Message): { textParts: string[]; fileParts: str
         fileParts.push(dataUrlToSafeMessagePart(p.url, name));
         const mime = p.mimeType || guessMime(p.url, p.filename);
         if (mime.startsWith("image/")) {
-          orContent.push({ type: "input_image", source: { type: "url", url: p.url } });
+          // OpenAI Responses API: image_url is a plain string (data URL or https URL)
+          orContent.push({ type: "input_image", image_url: p.url });
         } else {
           const base64Match = p.url.match(/^data:[^;]+;base64,(.+)$/);
           if (base64Match) {

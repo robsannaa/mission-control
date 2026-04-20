@@ -328,9 +328,14 @@ function AgentNodeComponent({ data }: NodeProps) {
             </span>
             <span className={cn("h-2 w-2 rounded-full", sc.dot)} />
           </div>
-          <p className="truncate text-xs text-muted-foreground">
-            {shortModel(agent.model)}
-          </p>
+          <div>
+            <p className="truncate text-xs font-medium text-muted-foreground">
+              {shortModel(agent.model)}
+            </p>
+            <p className="truncate text-[10px] text-muted-foreground/50">
+              {agent.model.split("/")[0]}
+            </p>
+          </div>
         </div>
       </div>
 
