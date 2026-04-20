@@ -322,6 +322,87 @@ type SubagentSessionRecord = {
   sessionFile?: string;
 };
 
+/**
+ * Scan all sub-agent directories for a session started during this request.
+ * sessions_spawn is handled internally by the gateway and never appears in
+ * the SSE stream, so we must scan after the orchestrator stream ends.
+ *
+ * Strategy:
+ *  - Check immediately: by the time Em's stream ends, the sub-agent is
+ *    typically already created (the spawn happens mid-run).
+ *  - If found but still running, poll up to 90s for completion.
+ *  - If not found on first pass, wait 3s and try once more, then bail.
+ *    (Avoids a long scan on requests with no delegation.)
+ */
+async function findAnySubagentResult(
+  orchAgentId: string,
+  requestStartTime: number,
+): Promise<{ agentId: string; text: string } | null> {
+  const agentsDir = path.join(getOpenClawHome(), "agents");
+  let agentIds: string[];
+  try {
+    agentIds = fs
+      .readdirSync(agentsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name !== orchAgentId)
+      .map((e) => e.name);
+  } catch {
+    return null;
+  }
+  if (agentIds.length === 0) return null;
+
+  const scanForSession = (): { id: string; sessionFile: string; done: boolean } | null => {
+    for (const id of agentIds) {
+      const p = path.join(agentsDir, id, "sessions", "sessions.json");
+      try {
+        const raw = fs.readFileSync(p, "utf-8");
+        const sessions = JSON.parse(raw) as Record<string, SubagentSessionRecord>;
+        const candidates = Object.values(sessions)
+          .filter((s) => s.startedAt && s.startedAt > requestStartTime - 5_000 && s.sessionFile)
+          .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+        if (candidates[0]) {
+          return { id, sessionFile: candidates[0].sessionFile!, done: !!candidates[0].endedAt };
+        }
+      } catch { /* not readable */ }
+    }
+    return null;
+  };
+
+  // First immediate scan — sub-agent is usually already created by now.
+  let found = scanForSession();
+
+  // If not found, give it one more short window (3s) then bail.
+  if (!found) {
+    await delay(3000);
+    found = scanForSession();
+    if (!found) return null;
+  }
+
+  // Sub-agent was found. If already done, return immediately.
+  if (found.done) {
+    const text = readSubagentSessionText(found.sessionFile);
+    if (text) return { agentId: found.id, text };
+  }
+
+  // Otherwise poll up to 90s for completion.
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    await delay(2000);
+    const p = path.join(agentsDir, found.id, "sessions", "sessions.json");
+    try {
+      const raw = fs.readFileSync(p, "utf-8");
+      const sessions = JSON.parse(raw) as Record<string, SubagentSessionRecord>;
+      const candidates = Object.values(sessions)
+        .filter((s) => s.startedAt && s.startedAt > requestStartTime - 5_000 && s.sessionFile && s.endedAt)
+        .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+      if (candidates[0]?.sessionFile) {
+        const text = readSubagentSessionText(candidates[0].sessionFile);
+        if (text) return { agentId: found.id, text };
+      }
+    } catch { /* not readable */ }
+  }
+  return null;
+}
+
 
 /**
  * Poll ~/.openclaw/agents/{agentId}/sessions/sessions.json until a session
@@ -387,18 +468,18 @@ function readSubagentSessionText(sessionFile: string): string | null {
 
 
 /**
- * After Em's first stream completes and sessions_spawn was detected in the
- * stream, poll for the sub-agent result then fire a second Em turn and pipe
- * its response into the already-open stream controller.
+ * After Em's first stream completes, poll for a sub-agent result then fire a
+ * second Em turn and pipe its response into the already-open stream controller.
  *
- * If spawnedAgentId is null (no sessions_spawn detected), returns immediately
- * — avoids a 10 s scan on every non-delegation request.
+ * sessions_spawn is handled internally by the gateway (not exposed in SSE),
+ * so we always scan sub-agent directories after the orchestrator stream ends.
+ * The scan is fast: sub-agent sessions are typically already created by then.
  */
 async function autoRelaySubagentResult(
   ctrl: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
   opts: {
-    spawnedAgentId: string | null;
+    spawnedAgentId: string | null; // from SSE stream if available (otherwise null)
     requestStartTime: number;
     orchAgentId: string;
     sessionKey: string | undefined;
@@ -407,16 +488,23 @@ async function autoRelaySubagentResult(
     gwHeaders: Record<string, string>;
   },
 ): Promise<void> {
-  const { spawnedAgentId, requestStartTime, sessionKey, gwUrl, token, gwHeaders } = opts;
+  const { spawnedAgentId, requestStartTime, orchAgentId, sessionKey, gwUrl, token, gwHeaders } = opts;
 
-  // Only relay when sessions_spawn was explicitly detected in the stream.
-  if (!spawnedAgentId) return;
+  let result: string | null = null;
+  let resolvedAgentId = spawnedAgentId ?? "sub-agent";
 
-  const result = await pollForSubagentResult(spawnedAgentId, requestStartTime);
+  if (spawnedAgentId) {
+    result = await pollForSubagentResult(spawnedAgentId, requestStartTime);
+  } else {
+    // sessions_spawn doesn't appear in the SSE stream — scan all sub-agent dirs.
+    const found = await findAnySubagentResult(orchAgentId, requestStartTime);
+    if (found) { result = found.text; resolvedAgentId = found.agentId; }
+  }
+
   if (!result) return;
 
   // Fire a second orchestrator turn with the sub-agent result
-  const continuationInput = `[Subagent ${spawnedAgentId} completed its task. Result: "${result}" — please relay this to the user now.]`;
+  const continuationInput = `[Subagent ${resolvedAgentId} completed its task. Result: "${result}" — please relay this to the user now.]`;
 
   const headers: Record<string, string> = { ...gwHeaders, "Content-Type": "application/json" };
   if (sessionKey) headers["x-openclaw-session-key"] = sessionKey;
@@ -429,7 +517,7 @@ async function autoRelaySubagentResult(
       method: "POST",
       headers,
       body: JSON.stringify({
-        model: `openclaw:${opts.orchAgentId}`,
+        model: `openclaw:${orchAgentId}`,
         input: continuationInput,
         stream: true,
       }),
