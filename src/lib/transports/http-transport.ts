@@ -8,7 +8,7 @@
  * Auth: Authorization: Bearer <OPENCLAW_GATEWAY_TOKEN>
  */
 
-import { getGatewayUrl } from "../paths";
+import { getGatewayToken, getGatewayUrl } from "../paths";
 import { GatewayRpcClient } from "../gateway-rpc";
 import { parseJsonFromCliOutput, type RunCliResult } from "../openclaw-cli";
 import type { OpenClawClient, TransportMode } from "../openclaw-client";
@@ -19,7 +19,7 @@ export class HttpTransport implements OpenClawClient {
   private rpcClient: GatewayRpcClient | null = null;
 
   constructor(gatewayUrl?: string, token?: string) {
-    this.token = token || process.env.OPENCLAW_GATEWAY_TOKEN || "";
+    this.token = token || process.env.OPENCLAW_GATEWAY_TOKEN || getGatewayToken();
     this.gatewayUrlCache = gatewayUrl || null;
   }
 
@@ -174,7 +174,7 @@ export class HttpTransport implements OpenClawClient {
     timeout = 15000,
   ): Promise<T> {
     if (!this.rpcClient) {
-      this.rpcClient = new GatewayRpcClient(this.gatewayUrlCache || undefined, this.token);
+      this.rpcClient = new GatewayRpcClient(this.gatewayUrlCache || undefined, this.token || undefined);
     }
     return this.rpcClient.request<T>(method, params || {}, timeout);
   }
