@@ -13,7 +13,8 @@ export const revalidate = 0;
 
 const OPENCLAW_HOME = getOpenClawHome();
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
-const CREDENTIAL_KEY_RE = /(api[\s_-]?key|token|secret|password|credential|access|refresh)/i;
+const CREDENTIAL_KEY_RE = /(api[\s_-]?key|token|(?<!secretary|secretari)secret(?!ary|_leak)|password|credential|access|refresh)/i;
+const CREDENTIAL_KEY_FALSE_POSITIVES = /^(SECRETARY|GEOFF_SECRETARY|SECRETARIAT|GEOFF_SECRETARIAT|SECRET_LEAK_INCIDENT|EVIDENCE|WORKER_AGENT_SET_UP|SESSION_ID|SESSION_KEY|WORKER_AGENT_SET_UP)$/i;
 const ENV_CREDENTIAL_KEY_RE =
   /(api[_-]?key|token|secret|password|credential|private[_-]?key|access[_-]?key)/i;
 const ENV_KEY_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
@@ -145,6 +146,7 @@ function toNumberValue(v: unknown): number | null {
 }
 
 function looksCredentialKey(key: string): boolean {
+  if (CREDENTIAL_KEY_FALSE_POSITIVES.test(key)) return false;
   return CREDENTIAL_KEY_RE.test(key);
 }
 
@@ -174,6 +176,14 @@ function looksSecretValue(value: string): boolean {
   if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(v)) return false;
   if (/^[A-Za-z][A-Za-z0-9_+-]*\/[A-Za-z0-9_+-]+$/.test(v)) return false;
   if (/^@[A-Za-z0-9_]{3,}$/.test(v)) return false;
+  if (/\.\w{1,4}:\d+(-\d+)?$/.test(v)) return false;
+  if (/^[-—]/.test(v)) return false;
+  if (/\.(md|txt|json|yaml|yml|toml|csv|log)\b/i.test(v)) return false;
+  if (/[/:]/.test(v) && /\.\w{1,4}/.test(v)) return false;
+  if (/^[a-z][a-z0-9_-]*\//i.test(v)) return false;
+  if (/^\w+\/\w+.*:\d+(-\d+)?$/.test(v)) return false;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return false;
+  if (v.split(':').length >= 4) return false;
   const hasLower = /[a-z]/.test(v);
   const hasUpper = /[A-Z]/.test(v);
   const hasDigit = /[0-9]/.test(v);
@@ -320,7 +330,8 @@ function parseCredentialText(
       const labelIsCredential =
         (looksCredentialKey(label) || looksCredentialKey(key)) &&
         key !== "ACCESS" &&
-        key !== "REFRESH";
+        key !== "REFRESH" &&
+        !CREDENTIAL_KEY_FALSE_POSITIVES.test(key);
       if (labelIsCredential || looksSecretValue(value)) {
         pushDiscoveredCredential(out, dedupe, {
           sourcePath,

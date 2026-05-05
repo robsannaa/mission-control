@@ -51,7 +51,8 @@ export async function GET() {
     let gateway: "online" | "offline" | "degraded" = "offline";
 
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      const healthUrl = new URL("/health", url).href;
+      const res = await fetch(healthUrl, { signal: AbortSignal.timeout(3000) });
       gateway = res.ok ? "online" : "degraded";
     } catch {
       // unreachable — gateway stays "offline"
