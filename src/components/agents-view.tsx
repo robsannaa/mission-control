@@ -59,7 +59,7 @@ import {
 import { cn } from "@/lib/utils";
 import { requestRestart } from "@/lib/restart-store";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { InlineSpinner, LoadingState } from "@/components/ui/loading-state";
+import { InlineSpinner, ScreenLoadingState } from "@/components/ui/loading-state";
 import { SubagentsManagerView } from "@/components/subagents-manager-view";
 import { ModelsView } from "@/components/models-view";
 
@@ -226,9 +226,9 @@ function shortPath(p: string): string {
 }
 
 const STATUS_COLORS: Record<string, { dot: string; text: string }> = {
-  active: { dot: "bg-emerald-400", text: "text-emerald-400" },
-  idle: { dot: "bg-amber-400", text: "text-amber-400" },
-  unknown: { dot: "bg-zinc-500", text: "text-muted-foreground" },
+  active: { dot: "bg-success", text: "text-success-fg" },
+  idle: { dot: "bg-warning", text: "text-warning-fg" },
+  unknown: { dot: "bg-muted-foreground", text: "text-muted-foreground" },
 };
 
 
@@ -288,7 +288,7 @@ function AgentNodeComponent({ data }: NodeProps) {
       )}
     >
       <Handle type="target" position={Position.Left} className="!bg-primary !border-primary !w-2 !h-2" />
-      <Handle type="source" position={Position.Right} className="!bg-blue-500 !border-blue-400 !w-2 !h-2" />
+      <Handle type="source" position={Position.Right} className="!bg-info !border-info-border !w-2 !h-2" />
       <Handle type="source" position={Position.Right} id="sub" className="!bg-[var(--accent-brand)] !border-[var(--accent-brand)] !w-2 !h-2" />
       <Handle type="target" position={Position.Left} id="parent" className="!bg-[var(--accent-brand)] !border-[var(--accent-brand)] !w-2 !h-2" />
 
@@ -320,7 +320,7 @@ function AgentNodeComponent({ data }: NodeProps) {
           </span>
         )}
         {agent.channels.map((ch) => (
-          <span key={ch} className="flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-sky-300">
+          <span key={ch} className="flex items-center gap-1 rounded bg-info-bg px-1.5 py-0.5 text-info-fg">
             {channelIcon(ch)} {ch}
           </span>
         ))}
@@ -328,8 +328,8 @@ function AgentNodeComponent({ data }: NodeProps) {
 
       {/* Stats row */}
       <div className="mt-2 flex items-center gap-3 border-t border-foreground/5 pt-2 text-xs">
-        <span className="text-muted-foreground">Sessions <strong className="text-foreground/70">{agent.sessionCount}</strong></span>
-        <span className="text-muted-foreground">Tokens <strong className="text-foreground/70">{formatTokens(agent.totalTokens)}</strong></span>
+        <span className="text-muted-foreground">Sessions <strong className="text-fg-secondary">{agent.sessionCount}</strong></span>
+        <span className="text-muted-foreground">Tokens <strong className="text-fg-secondary">{formatTokens(agent.totalTokens)}</strong></span>
         <span className={cn("ml-auto font-medium", sc.text)}>
           {formatAgo(agent.lastActive)}
         </span>
@@ -354,7 +354,7 @@ function RuntimeSubagentNodeComponent({ data }: NodeProps) {
         "rounded-lg border px-3 py-2 min-w-40",
         d.status === "running"
           ? "border-[var(--accent-brand-border)] bg-[var(--accent-brand-subtle)]"
-          : "border-zinc-500/30 bg-zinc-900/40"
+          : "border-border-strong/30 bg-muted"
       )}
     >
       <Handle
@@ -364,12 +364,12 @@ function RuntimeSubagentNodeComponent({ data }: NodeProps) {
           "!w-2 !h-2",
           d.status === "running"
             ? "!bg-[var(--accent-brand)] !border-[var(--accent-brand)]"
-            : "!bg-zinc-500 !border-zinc-400"
+            : "!bg-muted-foreground !border-border-strong"
         )}
       />
       <div className="flex items-center gap-1.5">
-        <Sparkles className={cn("h-3.5 w-3.5", d.status === "running" ? "text-[var(--accent-brand)]" : "text-zinc-300")} />
-        <p className="text-xs font-semibold text-foreground/90">
+        <Sparkles className={cn("h-3.5 w-3.5", d.status === "running" ? "text-[var(--accent-brand)]" : "text-fg-subtle")} />
+        <p className="text-xs font-semibold text-foreground">
           subagent #{d.shortId}
         </p>
       </div>
@@ -387,15 +387,15 @@ function ChannelNodeComponent({ data }: NodeProps) {
   const d = data as { channel: string; accountIds: string[] };
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-950/50 px-3 py-2 min-w-32">
-      <Handle type="source" position={Position.Right} className="!bg-sky-500 !border-sky-400 !w-2 !h-2" />
+    <div className="flex items-center gap-2 rounded-lg border border-info-border bg-info-bg px-3 py-2 min-w-32">
+      <Handle type="source" position={Position.Right} className="!bg-info !border-info-border !w-2 !h-2" />
       <span className="text-sm">{channelIcon(d.channel)}</span>
       <div>
-        <p className="text-xs font-semibold text-sky-200 capitalize">
+        <p className="text-xs font-semibold text-info-fg capitalize">
           {d.channel}
         </p>
         {d.accountIds.length > 0 && (
-          <p className="text-xs text-sky-400/60">
+          <p className="text-xs text-info-fg">
             {d.accountIds.join(", ")}
           </p>
         )}
@@ -418,18 +418,18 @@ function WorkspaceNodeComponent({ data }: NodeProps) {
       className={cn(
         "flex items-center gap-2 rounded-lg border px-3 py-2 min-w-32 transition-colors",
         d.selected
-          ? "border-amber-400/50 bg-amber-900/50 shadow-lg shadow-amber-500/10"
-          : "border-amber-500/20 bg-amber-950/40",
-        d.onClick ? "cursor-pointer hover:border-amber-400/35" : ""
+          ? "border-warning-border bg-warning-bg shadow-lg shadow-warning-border"
+          : "border-warning-border bg-warning-bg",
+        d.onClick ? "cursor-pointer hover:border-warning-border" : ""
       )}
     >
-      <Handle type="target" position={Position.Left} className="!bg-amber-500 !border-amber-400 !w-2 !h-2" />
-      <FolderOpen className="h-4 w-4 text-amber-400 shrink-0" />
+      <Handle type="target" position={Position.Left} className="!bg-warning !border-warning-border !w-2 !h-2" />
+      <FolderOpen className="h-4 w-4 text-warning-fg shrink-0" />
       <div>
-        <p className="text-xs font-semibold text-amber-200">
+        <p className="text-xs font-semibold text-warning-fg">
           {shortPath(d.path)}
         </p>
-        <p className="text-xs text-amber-400/60">
+        <p className="text-xs text-warning-fg">
           {d.agentNames.join(", ")}
         </p>
       </div>
@@ -985,17 +985,17 @@ function AgentDetail({
           value={shortModel(agent.model)}
         />
         <MiniStat
-          icon={<MessageSquare className="h-3.5 w-3.5 text-blue-400" />}
+          icon={<MessageSquare className="h-3.5 w-3.5 text-info-fg" />}
           label="Sessions"
           value={String(agent.sessionCount)}
         />
         <MiniStat
-          icon={<Zap className="h-3.5 w-3.5 text-amber-400" />}
+          icon={<Zap className="h-3.5 w-3.5 text-warning-fg" />}
           label="Tokens"
           value={formatTokens(agent.totalTokens)}
         />
         <MiniStat
-          icon={<Clock className="h-3.5 w-3.5 text-emerald-400" />}
+          icon={<Clock className="h-3.5 w-3.5 text-success-fg" />}
           label="Last Active"
           value={formatAgo(agent.lastActive)}
         />
@@ -1005,18 +1005,18 @@ function AgentDetail({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {/* Model Stack */}
         <div className="min-w-0 rounded-lg border border-foreground/10 bg-card/80 p-3 space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
             <Layers className="h-3.5 w-3.5 text-[var(--accent-brand-text)]" /> Model Stack
           </div>
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
               <span className="rounded bg-[var(--accent-brand-subtle)] px-1.5 py-0.5 text-xs font-bold text-[var(--accent-brand-text)]">PRIMARY</span>
-              <code className="text-xs text-foreground/70">{shortModel(agent.model)}</code>
+              <code className="text-xs text-fg-secondary">{shortModel(agent.model)}</code>
             </div>
             {agent.fallbackModels.map((fm, i) => (
               <div key={fm} className="flex items-center gap-1.5 pl-1">
-                <span className="text-xs text-muted-foreground/60">#{i + 1}</span>
-                <ArrowRight className="h-2.5 w-2.5 text-muted-foreground/40" />
+                <span className="text-xs text-fg-subtle">#{i + 1}</span>
+                <ArrowRight className="h-2.5 w-2.5 text-fg-subtle" />
                 <code className="text-xs text-muted-foreground">{shortModel(fm)}</code>
               </div>
             ))}
@@ -1025,17 +1025,17 @@ function AgentDetail({
 
         {/* Channels */}
         <div className="rounded-lg border border-foreground/10 bg-card/80 p-3 space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
-            <Globe className="h-3.5 w-3.5 text-blue-400" /> Channels & Bindings
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
+            <Globe className="h-3.5 w-3.5 text-info-fg" /> Channels & Bindings
           </div>
           {agent.bindings.length === 0 ? (
-            <p className="text-xs text-muted-foreground/60">No bindings</p>
+            <p className="text-xs text-fg-subtle">No bindings</p>
           ) : (
             <div className="space-y-1">
               {agent.bindings.map((b, i) => (
                 <div key={i} className="flex items-center gap-1.5 rounded bg-foreground/5 px-2 py-1">
                   <span className="text-sm">{channelIcon(b.split(" ")[0])}</span>
-                  <code className="text-xs text-foreground/70">{b}</code>
+                  <code className="text-xs text-fg-secondary">{b}</code>
                 </div>
               ))}
             </div>
@@ -1044,14 +1044,14 @@ function AgentDetail({
 
         {/* Workspace */}
         <div className="rounded-lg border border-foreground/10 bg-card/80 p-3 space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
-            <FolderOpen className="h-3.5 w-3.5 text-amber-400" /> Workspace
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
+            <FolderOpen className="h-3.5 w-3.5 text-warning-fg" /> Workspace
           </div>
           <div className="flex items-center gap-1.5">
             <code className="flex-1 truncate text-xs text-muted-foreground">{agent.workspace}</code>
             <CopyBtn text={agent.workspace} />
           </div>
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-xs text-fg-subtle">
             Agent dir:{" "}
             <code className="text-muted-foreground wrap-break-word break-all">
               {agent.agentDir}
@@ -1061,18 +1061,18 @@ function AgentDetail({
 
         {/* Relationships */}
         <div className="rounded-lg border border-foreground/10 bg-card/80 p-3 space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
             <Network className="h-3.5 w-3.5 text-[var(--accent-brand-text)]" /> Relationships
           </div>
           {parentAgents.length === 0 && childAgents.length === 0 ? (
-            <p className="text-xs text-muted-foreground/60">No sub-agent relationships</p>
+            <p className="text-xs text-fg-subtle">No sub-agent relationships</p>
           ) : (
             <div className="space-y-1.5">
               {parentAgents.length > 0 && (
                 <div>
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground/60 mb-0.5">Reports to</p>
+                  <p className="text-xs uppercase tracking-wider text-fg-subtle mb-0.5">Reports to</p>
                   {parentAgents.map((p) => (
-                    <span key={p.id} className="inline-flex items-center gap-1 rounded bg-foreground/5 px-2 py-0.5 text-xs text-foreground/70 mr-1">
+                    <span key={p.id} className="inline-flex items-center gap-1 rounded bg-foreground/5 px-2 py-0.5 text-xs text-fg-secondary mr-1">
                       {p.emoji} {p.name}
                     </span>
                   ))}
@@ -1080,9 +1080,9 @@ function AgentDetail({
               )}
               {childAgents.length > 0 && (
                 <div>
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground/60 mb-0.5">Delegates to</p>
+                  <p className="text-xs uppercase tracking-wider text-fg-subtle mb-0.5">Delegates to</p>
                   {childAgents.map((c) => (
-                    <span key={c.id} className="inline-flex items-center gap-1 rounded bg-foreground/5 px-2 py-0.5 text-xs text-foreground/70 mr-1">
+                    <span key={c.id} className="inline-flex items-center gap-1 rounded bg-foreground/5 px-2 py-0.5 text-xs text-fg-secondary mr-1">
                       {c.emoji} {c.name}
                     </span>
                   ))}
@@ -1102,14 +1102,14 @@ function AgentDetail({
           onClick={() => setShowIdentity(!showIdentity)}
           className="flex w-full items-center gap-1.5 px-3 py-2 text-left"
         >
-          <Bot className="h-3.5 w-3.5 text-pink-400" />
-          <span className="flex-1 text-xs font-semibold text-foreground/70">
+          <Bot className="h-3.5 w-3.5 text-fg-secondary" />
+          <span className="flex-1 text-xs font-semibold text-fg-secondary">
             Identity
           </span>
           {showIdentity ? (
-            <ChevronUp className="h-3 w-3 text-muted-foreground/60" />
+            <ChevronUp className="h-3 w-3 text-fg-subtle" />
           ) : (
-            <ChevronDown className="h-3 w-3 text-muted-foreground/60" />
+            <ChevronDown className="h-3 w-3 text-fg-subtle" />
           )}
         </button>
         {showIdentity && (
@@ -1129,7 +1129,7 @@ function AgentDetail({
               </pre>
             )}
             {identityError && (
-              <p className="text-xs text-red-300">{identityError}</p>
+              <p className="text-xs text-danger-fg">{identityError}</p>
             )}
             <div className="flex items-center justify-end gap-2">
               {editingIdentity ? (
@@ -1244,8 +1244,8 @@ function AgentIntegrationsPanel({
   return (
     <div className="rounded-lg border border-foreground/10 bg-card/80 p-3 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
-          <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
+          <ShieldCheck className="h-3.5 w-3.5 text-success-fg" />
           Google Integrations
         </div>
         <Link
@@ -1257,16 +1257,16 @@ function AgentIntegrationsPanel({
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground/60">
+        <div className="flex items-center gap-2 py-1 text-xs text-fg-subtle">
           <InlineSpinner size="sm" />
           Loading integration access...
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+        <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
           {error}
         </div>
       ) : accounts.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-foreground/10 px-3 py-2 text-xs text-muted-foreground/60">
+        <div className="rounded-lg border border-dashed border-foreground/10 px-3 py-2 text-xs text-fg-subtle">
           No Google accounts are connected for Mission Control yet.
         </div>
       ) : (
@@ -1294,7 +1294,7 @@ function AgentIntegrationsPanel({
               <div key={account.id} className="rounded-lg border border-foreground/10 bg-foreground/5 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold text-foreground/90">{account.label}</p>
+                    <p className="text-xs font-semibold text-foreground">{account.label}</p>
                     <p className="text-xs text-muted-foreground">{account.email}</p>
                   </div>
                   <span className="rounded-full bg-[var(--accent-brand-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-brand-text)]">
@@ -1302,13 +1302,13 @@ function AgentIntegrationsPanel({
                   </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-                  <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-emerald-400">
+                  <span className="rounded bg-success-bg px-2 py-0.5 text-success-fg">
                     {allowedReads} read allowed
                   </span>
-                  <span className="rounded bg-amber-500/10 px-2 py-0.5 text-amber-400">
+                  <span className="rounded bg-warning-bg px-2 py-0.5 text-warning-fg">
                     {approvalWrites} write needs approval
                   </span>
-                  <span className="rounded bg-rose-500/10 px-2 py-0.5 text-rose-400">
+                  <span className="rounded bg-danger-bg px-2 py-0.5 text-danger-fg">
                     {autoWrites} write auto-allowed
                   </span>
                 </div>
@@ -1334,8 +1334,8 @@ function MiniStat({
     <div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-card/80 px-3 py-2">
       {icon}
       <div>
-        <p className="text-xs text-muted-foreground/60">{label}</p>
-        <p className="text-xs font-semibold text-foreground/90">{value}</p>
+        <p className="text-xs text-fg-subtle">{label}</p>
+        <p className="text-xs font-semibold text-foreground">{value}</p>
       </div>
     </div>
   );
@@ -1351,9 +1351,9 @@ function CopyBtn({ text }: { text: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="rounded bg-foreground/5 p-1 text-muted-foreground/60 hover:text-muted-foreground"
+      className="rounded bg-foreground/5 p-1 text-fg-subtle hover:text-muted-foreground"
     >
-      {copied ? <CheckCircle className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+      {copied ? <CheckCircle className="h-3 w-3 text-success-fg" /> : <Copy className="h-3 w-3" />}
     </button>
   );
 }
@@ -1371,17 +1371,17 @@ function SummaryBar({ agents }: { agents: Agent[] }) {
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {[
         { icon: <Users className="h-4 w-4 text-[var(--accent-brand-text)]" />, label: "Agents", value: String(agents.length) },
-        { icon: <Zap className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />, label: "Active", value: `${activeCount} / ${agents.length}` },
-        { icon: <MessageSquare className="h-4 w-4 text-sky-600 dark:text-sky-300" />, label: "Sessions", value: String(totalSessions) },
-        { icon: <Hash className="h-4 w-4 text-amber-600 dark:text-amber-300" />, label: "Channels", value: String(channelSet.size) },
+        { icon: <Zap className="h-4 w-4 text-success-fg" />, label: "Active", value: `${activeCount} / ${agents.length}` },
+        { icon: <MessageSquare className="h-4 w-4 text-info-fg" />, label: "Sessions", value: String(totalSessions) },
+        { icon: <Hash className="h-4 w-4 text-warning-fg" />, label: "Channels", value: String(channelSet.size) },
       ].map((s) => (
-        <div key={s.label} className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 shadow-sm dark:border-stone-700 dark:bg-stone-800">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-100 dark:bg-stone-700">
+        <div key={s.label} className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted dark:bg-accent">
             {s.icon}
           </div>
           <div>
-            <p className="text-xs text-stone-500 dark:text-stone-400">{s.label}</p>
-            <p className="text-sm font-bold text-stone-900 dark:text-stone-100">{s.value}</p>
+            <p className="text-xs text-muted-foreground dark:text-fg-subtle">{s.label}</p>
+            <p className="text-sm font-bold text-foreground">{s.value}</p>
           </div>
         </div>
       ))}
@@ -1453,15 +1453,15 @@ function GridView({
             )}
             <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
               <div className="rounded bg-foreground/5 py-1">
-                <p className="text-xs text-muted-foreground/60">Sess.</p>
-                <p className="text-xs font-semibold text-foreground/70">{agent.sessionCount}</p>
+                <p className="text-xs text-fg-subtle">Sess.</p>
+                <p className="text-xs font-semibold text-fg-secondary">{agent.sessionCount}</p>
               </div>
               <div className="rounded bg-foreground/5 py-1">
-                <p className="text-xs text-muted-foreground/60">Tokens</p>
-                <p className="text-xs font-semibold text-foreground/70">{formatTokens(agent.totalTokens)}</p>
+                <p className="text-xs text-fg-subtle">Tokens</p>
+                <p className="text-xs font-semibold text-fg-secondary">{formatTokens(agent.totalTokens)}</p>
               </div>
               <div className="rounded bg-foreground/5 py-1">
-                <p className="text-xs text-muted-foreground/60">Active</p>
+                <p className="text-xs text-fg-subtle">Active</p>
                 <p className={cn("text-xs font-semibold", sc.text)}>{formatAgo(agent.lastActive)}</p>
               </div>
             </div>
@@ -1568,16 +1568,16 @@ function FlowViewInner({
       maxZoom={2}
       defaultEdgeOptions={{ type: "default" }}
     >
-      <Background className="!bg-card dark:!bg-zinc-950" color="var(--border)" gap={20} size={1} />
+      <Background className="!bg-card dark:!bg-surface-inset" color="var(--border)" gap={20} size={1} />
       <Controls
         showInteractive={false}
-        className="!bg-card dark:!bg-zinc-900 !border-border !shadow-xl [&>button]:!bg-secondary dark:[&>button]:!bg-zinc-800 [&>button]:!border-border [&>button]:!text-muted-foreground [&>button:hover]:!bg-accent dark:[&>button:hover]:!bg-zinc-700"
+        className="!bg-card dark:!bg-muted !border-border !shadow-xl [&>button]:!bg-secondary [&>button]:!border-border [&>button]:!text-muted-foreground [&>button:hover]:!bg-accent"
       />
       {Object.keys(savedPos).length > 0 && (
         <div className="absolute top-3 right-3 z-10">
           <button
             onClick={handleResetLayout}
-            className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground transition-colors dark:bg-zinc-900 dark:hover:bg-zinc-800"
+            className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground transition-colors dark:bg-muted dark:hover:bg-secondary"
             title="Reset to automatic layout"
           >
             <RotateCcw className="h-3 w-3" />
@@ -1624,7 +1624,7 @@ function FlowView({
   return (
     <div
       ref={containerRef}
-      className="relative h-0 flex-1 w-full border-t border-border overflow-hidden bg-card dark:bg-zinc-950"
+      className="relative h-0 flex-1 w-full border-t border-border overflow-hidden bg-card dark:bg-surface-inset"
     >
       {dims ? (
         <div style={{ width: dims.w, height: dims.h, position: "absolute", inset: 0 }}>
@@ -1639,7 +1639,7 @@ function FlowView({
           </ReactFlowProvider>
         </div>
       ) : (
-        <div className="flex h-full items-center justify-center text-muted-foreground/40">
+        <div className="flex h-full items-center justify-center text-fg-subtle">
           <span className="inline-flex items-center gap-1">
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
@@ -1867,7 +1867,7 @@ function ModelPicker({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-xs text-muted-foreground/50">
+      <div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-xs text-fg-subtle">
         <InlineSpinner size="sm" />
         Loading available models...
       </div>
@@ -1890,18 +1890,18 @@ function ModelPicker({
         )}
       >
         {selectedMeta && <span className="text-sm">{selectedMeta.icon}</span>}
-        <span className={cn("flex-1 truncate", !value && "text-muted-foreground/60")}>
+        <span className={cn("flex-1 truncate", !value && "text-fg-subtle")}>
           {displayLabel}
         </span>
         {value && authedProviders.has(value.split("/")[0]) && (
-          <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+          <ShieldCheck className="h-3.5 w-3.5 text-success-fg shrink-0" />
         )}
-        <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground/50 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("h-3.5 w-3.5 text-fg-subtle transition-transform", open && "rotate-180")} />
       </button>
 
       {/* ── Success toast ── */}
       {saveSuccess && (
-        <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-400 animate-in fade-in slide-in-from-top-1">
+        <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-success-border bg-success-bg px-2.5 py-1.5 text-xs text-success-fg animate-in fade-in slide-in-from-top-1">
           <CheckCircle className="h-3 w-3 shrink-0" />
           {PROVIDER_META[saveSuccess]?.label || saveSuccess} connected! Models are now available.
         </div>
@@ -1912,7 +1912,7 @@ function ModelPicker({
         <div className="absolute left-0 right-0 top-full z-50 mt-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-foreground/10 bg-card shadow-2xl">
           {/* Search */}
           <div className="flex items-center gap-2 border-b border-foreground/10 px-3 py-2">
-            <Search className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+            <Search className="h-3.5 w-3.5 text-fg-subtle shrink-0" />
             <input
               ref={searchRef}
               type="text"
@@ -1920,10 +1920,10 @@ function ModelPicker({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search models..."
               aria-label="Search models"
-              className="flex-1 bg-transparent text-xs text-foreground/90 placeholder:text-muted-foreground/60 outline-none"
+              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-fg-subtle outline-none"
             />
             {search && (
-              <button type="button" onClick={() => setSearch("")} className="text-muted-foreground/40 hover:text-foreground/60">
+              <button type="button" onClick={() => setSearch("")} className="text-fg-subtle hover:text-fg-secondary">
                 <X className="h-3 w-3" />
               </button>
             )}
@@ -1940,16 +1940,16 @@ function ModelPicker({
                   !value && "bg-[var(--accent-brand-subtle)] text-[var(--accent-brand-text)]"
                 )}
               >
-                <Star className="h-3.5 w-3.5 text-amber-400" />
+                <Star className="h-3.5 w-3.5 text-warning-fg" />
                 <span className="font-medium">Use default</span>
-                <span className="text-xs text-muted-foreground/50">({defaultModel.split("/").pop()})</span>
+                <span className="text-xs text-fg-subtle">({defaultModel.split("/").pop()})</span>
               </button>
             )}
 
             {/* Recommended section */}
             {!search && (
               <>
-                <div className="px-3 pt-2.5 pb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground/40">
+                <div className="px-3 pt-2.5 pb-1 text-xs font-bold uppercase tracking-wider text-fg-subtle">
                   Recommended
                 </div>
                 {recommendedModels.map((key) => {
@@ -1982,14 +1982,14 @@ function ModelPicker({
                       <span className="text-xs">{meta?.icon || "🤖"}</span>
                       <span className="flex-1 font-medium">{m.name || key.split("/").pop()}</span>
                       {isAvailable ? (
-                        <ShieldCheck className="h-3 w-3 text-emerald-500" />
+                        <ShieldCheck className="h-3 w-3 text-success-fg" />
                       ) : needsKey ? (
-                        <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-xs font-semibold text-amber-400">
+                        <span className="flex items-center gap-1 rounded-full bg-warning-bg px-1.5 py-0.5 text-xs font-semibold text-warning-fg">
                           <Key className="h-2.5 w-2.5" />
                           Needs key
                         </span>
                       ) : (
-                        <span className="rounded-full bg-zinc-500/10 px-1.5 py-0.5 text-xs font-semibold text-zinc-400">
+                        <span className="rounded-full bg-muted-foreground/10 px-1.5 py-0.5 text-xs font-semibold text-fg-subtle">
                           Unavailable
                         </span>
                       )}
@@ -2010,11 +2010,11 @@ function ModelPicker({
                 <div key={provider}>
                   <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
                     <span className="text-xs">{meta?.icon || "🤖"}</span>
-                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground/40">
+                    <span className="text-xs font-bold uppercase tracking-wider text-fg-subtle">
                       {meta?.label || provider}
                     </span>
-                    {isAuthed && <ShieldCheck className="h-2.5 w-2.5 text-emerald-500" />}
-                    <span className="text-xs text-muted-foreground/30">{items.length}</span>
+                    {isAuthed && <ShieldCheck className="h-2.5 w-2.5 text-success-fg" />}
+                    <span className="text-xs text-fg-subtle">{items.length}</span>
                   </div>
                   {items.map((m) => (
                     <button
@@ -2025,7 +2025,7 @@ function ModelPicker({
                         "flex w-full items-center gap-2.5 px-3 py-1.5 pl-7 text-left text-xs transition-colors",
                         value === m.key
                           ? "bg-[var(--accent-brand-subtle)] text-[var(--accent-brand-text)]"
-                          : "text-foreground/80 hover:bg-foreground/5"
+                          : "text-foreground hover:bg-foreground/5"
                       )}
                     >
                       <span className="flex-1 truncate">{m.name || m.key.split("/").pop()}</span>
@@ -2033,7 +2033,7 @@ function ModelPicker({
                         <span className="rounded-full bg-lime-500/10 px-1.5 py-0.5 text-xs font-medium text-lime-400">LOCAL</span>
                       )}
                       {recommendedModels.includes(m.key) && (
-                        <Star className="h-2.5 w-2.5 text-amber-400" />
+                        <Star className="h-2.5 w-2.5 text-warning-fg" />
                       )}
                     </button>
                   ))}
@@ -2042,7 +2042,7 @@ function ModelPicker({
             })}
 
             {Object.keys(filteredGroups).length === 0 && search && (
-              <div className="px-3 py-6 text-center text-xs text-muted-foreground/50">
+              <div className="px-3 py-6 text-center text-xs text-fg-subtle">
                 No models match &ldquo;{search}&rdquo;
               </div>
             )}
@@ -2051,7 +2051,7 @@ function ModelPicker({
             {!search && unauthProviders.length > 0 && (
               <>
                 <div className="mx-3 my-1.5 h-px bg-foreground/5" />
-                <div className="px-3 pt-2 pb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground/40">
+                <div className="px-3 pt-2 pb-1 text-xs font-bold uppercase tracking-wider text-fg-subtle">
                   Connect a new provider
                 </div>
                 <div className="px-3 pb-2 grid grid-cols-2 gap-1.5">
@@ -2062,11 +2062,11 @@ function ModelPicker({
                         key={p}
                         type="button"
                         onClick={() => setAddingProvider(p)}
-                        className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-2 py-1.5 text-xs text-muted-foreground/70 transition-colors hover:border-[var(--accent-brand-border)] hover:text-foreground/80"
+                        className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:border-[var(--accent-brand-border)] hover:text-foreground"
                       >
                         <span>{meta?.icon || "🤖"}</span>
                         <span className="truncate font-medium">{meta?.label || p}</span>
-                        <Plus className="ml-auto h-2.5 w-2.5 text-muted-foreground/30" />
+                        <Plus className="ml-auto h-2.5 w-2.5 text-fg-subtle" />
                       </button>
                     );
                   })}
@@ -2080,13 +2080,13 @@ function ModelPicker({
             <div className="border-t border-foreground/10 bg-foreground/5 px-3 py-3">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm">{PROVIDER_META[addingProvider]?.icon || "🤖"}</span>
-                <span className="text-xs font-semibold text-foreground/80">
+                <span className="text-xs font-semibold text-foreground">
                   Connect {PROVIDER_META[addingProvider]?.label || addingProvider}
                 </span>
                 <button
                   type="button"
                   onClick={() => { setAddingProvider(null); setApiKey(""); setShowKey(false); }}
-                  className="ml-auto rounded p-0.5 text-muted-foreground/40 hover:text-foreground/60"
+                  className="ml-auto rounded p-0.5 text-fg-subtle hover:text-fg-secondary"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -2100,13 +2100,13 @@ function ModelPicker({
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSaveKey(); } }}
                     placeholder={PROVIDER_META[addingProvider]?.keyHint || "Paste API key..."}
                     aria-label="API key"
-                    className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 pr-8 text-xs font-mono text-foreground/90 placeholder:text-muted-foreground/50 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                    className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 pr-8 text-xs font-mono text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                     autoFocus
                   />
                   <button
                     type="button"
                     onClick={() => setShowKey(!showKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground/60"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-subtle hover:text-fg-secondary"
                   >
                     {showKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                   </button>
@@ -2126,7 +2126,7 @@ function ModelPicker({
                   ) : "Connect"}
                 </button>
               </div>
-              <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground/50">
+              <div className="mt-1.5 flex items-center gap-1.5 text-xs text-fg-subtle">
                 <Key className="h-2.5 w-2.5" />
                 <span>Stored securely in OpenClaw. Never leaves your machine.</span>
                 {PROVIDER_META[addingProvider]?.keyUrl && (
@@ -2145,7 +2145,7 @@ function ModelPicker({
 
           {/* Footer summary */}
           <div className="border-t border-foreground/10 bg-foreground/5 px-3 py-1.5">
-            <p className="text-xs text-muted-foreground/40">
+            <p className="text-xs text-fg-subtle">
               {availableModels.length} models ready from {Object.keys(groupedAvailable).length} providers
               {unauthProviders.length > 0 && ` · ${unauthProviders.length} more providers available`}
             </p>
@@ -2155,7 +2155,7 @@ function ModelPicker({
 
       {/* Status text */}
       {!open && availableModels.length === 0 && (
-        <p className="mt-1.5 text-xs text-amber-400">
+        <p className="mt-1.5 text-xs text-warning-fg">
           No authenticated models found. Click above to connect a provider.
         </p>
       )}
@@ -2285,7 +2285,7 @@ function ChannelBindingPicker({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground/50">
+      <div className="flex items-center gap-2 py-2 text-xs text-fg-subtle">
         <InlineSpinner size="sm" />
         Checking available channels...
       </div>
@@ -2308,7 +2308,7 @@ function ChannelBindingPicker({
                 {status && (
                   <span className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    status.color === "emerald" ? "bg-emerald-400" : status.color === "amber" ? "bg-amber-400" : "bg-zinc-500"
+                    status.color === "emerald" ? "bg-success" : status.color === "amber" ? "bg-warning" : "bg-muted-foreground"
                   )} />
                 )}
                 <button
@@ -2327,7 +2327,7 @@ function ChannelBindingPicker({
 
       {/* Success toast */}
       {setupSuccess && (
-        <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-400 animate-in fade-in slide-in-from-top-1">
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-success-border bg-success-bg px-2.5 py-1.5 text-xs text-success-fg animate-in fade-in slide-in-from-top-1">
           <CheckCircle className="h-3 w-3 shrink-0" />
           {channels.find((c) => c.channel === setupSuccess)?.label || setupSuccess} connected! You can now bind it.
         </div>
@@ -2339,7 +2339,7 @@ function ChannelBindingPicker({
           {/* Ready channels */}
           {readyChannels.length > 0 && (
             <>
-              <p className="mb-1.5 text-xs text-muted-foreground/60">
+              <p className="mb-1.5 text-xs text-fg-subtle">
                 Connected channels — click to bind:
               </p>
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -2359,7 +2359,7 @@ function ChannelBindingPicker({
                         "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
                         alreadyBound
                           ? "border-[var(--accent-brand-border)] bg-[var(--accent-brand-subtle)] text-[var(--accent-brand-text)] opacity-60 cursor-not-allowed"
-                          : "border-foreground/10 bg-foreground/5 text-foreground/70 hover:border-[var(--accent-brand-border)] hover:bg-[var(--accent-brand-subtle)] hover:text-[var(--accent-brand-text)] disabled:opacity-40"
+                          : "border-foreground/10 bg-foreground/5 text-fg-secondary hover:border-[var(--accent-brand-border)] hover:bg-[var(--accent-brand-subtle)] hover:text-[var(--accent-brand-text)] disabled:opacity-40"
                       )}
                     >
                       <span className="text-xs">{ch.icon}</span>
@@ -2367,7 +2367,7 @@ function ChannelBindingPicker({
                         <span className="font-medium block truncate">{ch.label}</span>
                         <span className={cn(
                           "text-xs",
-                          status.color === "emerald" ? "text-emerald-400" : "text-amber-400"
+                          status.color === "emerald" ? "text-success-fg" : "text-warning-fg"
                         )}>
                           {alreadyBound ? "Bound" : status.text}
                         </span>
@@ -2383,7 +2383,7 @@ function ChannelBindingPicker({
           {setupChannels.length > 0 && (
             <>
               <div className={cn(readyChannels.length > 0 && "mt-3")}>
-                <p className="mb-1.5 text-xs text-muted-foreground/40">
+                <p className="mb-1.5 text-xs text-fg-subtle">
                   More channels — needs one-time setup:
                 </p>
                 <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -2393,14 +2393,14 @@ function ChannelBindingPicker({
                       type="button"
                       onClick={() => { setSelectedChannel(ch); setSetupMode(true); }}
                       disabled={disabled}
-                      className="flex items-center gap-2 rounded-lg border border-dashed border-foreground/10 bg-transparent px-3 py-2 text-left text-xs text-muted-foreground/50 transition-colors hover:border-foreground/15 hover:text-foreground/60 disabled:opacity-40"
+                      className="flex items-center gap-2 rounded-lg border border-dashed border-foreground/10 bg-transparent px-3 py-2 text-left text-xs text-fg-subtle transition-colors hover:border-foreground/15 hover:text-fg-secondary disabled:opacity-40"
                     >
                       <span className="text-sm opacity-60">{ch.icon}</span>
                       <div className="flex-1 min-w-0">
                         <span className="font-medium block truncate">{ch.label}</span>
-                        <span className="text-xs text-muted-foreground/30">Set up</span>
+                        <span className="text-xs text-fg-subtle">Set up</span>
                       </div>
-                      <Plus className="h-2.5 w-2.5 text-muted-foreground/30" />
+                      <Plus className="h-2.5 w-2.5 text-fg-subtle" />
                     </button>
                   ))}
                 </div>
@@ -2409,7 +2409,7 @@ function ChannelBindingPicker({
           )}
 
           {channels.length === 0 && (
-            <p className="py-3 text-center text-xs text-muted-foreground/40">
+            <p className="py-3 text-center text-xs text-fg-subtle">
               Could not fetch channels. Is the Gateway running?
             </p>
           )}
@@ -2420,9 +2420,9 @@ function ChannelBindingPicker({
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xs">{selectedChannel.icon}</span>
-              <span className="text-xs font-semibold text-foreground/80">{selectedChannel.label}</span>
+              <span className="text-xs font-semibold text-foreground">{selectedChannel.label}</span>
               {getStatus(selectedChannel).ready && (
-                <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-400">
+                <span className="flex items-center gap-1 rounded-full bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success-fg">
                   <ShieldCheck className="h-2.5 w-2.5" /> Connected
                 </span>
               )}
@@ -2430,7 +2430,7 @@ function ChannelBindingPicker({
             <button
               type="button"
               onClick={() => { setSelectedChannel(null); setSetupMode(false); setTokenInput(""); setAppTokenInput(""); setAccountId(""); }}
-              className="rounded p-0.5 text-muted-foreground/40 hover:text-foreground/70"
+              className="rounded p-0.5 text-fg-subtle hover:text-fg-secondary"
             >
               <X className="h-3 w-3" />
             </button>
@@ -2447,7 +2447,7 @@ function ChannelBindingPicker({
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleBindChannel(selectedChannel); } }}
                   placeholder="Account ID (optional — leave empty for all)"
                   aria-label="Account ID (optional)"
-                  className="flex-1 rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs text-foreground/90 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="flex-1 rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                   autoFocus
                   disabled={disabled}
                 />
@@ -2460,7 +2460,7 @@ function ChannelBindingPicker({
                   Bind
                 </button>
               </div>
-              <p className="mt-1.5 text-xs text-muted-foreground/50">
+              <p className="mt-1.5 text-xs text-fg-subtle">
                 Leave empty to route all {selectedChannel.label} messages to this agent.
                 {selectedChannel.accounts.length > 1 && (
                   <> Accounts: {selectedChannel.accounts.join(", ")}</>
@@ -2470,7 +2470,7 @@ function ChannelBindingPicker({
           ) : (
             /* Channel needs setup */
             <div>
-              <p className="mb-2 text-xs text-foreground/60">
+              <p className="mb-2 text-xs text-fg-secondary">
                 {selectedChannel.setupHint}
               </p>
 
@@ -2478,7 +2478,7 @@ function ChannelBindingPicker({
               {selectedChannel.setupType === "token" && (
                 <div className="space-y-2">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground/60">
+                    <label className="mb-1 block text-xs font-medium text-fg-subtle">
                       {selectedChannel.tokenLabel || "Token"}
                     </label>
                     <input
@@ -2488,14 +2488,14 @@ function ChannelBindingPicker({
                       onKeyDown={(e) => { if (e.key === "Enter" && tokenInput.trim()) { e.preventDefault(); handleSetupToken(); } }}
                       placeholder={selectedChannel.tokenPlaceholder || "Paste token here..."}
                       aria-label={selectedChannel.tokenLabel || "Token"}
-                      className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs font-mono text-foreground/90 placeholder:text-muted-foreground/50 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                      className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                       autoFocus
                       disabled={saving}
                     />
                   </div>
                   {selectedChannel.channel === "slack" && (
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground/60">
+                      <label className="mb-1 block text-xs font-medium text-fg-subtle">
                         App Token (Socket Mode)
                       </label>
                       <input
@@ -2504,7 +2504,7 @@ function ChannelBindingPicker({
                         onChange={(e) => setAppTokenInput(e.target.value)}
                         placeholder="xapp-..."
                         aria-label="App Token (Socket Mode)"
-                        className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs font-mono text-foreground/90 placeholder:text-muted-foreground/50 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                        className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                         disabled={saving}
                       />
                     </div>
@@ -2531,7 +2531,7 @@ function ChannelBindingPicker({
                       Setup guide <ExternalLink className="h-2.5 w-2.5" />
                     </a>
                   </div>
-                  <p className="text-xs text-muted-foreground/40">
+                  <p className="text-xs text-fg-subtle">
                     Token is stored securely in OpenClaw credentials. Never leaves your machine.
                   </p>
                 </div>
@@ -2540,12 +2540,12 @@ function ChannelBindingPicker({
               {/* QR-based setup (WhatsApp) */}
               {selectedChannel.setupType === "qr" && (
                 <div className="space-y-2">
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-                    <p className="text-xs font-medium text-amber-400 mb-1">Interactive setup required</p>
-                    <p className="text-xs text-muted-foreground/60">
+                  <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
+                    <p className="text-xs font-medium text-warning-fg mb-1">Interactive setup required</p>
+                    <p className="text-xs text-fg-subtle">
                       {selectedChannel.label} requires scanning a QR code. Open the Terminal and run:
                     </p>
-                    <code className="mt-1.5 block rounded bg-black/30 px-2 py-1.5 text-xs font-mono text-emerald-400">
+                    <code className="mt-1.5 block rounded bg-black/30 px-2 py-1.5 text-xs font-mono text-success-fg">
                       {selectedChannel.setupCommand}
                     </code>
                   </div>
@@ -2574,15 +2574,15 @@ function ChannelBindingPicker({
                   <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2">
                     {selectedChannel.setupCommand ? (
                       <>
-                        <p className="text-xs text-muted-foreground/60 mb-1">
+                        <p className="text-xs text-fg-subtle mb-1">
                           Run this command in the Terminal:
                         </p>
-                        <code className="block rounded bg-black/30 px-2 py-1.5 text-xs font-mono text-emerald-400">
+                        <code className="block rounded bg-black/30 px-2 py-1.5 text-xs font-mono text-success-fg">
                           {selectedChannel.setupCommand}
                         </code>
                       </>
                     ) : (
-                      <p className="text-xs text-muted-foreground/70">
+                      <p className="text-xs text-muted-foreground">
                         {selectedChannel.setupHint || "Manual setup is required. Follow the official docs for this channel."}
                       </p>
                     )}
@@ -2609,7 +2609,7 @@ function ChannelBindingPicker({
               )}
 
               {selectedChannel.configHint && (
-                <p className="mt-1 text-xs text-muted-foreground/40 italic">
+                <p className="mt-1 text-xs text-fg-subtle italic">
                   {selectedChannel.configHint}
                 </p>
               )}
@@ -2645,11 +2645,11 @@ function FallbackModelsField({
   const addable = models.filter((m) => m.key !== primary && !fallbacks.includes(m.key));
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-semibold text-foreground/70">
+      <label className="mb-1.5 block text-xs font-semibold text-fg-secondary">
         Fallback models
-        <span className="ml-1 text-xs font-normal text-muted-foreground/40">optional</span>
+        <span className="ml-1 text-xs font-normal text-fg-subtle">optional</span>
       </label>
-      <p className="mb-1.5 text-[11px] text-muted-foreground/50">
+      <p className="mb-1.5 text-[11px] text-fg-subtle">
         Used when the primary model is unavailable (failover).
       </p>
       {fallbacks.length > 0 && (
@@ -2657,14 +2657,14 @@ function FallbackModelsField({
           {fallbacks.map((key) => (
             <span
               key={key}
-              className="inline-flex items-center gap-1 rounded-md border border-foreground/10 bg-foreground/5 px-2 py-1 text-xs text-foreground/80"
+              className="inline-flex items-center gap-1 rounded-md border border-foreground/10 bg-foreground/5 px-2 py-1 text-xs text-foreground"
             >
               {key.split("/").pop() || key}
               <button
                 type="button"
                 onClick={() => onRemove(key)}
                 disabled={disabled}
-                className="rounded p-0.5 text-muted-foreground/60 hover:text-red-400 disabled:opacity-40"
+                className="rounded p-0.5 text-fg-subtle hover:text-danger-fg disabled:opacity-40"
                 aria-label="Remove"
               >
                 <X className="h-3 w-3" />
@@ -2682,7 +2682,7 @@ function FallbackModelsField({
             e.target.value = "";
           }}
           disabled={disabled}
-          className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground/80 focus:border-[var(--accent-brand-border)] focus:outline-none disabled:opacity-40"
+          className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground focus:border-[var(--accent-brand-border)] focus:outline-none disabled:opacity-40"
         >
           <option value="">Add fallback model...</option>
           {addable.map((m) => (
@@ -2725,25 +2725,25 @@ function CliCommandPreview({ command, busy }: { command: string; busy: boolean }
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
-        <Terminal className="h-3 w-3 text-muted-foreground/50" />
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        <Terminal className="h-3 w-3 text-fg-subtle" />
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Command preview
         </p>
       </div>
       <div className="group relative rounded-lg border border-foreground/10 bg-foreground/[0.03]">
-        <pre className="overflow-x-auto px-3 py-2.5 text-xs font-mono text-foreground/80 leading-relaxed">
+        <pre className="overflow-x-auto px-3 py-2.5 text-xs font-mono text-foreground leading-relaxed">
           {command}
         </pre>
         <button
           type="button"
           onClick={handleCopy}
           disabled={busy}
-          className="absolute right-2 top-2 rounded-md border border-foreground/10 bg-card px-1.5 py-1 text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground/70 group-hover:opacity-100 disabled:opacity-0"
+          className="absolute right-2 top-2 rounded-md border border-foreground/10 bg-card px-1.5 py-1 text-fg-subtle opacity-0 transition-opacity hover:text-fg-secondary group-hover:opacity-100 disabled:opacity-0"
         >
-          {copied ? <CheckCircle className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          {copied ? <CheckCircle className="h-3 w-3 text-success-fg" /> : <Copy className="h-3 w-3" />}
         </button>
       </div>
-      <p className="text-[11px] text-muted-foreground/40">
+      <p className="text-[11px] text-fg-subtle">
         This is the equivalent CLI command that will be executed.
       </p>
     </div>
@@ -2869,7 +2869,7 @@ function AddAgentModal({
               <p className="text-xs text-muted-foreground">Isolated workspace, sessions & auth</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} disabled={busy} className="rounded p-1 text-muted-foreground/60 hover:text-foreground/70 disabled:opacity-40">
+          <button type="button" onClick={onClose} disabled={busy} className="rounded p-1 text-fg-subtle hover:text-fg-secondary disabled:opacity-40">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -2878,12 +2878,12 @@ function AddAgentModal({
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
           {/* Step 1 — Identity */}
           <div className="space-y-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               1. Identity
             </p>
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-foreground/70">
-                Agent ID <span className="text-red-400">*</span>
+              <label className="mb-1.5 block text-xs font-semibold text-fg-secondary">
+                Agent ID <span className="text-danger-fg">*</span>
               </label>
               <input
                 ref={nameRef}
@@ -2891,24 +2891,24 @@ function AddAgentModal({
                 value={name}
                 onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
                 placeholder="e.g. work, research, creative"
-                className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-sm text-foreground/90 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-sm text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                 disabled={busy}
               />
-              <p className="mt-1 text-xs text-muted-foreground/50">
+              <p className="mt-1 text-xs text-fg-subtle">
                 Unique ID used throughout OpenClaw — auto-formatted to lowercase
               </p>
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-foreground/70">
+              <label className="mb-1.5 block text-xs font-semibold text-fg-secondary">
                 Display name
-                <span className="ml-1 text-xs font-normal text-muted-foreground/40">optional</span>
+                <span className="ml-1 text-xs font-normal text-fg-subtle">optional</span>
               </label>
               <input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder={name ? `e.g. ${name.charAt(0).toUpperCase() + name.slice(1)}` : "Friendly name in UI"}
-                className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-sm text-foreground/90 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-sm text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                 disabled={busy}
               />
             </div>
@@ -2916,11 +2916,11 @@ function AddAgentModal({
 
           {/* Step 2 — Model */}
           <div className="space-y-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               2. Model
             </p>
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-foreground/70">
+              <label className="mb-1.5 block text-xs font-semibold text-fg-secondary">
                 Primary model
               </label>
               <ModelPicker
@@ -2941,13 +2941,13 @@ function AddAgentModal({
 
           {/* Step 3 — Channels */}
           <div className="space-y-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               3. Channel bindings
             </p>
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-foreground/70">
+              <label className="mb-1.5 block text-xs font-semibold text-fg-secondary">
                 Route channels to this agent
-                <span className="ml-1 text-xs font-normal text-muted-foreground/40">optional</span>
+                <span className="ml-1 text-xs font-normal text-fg-subtle">optional</span>
               </label>
               <ChannelBindingPicker
                 bindings={bindings}
@@ -2964,7 +2964,7 @@ function AddAgentModal({
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 transition-colors hover:text-foreground/60"
+              className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-fg-secondary"
             >
               <ChevronDown className={cn("h-3 w-3 transition-transform", showAdvanced && "rotate-180")} />
               4. Advanced options
@@ -2972,7 +2972,7 @@ function AddAgentModal({
             {showAdvanced && (
               <div className="space-y-4 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground/70">
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
                     Custom workspace path
                   </label>
                   <input
@@ -2980,15 +2980,15 @@ function AddAgentModal({
                     value={workspace}
                     onChange={(e) => setWorkspace(e.target.value)}
                     placeholder={`~/.openclaw/workspace-${name || "<name>"}`}
-                    className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-mono text-foreground/80 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                    className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                     disabled={busy}
                   />
-                  <p className="mt-1 text-xs text-muted-foreground/40">
+                  <p className="mt-1 text-xs text-fg-subtle">
                     Defaults to <code>~/.openclaw/workspace-{name || "<name>"}</code>
                   </p>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground/70">
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
                     Custom agent state directory
                   </label>
                   <input
@@ -2996,10 +2996,10 @@ function AddAgentModal({
                     value={agentDir}
                     onChange={(e) => setAgentDir(e.target.value)}
                     placeholder={`~/.openclaw/agents/${name || "<name>"}/agent`}
-                    className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-mono text-foreground/80 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                    className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                     disabled={busy}
                   />
-                  <p className="mt-1 text-xs text-muted-foreground/40">
+                  <p className="mt-1 text-xs text-fg-subtle">
                     Matches <code>openclaw agents add --agent-dir</code>
                   </p>
                 </div>
@@ -3011,14 +3011,14 @@ function AddAgentModal({
                     disabled={busy}
                     className="h-3.5 w-3.5 rounded border-foreground/20 text-[var(--accent-brand)] focus:ring-[var(--accent-brand-ring)]"
                   />
-                  <span className="text-xs text-foreground/80">Set as default agent</span>
+                  <span className="text-xs text-foreground">Set as default agent</span>
                 </label>
                 {existingAgents.length > 0 && (
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground/70">
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
                       Subagents (can delegate to)
                     </label>
-                    <p className="mb-1.5 text-[11px] text-muted-foreground/50">
+                    <p className="mb-1.5 text-[11px] text-fg-subtle">
                       Allow this agent to spawn sessions with these agents via sessions_spawn.
                     </p>
                     <div className="flex flex-wrap gap-1.5">
@@ -3059,7 +3059,7 @@ function AddAgentModal({
 
           {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+            <div className="flex items-center gap-2 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               {error}
             </div>
@@ -3067,7 +3067,7 @@ function AddAgentModal({
 
           {/* Success */}
           {success && (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-400">
+            <div className="flex items-center gap-2 rounded-lg border border-success-border bg-success-bg px-3 py-2 text-xs text-success-fg">
               <CheckCircle className="h-3.5 w-3.5 shrink-0" />
               Agent &ldquo;{name}&rdquo; created successfully!
             </div>
@@ -3508,7 +3508,7 @@ function EditAgentModal({
             type="button"
             onClick={onClose}
             disabled={mutating}
-            className="rounded p-1 text-muted-foreground/60 hover:text-foreground/70 disabled:opacity-40"
+            className="rounded p-1 text-fg-subtle hover:text-fg-secondary disabled:opacity-40"
           >
             <X className="h-4 w-4" />
           </button>
@@ -3519,7 +3519,7 @@ function EditAgentModal({
           {/* 1. Identity + default */}
           <div className="space-y-3 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-foreground/70">Agent order</p>
+              <p className="text-xs font-semibold text-fg-secondary">Agent order</p>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -3545,67 +3545,67 @@ function EditAgentModal({
                 </button>
               </div>
             </div>
-            <label className="block text-xs font-semibold text-foreground/70">
+            <label className="block text-xs font-semibold text-fg-secondary">
               Display Name (dashboard label)
               <input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder={agent.id}
-                className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-sm text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                 disabled={mutating}
               />
             </label>
 
             <div className="grid gap-2 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-foreground/70">
+              <label className="block text-xs font-semibold text-fg-secondary">
                 Identity name
                 <input
                   type="text"
                   value={identityName}
                   onChange={(e) => setIdentityName(e.target.value)}
                   placeholder={agent.name}
-                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground/90 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                   disabled={mutating}
                 />
               </label>
-              <label className="block text-xs font-semibold text-foreground/70">
+              <label className="block text-xs font-semibold text-fg-secondary">
                 Identity emoji
                 <input
                   type="text"
                   value={identityEmoji}
                   onChange={(e) => setIdentityEmoji(e.target.value)}
                   placeholder={agent.emoji}
-                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground/90 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                   disabled={mutating}
                 />
               </label>
-              <label className="block text-xs font-semibold text-foreground/70">
+              <label className="block text-xs font-semibold text-fg-secondary">
                 Identity theme
                 <input
                   type="text"
                   value={identityTheme}
                   onChange={(e) => setIdentityTheme(e.target.value)}
                   placeholder={agent.identityTheme || "default"}
-                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground/90 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                   disabled={mutating}
                 />
               </label>
-              <label className="block text-xs font-semibold text-foreground/70">
+              <label className="block text-xs font-semibold text-fg-secondary">
                 Identity avatar (path/url/data URI)
                 <input
                   type="text"
                   value={identityAvatar}
                   onChange={(e) => setIdentityAvatar(e.target.value)}
                   placeholder={agent.identityAvatar || "avatars/agent.png"}
-                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground/90 placeholder:text-muted-foreground/60 focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
                   disabled={mutating}
                 />
               </label>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground/80">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
                 <input
                   type="checkbox"
                   checked={setAsDefault}
@@ -3628,11 +3628,11 @@ function EditAgentModal({
 
           {/* 1. Primary Model */}
           <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
               <Cpu className="h-3 w-3 text-[var(--accent-brand-text)]" /> Primary Model
             </label>
             {modelsLoading ? (
-              <div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-xs text-muted-foreground/50">
+              <div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-xs text-fg-subtle">
                 <span className="inline-flex items-center gap-0.5">
                   <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
                   <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
@@ -3645,7 +3645,7 @@ function EditAgentModal({
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 disabled={busy}
-                className="w-full appearance-none rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-sm text-foreground/90 focus:border-[var(--accent-brand-border)] focus:outline-none disabled:opacity-40"
+                className="w-full appearance-none rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-sm text-foreground focus:border-[var(--accent-brand-border)] focus:outline-none disabled:opacity-40"
               >
                 <option value="">
                   Use default ({shortModel(defaultModel)})
@@ -3660,7 +3660,7 @@ function EditAgentModal({
               </select>
             )}
             {!modelsLoading && models.length > 0 && (
-              <p className="mt-1 text-xs text-muted-foreground/50">
+              <p className="mt-1 text-xs text-fg-subtle">
                 {models.length} authenticated models.{" "}
                 <Link
                   href="/agents?tab=models"
@@ -3674,14 +3674,14 @@ function EditAgentModal({
 
           {/* 2. Fallback Models (multi-select checkboxes) */}
           <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
               <Layers className="h-3 w-3 text-[var(--accent-brand-text)]" /> Fallback Models
-              <span className="text-xs font-normal text-muted-foreground/40">
+              <span className="text-xs font-normal text-fg-subtle">
                 — priority order
               </span>
             </label>
             {modelsLoading ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground/50">
+              <div className="flex items-center gap-2 text-xs text-fg-subtle">
                 <span className="inline-flex items-center gap-0.5">
                   <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
                   <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
@@ -3689,7 +3689,7 @@ function EditAgentModal({
                 </span> Loading…
               </div>
             ) : models.length === 0 ? (
-              <p className="text-xs text-muted-foreground/50">
+              <p className="text-xs text-fg-subtle">
                 No authenticated models available
               </p>
             ) : (
@@ -3731,7 +3731,7 @@ function EditAgentModal({
                         <span className="flex-1 truncate">
                           {m.name || shortModel(m.key)}
                         </span>
-                        <span className="text-xs text-muted-foreground/40">
+                        <span className="text-xs text-fg-subtle">
                           {m.key.split("/")[0]}
                         </span>
                       </label>
@@ -3740,7 +3740,7 @@ function EditAgentModal({
               </div>
             )}
             {fallbacks.length > 0 && (
-              <p className="mt-1 text-xs text-muted-foreground/50">
+              <p className="mt-1 text-xs text-fg-subtle">
                 {fallbacks.length} fallback{fallbacks.length !== 1 && "s"}{" "}
                 selected — numbered in priority order
               </p>
@@ -3750,13 +3750,13 @@ function EditAgentModal({
           {/* 3. Delegation targets (multi-select) */}
           {otherAgents.length > 0 && (
             <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
+              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
                 <Network className="h-3 w-3 text-[var(--accent-brand-text)]" /> Delegation Targets
-                <span className="text-xs font-normal text-muted-foreground/40">
+                <span className="text-xs font-normal text-fg-subtle">
                   — select agents this one can hand work to
                 </span>
               </label>
-              <p className="mb-1.5 text-xs text-muted-foreground/50">
+              <p className="mb-1.5 text-xs text-fg-subtle">
                 Checked = this agent is allowed to delegate tasks to that agent.
               </p>
               <div className="space-y-0.5 rounded-lg border border-foreground/10 p-1.5">
@@ -3795,7 +3795,7 @@ function EditAgentModal({
                       <span className="flex-1 truncate font-medium">
                         {a.name}
                       </span>
-                      <span className="text-xs text-muted-foreground/40">
+                      <span className="text-xs text-fg-subtle">
                         {shortModel(a.model)}
                       </span>
                     </label>
@@ -3808,14 +3808,14 @@ function EditAgentModal({
           {/* 4. Per-agent skill filtering */}
           {availableSkills.length > 0 && (
             <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
-                <Wrench className="h-3 w-3 text-amber-400" /> Skills
-                <span className="text-xs font-normal text-muted-foreground/40">
+              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
+                <Wrench className="h-3 w-3 text-warning-fg" /> Skills
+                <span className="text-xs font-normal text-fg-subtle">
                   — control which skills this agent can use
                 </span>
               </label>
               <div className="mb-2 flex items-center gap-3">
-                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground/80">
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground">
                   <input
                     type="radio"
                     name={`skills-mode-${agent.id}`}
@@ -3826,7 +3826,7 @@ function EditAgentModal({
                   />
                   All skills (inherit global)
                 </label>
-                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground/80">
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground">
                   <input
                     type="radio"
                     name={`skills-mode-${agent.id}`}
@@ -3849,7 +3849,7 @@ function EditAgentModal({
                           className={cn(
                             "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors",
                             checked
-                              ? "bg-amber-500/10 text-amber-500"
+                              ? "bg-warning-bg text-warning-fg"
                               : "text-muted-foreground hover:bg-foreground/5"
                           )}
                         >
@@ -3870,12 +3870,12 @@ function EditAgentModal({
                             className={cn(
                               "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
                               checked
-                                ? "border-amber-500 bg-amber-500/20"
+                                ? "border-warning-border bg-warning-bg"
                                 : "border-foreground/10 bg-foreground/5"
                             )}
                           >
                             {checked && (
-                              <CheckCircle className="h-2.5 w-2.5 text-amber-500" />
+                              <CheckCircle className="h-2.5 w-2.5 text-warning-fg" />
                             )}
                           </div>
                           <span className="flex-1 truncate font-medium">
@@ -3885,7 +3885,7 @@ function EditAgentModal({
                       );
                     })}
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground/50">
+                  <p className="mt-1 text-xs text-fg-subtle">
                     {selectedSkills.length === 0
                       ? "No skills selected — agent will have no skills loaded"
                       : `${selectedSkills.length} skill${selectedSkills.length !== 1 ? "s" : ""} selected`}
@@ -3897,8 +3897,8 @@ function EditAgentModal({
 
           {/* 5. Channel Bindings */}
           <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
-              <Globe className="h-3 w-3 text-blue-400" /> Channel Bindings
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
+              <Globe className="h-3 w-3 text-info-fg" /> Channel Bindings
             </label>
             <ChannelBindingPicker
               bindings={bindings}
@@ -3911,17 +3911,17 @@ function EditAgentModal({
 
           {/* Workspace (read-only) */}
           <div className="rounded-lg border border-foreground/5 bg-foreground/5 px-3 py-2.5">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
-              <FolderOpen className="h-3 w-3 text-amber-400/60" /> Workspace
+            <div className="flex items-center gap-1.5 text-xs text-fg-subtle">
+              <FolderOpen className="h-3 w-3 text-warning-fg" /> Workspace
             </div>
-            <code className="mt-0.5 block truncate text-xs text-foreground/60">
+            <code className="mt-0.5 block truncate text-xs text-fg-secondary">
               {agent.workspace}
             </code>
           </div>
 
-          <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2.5">
-            <p className="text-xs font-semibold text-red-300">Danger Zone</p>
-            <p className="mt-1 text-xs text-red-200/80">
+          <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2.5">
+            <p className="text-xs font-semibold text-danger-fg">Danger Zone</p>
+            <p className="mt-1 text-xs text-danger-fg">
               Delete this agent and prune workspace/state (CLI parity: <code>openclaw agents delete</code>).
             </p>
             {!confirmDelete ? (
@@ -3933,13 +3933,13 @@ function EditAgentModal({
                   setError(null);
                 }}
                 disabled={mutating}
-                className="mt-2 rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-40"
+                className="mt-2 rounded-lg border border-danger-border px-3 py-1.5 text-xs font-medium text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-40"
               >
                 Delete Agent…
               </button>
             ) : (
               <div className="mt-2 space-y-2">
-                <p className="text-xs text-red-200/80">
+                <p className="text-xs text-danger-fg">
                   Type <code>{agent.id}</code> to confirm.
                 </p>
                 <input
@@ -3948,7 +3948,7 @@ function EditAgentModal({
                   onChange={(e) => setDeleteConfirmText(e.target.value)}
                   placeholder={agent.id}
                   aria-label={`Type ${agent.id} to confirm deletion`}
-                  className="w-full rounded-lg border border-red-500/30 bg-black/20 px-3 py-2 text-xs text-red-100 placeholder:text-red-200/60 focus:border-red-400/60 focus:outline-none"
+                  className="w-full rounded-lg border border-danger-border bg-black/20 px-3 py-2 text-xs text-danger-fg placeholder:text-danger-fg focus:border-danger-border focus:outline-none"
                   disabled={mutating}
                 />
                 <div className="flex items-center gap-2">
@@ -3956,7 +3956,7 @@ function EditAgentModal({
                     type="button"
                     onClick={handleDelete}
                     disabled={mutating || deleteConfirmText.trim() !== agent.id}
-                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-40"
+                    className="rounded-full bg-destructive px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-destructive/88 disabled:opacity-40"
                   >
                     {deleting ? (
                       <span className="inline-flex items-center gap-1.5">
@@ -3978,7 +3978,7 @@ function EditAgentModal({
                       setDeleteConfirmText("");
                     }}
                     disabled={mutating}
-                    className="rounded-lg border border-red-500/20 px-3 py-1.5 text-xs text-red-200/80 transition-colors hover:bg-red-500/10 disabled:opacity-40"
+                    className="rounded-lg border border-danger-border px-3 py-1.5 text-xs text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-40"
                   >
                     Cancel
                   </button>
@@ -3989,7 +3989,7 @@ function EditAgentModal({
 
           {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+            <div className="flex items-center gap-2 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               {error}
             </div>
@@ -3997,7 +3997,7 @@ function EditAgentModal({
 
           {/* Success */}
           {success && (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-400">
+            <div className="flex items-center gap-2 rounded-lg border border-success-border bg-success-bg px-3 py-2 text-xs text-success-fg">
               <CheckCircle className="h-3.5 w-3.5 shrink-0" />
               Settings saved! Restarting gateway to apply…
             </div>
@@ -4299,7 +4299,7 @@ function WorkspaceFilesModal({
         <div className="flex shrink-0 items-center justify-between border-b border-foreground/10 px-5 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <FolderOpen className="h-4 w-4 text-amber-400" />
+              <FolderOpen className="h-4 w-4 text-warning-fg" />
               <h2 className="text-xs font-semibold text-foreground">
                 Workspace Files
               </h2>
@@ -4311,7 +4311,7 @@ function WorkspaceFilesModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-muted-foreground/60 hover:text-foreground/70"
+            className="rounded p-1 text-fg-subtle hover:text-fg-secondary"
           >
             <X className="h-4 w-4" />
           </button>
@@ -4319,16 +4319,16 @@ function WorkspaceFilesModal({
 
         <div className="shrink-0 space-y-3 border-b border-foreground/10 px-5 py-3">
           <div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-sm text-muted-foreground">
-            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+            <Search className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter files by path..."
               aria-label="Filter files by path"
-              className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+              className="flex-1 bg-transparent text-xs outline-none placeholder:text-fg-subtle"
             />
           </div>
-          <p className="text-xs text-muted-foreground/70">
+          <p className="text-xs text-muted-foreground">
             {loading
               ? "Scanning workspace..."
               : `${filteredFiles.length} file${filteredFiles.length !== 1 ? "s" : ""}${
@@ -4340,7 +4340,7 @@ function WorkspaceFilesModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
           {loading ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-0.5">
                 <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
                 <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
@@ -4349,11 +4349,11 @@ function WorkspaceFilesModal({
               Loading workspace files...
             </div>
           ) : error ? (
-            <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+            <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
               {error}
             </div>
           ) : filteredFiles.length === 0 ? (
-            <p className="text-xs text-muted-foreground/60">
+            <p className="text-xs text-fg-subtle">
               No files match this filter.
             </p>
           ) : (
@@ -4361,13 +4361,13 @@ function WorkspaceFilesModal({
               {categorizedFiles.map((group) => (
                 <section key={group.key} className="space-y-1.5">
                   <div className="sticky top-0 z-[1] rounded-lg border border-foreground/10 bg-card/95 px-2.5 py-1.5 backdrop-blur-sm">
-                    <p className="text-xs font-semibold text-foreground/80">
+                    <p className="text-xs font-semibold text-foreground">
                       {group.label}{" "}
-                      <span className="text-muted-foreground/60">
+                      <span className="text-fg-subtle">
                         ({group.files.length})
                       </span>
                     </p>
-                    <p className="text-[11px] text-muted-foreground/50">
+                    <p className="text-[11px] text-fg-subtle">
                       {group.hint}
                     </p>
                   </div>
@@ -4383,10 +4383,10 @@ function WorkspaceFilesModal({
                         className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-left transition-colors hover:border-[var(--accent-brand-border)] hover:bg-[var(--accent-brand-subtle)]"
                         title="Open in Documents"
                       >
-                        <p className="truncate text-xs font-medium text-foreground/80">
+                        <p className="truncate text-xs font-medium text-foreground">
                           {file.relativePath}
                         </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground/60">
+                        <p className="mt-0.5 text-xs text-fg-subtle">
                           {file.ext || "(no ext)"} · {formatBytes(file.size)} ·{" "}
                           {formatAgo(file.mtime)}
                         </p>
@@ -4617,7 +4617,7 @@ export function AgentsView() {
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading agents..." />
+        <ScreenLoadingState label="Loading agents..." />
       </SectionLayout>
     );
   }
@@ -4625,10 +4625,10 @@ export function AgentsView() {
   if (error || !data) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-        <AlertCircle className="h-8 w-8 text-red-400" />
+        <AlertCircle className="h-8 w-8 text-danger-fg" />
         <p className="text-sm">Failed to load agents</p>
-        <p className="text-xs text-muted-foreground/60">{error}</p>
-        <button type="button" onClick={fetchAgents} className="rounded-lg bg-foreground/5 px-3 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10">
+        <p className="text-xs text-fg-subtle">{error}</p>
+        <button type="button" onClick={fetchAgents} className="rounded-lg bg-foreground/5 px-3 py-1.5 text-xs text-fg-secondary hover:bg-foreground/10">
           Retry
         </button>
       </div>
@@ -4664,8 +4664,8 @@ export function AgentsView() {
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all",
                     viewMode === key
-                      ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-stone-100"
-                      : "text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground dark:text-fg-subtle"
                   )}
                 >
                   <Icon className="h-3 w-3" />
@@ -4678,14 +4678,14 @@ export function AgentsView() {
               <button
                 type="button"
                 onClick={() => setShowAddModal(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-stone-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-stone-700 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-300"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/88"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Add Agent</span>
               </button>
             )}
 
-            <button type="button" onClick={fetchAgents} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-100">
+            <button type="button" onClick={fetchAgents} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground">
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
             </button>

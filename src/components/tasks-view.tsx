@@ -23,7 +23,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { SectionLayout } from "@/components/section-layout";
 import { useFocusTrap, useBodyScrollLock } from "@/hooks/use-modal-accessibility";
 import {
@@ -70,14 +70,14 @@ function attachmentUrl(path: string): string {
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
-  high: "bg-red-500",
-  medium: "bg-amber-500",
-  low: "bg-blue-500",
+  high: "bg-danger",
+  medium: "bg-warning",
+  low: "bg-info",
 };
 const PRIORITY_TEXT: Record<string, string> = {
-  high: "text-red-400",
-  medium: "text-amber-400",
-  low: "text-blue-400",
+  high: "text-danger-fg",
+  medium: "text-warning-fg",
+  low: "text-info-fg",
 };
 const PRIORITIES = ["high", "medium", "low"];
 
@@ -287,7 +287,7 @@ export function TasksView() {
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading tasks..." />
+        <ScreenLoadingState label="Loading tasks..." />
       </SectionLayout>
     );
   }
@@ -295,10 +295,10 @@ export function TasksView() {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="max-w-md text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10">
-            <ListChecks className="h-7 w-7 text-red-400" />
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-danger-bg">
+            <ListChecks className="h-7 w-7 text-danger-fg" />
           </div>
-          <h2 className="text-xs font-semibold text-foreground/90">
+          <h2 className="text-xs font-semibold text-foreground">
             Could not load Kanban board
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -308,7 +308,7 @@ export function TasksView() {
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="mt-4 rounded-lg bg-foreground/10 px-4 py-2 text-xs font-medium text-foreground/70 transition-colors hover:bg-foreground/10"
+            className="mt-4 rounded-lg bg-foreground/10 px-4 py-2 text-xs font-medium text-fg-secondary transition-colors hover:bg-foreground/10"
           >
             Refresh
           </button>
@@ -375,17 +375,17 @@ export function TasksView() {
             <span
               className={cn(
                 "text-xs",
-                saveStatus === "saving" ? "text-muted-foreground" : "text-emerald-500"
+                saveStatus === "saving" ? "text-muted-foreground" : "text-success-fg"
               )}
             >
               {saveStatus === "saving" ? "Saving..." : "Saved"}
             </span>
           )}
         </div>
-        <p className="text-xs text-muted-foreground/60">
+        <p className="text-xs text-fg-subtle">
           Source: workspace/kanban.json &bull; {totalTasks} tasks across{" "}
           {columns.length} columns
-          <span className="ml-2 text-muted-foreground/40/60 italic select-none" title="You know it's true.">
+          <span className="ml-2 text-fg-subtle/60 italic select-none" title="You know it's true.">
             &mdash; added because every dude on X is flexing their Kanban board, so <strong>maybe</strong> it&apos;s not BS after all
           </span>
         </p>
@@ -402,7 +402,7 @@ export function TasksView() {
               key={col.id}
               className={cn(
                 "flex w-[280px] md:w-80 flex-shrink-0 flex-col min-w-0 overflow-hidden rounded-xl border border-foreground/5 bg-muted/30 py-3 px-3 transition-all",
-                isDragTarget && "bg-violet-500/10 border-violet-500/20 ring-1 ring-inset ring-violet-500/20"
+                isDragTarget && "bg-muted-foreground/10 border-border-strong ring-1 ring-inset ring-border-strong"
               )}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -429,7 +429,7 @@ export function TasksView() {
                   className="h-3 w-3 shrink-0 rounded-full shadow-sm"
                   style={{ backgroundColor: col.color }}
                 />
-                <h3 className="min-w-0 truncate text-sm font-semibold text-foreground/80">
+                <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">
                   {col.title}
                 </h3>
                 <span
@@ -446,7 +446,7 @@ export function TasksView() {
                       addingToColumn === col.id ? null : col.id
                     )
                   }
-                  className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground/70"
+                  className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary"
                   title={`Add task to ${col.title}`}
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -482,8 +482,8 @@ export function TasksView() {
                   <div className={cn(
                     "flex items-center justify-center rounded-lg border border-dashed py-8 text-xs transition-colors",
                     isDragTarget
-                      ? "border-violet-500/30 text-violet-400/60 bg-violet-500/5"
-                      : "border-foreground/10 text-muted-foreground/60"
+                      ? "border-border-strong text-fg-secondary bg-muted-foreground/5"
+                      : "border-foreground/10 text-fg-subtle"
                   )}>
                     {isDragTarget ? "Drop here" : "No tasks"}
                   </div>
@@ -573,21 +573,21 @@ export function TasksView() {
               <div className="px-4 py-3 space-y-3 text-sm">
                 {task.description && (
                   <div>
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70 mb-1">Description</p>
-                    <p className="text-foreground/90 whitespace-pre-wrap">{task.description}</p>
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1">Description</p>
+                    <p className="text-foreground whitespace-pre-wrap">{task.description}</p>
                   </div>
                 )}
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Priority</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Priority</span>
                     <p className={cn("font-medium capitalize", PRIORITY_TEXT[task.priority] || "text-muted-foreground")}>
                       {task.priority}
                     </p>
                   </div>
                   {task.agentId && (
                     <div>
-                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Agent</span>
-                      <p className="text-foreground/90">
+                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Agent</span>
+                      <p className="text-foreground">
                         {(() => {
                           const ag = agents.find((a) => a.id === task.agentId);
                           return ag ? `${ag.emoji} ${ag.name}` : task.agentId;
@@ -597,26 +597,26 @@ export function TasksView() {
                   )}
                   {task.assignee && (
                     <div>
-                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Assignee</span>
-                      <p className="text-foreground/90">{task.assignee}</p>
+                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Assignee</span>
+                      <p className="text-foreground">{task.assignee}</p>
                     </div>
                   )}
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Status</span>
-                    <p className="text-foreground/90">{columnTitle}</p>
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</span>
+                    <p className="text-foreground">{columnTitle}</p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">ID</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">ID</span>
                     <p className="text-muted-foreground font-mono text-xs">{task.id}</p>
                   </div>
                   {task.dispatchStatus && task.dispatchStatus !== "idle" && (
                     <div>
-                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Dispatch</span>
+                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Dispatch</span>
                       <p className={cn(
                         "font-medium capitalize",
-                        task.dispatchStatus === "running" && "text-amber-400",
-                        task.dispatchStatus === "completed" && "text-emerald-400",
-                        task.dispatchStatus === "failed" && "text-red-400",
+                        task.dispatchStatus === "running" && "text-warning-fg",
+                        task.dispatchStatus === "completed" && "text-success-fg",
+                        task.dispatchStatus === "failed" && "text-danger-fg",
                       )}>
                         {task.dispatchStatus}
                       </p>
@@ -624,14 +624,14 @@ export function TasksView() {
                   )}
                 </div>
                 {task.dispatchStatus === "failed" && task.dispatchError && (
-                  <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-2">
-                    <p className="text-xs text-red-400">{task.dispatchError}</p>
+                  <div className="rounded-lg border border-danger-border bg-danger-bg p-2">
+                    <p className="text-xs text-danger-fg">{task.dispatchError}</p>
                   </div>
                 )}
                 {(task as Task & Record<string, unknown>).completedAt != null && (
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Completed</span>
-                    <p className="text-foreground/90">
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Completed</span>
+                    <p className="text-foreground">
                       {new Date((task as Task & Record<string, unknown>).completedAt as string | number).toLocaleString(
                         undefined,
                         withTimeFormat(
@@ -651,7 +651,7 @@ export function TasksView() {
                 )}
                 {task.attachments && task.attachments.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70 mb-2">Attachments</p>
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">Attachments</p>
                     <div className="flex flex-wrap gap-2">
                       {task.attachments.filter(isImageAttachment).map((path, i) => (
                         <button
@@ -659,7 +659,7 @@ export function TasksView() {
                           type="button"
                           onClick={() => setLightboxImage(attachmentUrl(path))}
                           aria-label={`View attachment ${i + 1}`}
-                          className="overflow-hidden rounded-lg border border-foreground/10 bg-muted/50 transition-opacity hover:opacity-90 focus:ring-2 focus:ring-violet-500/50"
+                          className="overflow-hidden rounded-lg border border-foreground/10 bg-muted/50 transition-opacity hover:opacity-90 focus:ring-2 focus:ring-border-strong"
                         >
                           <img
                             src={attachmentUrl(path)}
@@ -669,7 +669,7 @@ export function TasksView() {
                         </button>
                       ))}
                       {task.attachments.filter((p) => !isImageAttachment(p)).length > 0 && (
-                        <span className="text-xs text-muted-foreground/70 self-center">
+                        <span className="text-xs text-muted-foreground self-center">
                           +{task.attachments.filter((p) => !isImageAttachment(p)).length} file(s)
                         </span>
                       )}
@@ -686,7 +686,7 @@ export function TasksView() {
                       dispatchTask(task.id);
                       setDetailTaskId(null);
                     }}
-                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-40"
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-success-fg hover:bg-success-bg transition-colors disabled:opacity-40"
                   >
                     <Play className="h-3 w-3" />
                     {task.dispatchStatus === "failed" ? "Retry" : "Run"}
@@ -827,11 +827,11 @@ function TaskCard({
       }}
     >
       <div className="flex items-start gap-2">
-        <GripVertical className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/20 transition-colors group-hover:text-muted-foreground/40" />
+        <GripVertical className="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle transition-colors group-hover:text-fg-subtle" />
         <div
           className={cn(
             "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-            PRIORITY_COLORS[task.priority] || "bg-zinc-500"
+            PRIORITY_COLORS[task.priority] || "bg-muted-foreground"
           )}
         />
         <div className="min-w-0 flex-1">
@@ -845,11 +845,11 @@ function TaskCard({
                 if (e.key === "Escape") onRename(task.title);
               }}
               onBlur={() => onRename(renameValue.trim() || task.title)}
-              className="w-full bg-transparent text-sm font-medium text-foreground/90 outline-none border-b border-violet-500/40 pb-0.5"
+              className="w-full bg-transparent text-sm font-medium text-foreground outline-none border-b border-border-strong pb-0.5"
             />
           ) : (
             <p
-              className="break-words text-sm font-medium text-foreground/90"
+              className="break-words text-sm font-medium text-foreground"
               onDoubleClick={(e) => {
                 e.preventDefault();
                 onStartRename();
@@ -874,7 +874,7 @@ function TaskCard({
                     e.stopPropagation();
                     onAttachmentClick?.(attachmentUrl(path));
                   }}
-                  className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-foreground/10 bg-muted/50 object-cover transition-opacity hover:opacity-90 focus:ring-2 focus:ring-violet-500/40"
+                  className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-foreground/10 bg-muted/50 object-cover transition-opacity hover:opacity-90 focus:ring-2 focus:ring-border-strong"
                 >
                   <img
                     src={attachmentUrl(path)}
@@ -903,7 +903,7 @@ function TaskCard({
               const ag = agents.find((a) => a.id === task.agentId);
               return (
                 <>
-                  <span className="text-muted-foreground/40">&bull;</span>
+                  <span className="text-fg-subtle">&bull;</span>
                   <span className="inline-flex items-center gap-1 text-muted-foreground" title={`Agent: ${task.agentId}`}>
                     <span>{ag?.emoji || "🤖"}</span>
                     <span className="truncate max-w-[80px]">{ag?.name || task.agentId}</span>
@@ -913,23 +913,23 @@ function TaskCard({
             })()}
             {task.assignee && !task.agentId && (
               <>
-                <span className="text-muted-foreground/40">&bull;</span>
+                <span className="text-fg-subtle">&bull;</span>
                 <span className="text-muted-foreground">{task.assignee}</span>
               </>
             )}
             {task.dispatchStatus === "running" && (
               <>
-                <span className="text-muted-foreground/40">&bull;</span>
-                <span className="inline-flex items-center gap-1 text-amber-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-fg-subtle">&bull;</span>
+                <span className="inline-flex items-center gap-1 text-warning-fg">
+                  <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
                   Running
                 </span>
               </>
             )}
             {task.dispatchStatus === "failed" && (
               <>
-                <span className="text-muted-foreground/40">&bull;</span>
-                <span className="inline-flex items-center gap-1 text-red-400" title={task.dispatchError || "Failed"}>
+                <span className="text-fg-subtle">&bull;</span>
+                <span className="inline-flex items-center gap-1 text-danger-fg" title={task.dispatchError || "Failed"}>
                   <AlertCircle className="h-3 w-3" />
                   Failed
                 </span>
@@ -937,8 +937,8 @@ function TaskCard({
             )}
             {task.dispatchStatus === "completed" && (
               <>
-                <span className="text-muted-foreground/40">&bull;</span>
-                <span className="inline-flex items-center gap-1 text-emerald-400">
+                <span className="text-fg-subtle">&bull;</span>
+                <span className="inline-flex items-center gap-1 text-success-fg">
                   <CheckCircle className="h-3 w-3" />
                   Done
                 </span>
@@ -957,7 +957,7 @@ function TaskCard({
           type="button"
           disabled={!canLeft}
           onClick={() => onMove("left")}
-          className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground/70 disabled:opacity-30"
+          className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary disabled:opacity-30"
           title="Move left"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
@@ -966,7 +966,7 @@ function TaskCard({
           type="button"
           disabled={!canRight}
           onClick={() => onMove("right")}
-          className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground/70 disabled:opacity-30"
+          className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary disabled:opacity-30"
           title="Move right"
         >
           <ChevronRight className="h-3.5 w-3.5" />
@@ -977,7 +977,7 @@ function TaskCard({
             type="button"
             disabled={isDispatching}
             onClick={() => onDispatch?.()}
-            className="rounded p-1 text-emerald-400/60 transition-colors hover:bg-emerald-500/20 hover:text-emerald-400 disabled:opacity-40"
+            className="rounded p-1 text-success-fg transition-colors hover:bg-success-bg hover:text-success-fg disabled:opacity-40"
             title={task.dispatchStatus === "failed" ? "Retry dispatch" : "Run with agent"}
           >
             {isDispatching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
@@ -986,7 +986,7 @@ function TaskCard({
         <button
           type="button"
           onClick={onEdit}
-          className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground/70"
+          className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary"
           title="Edit"
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -994,7 +994,7 @@ function TaskCard({
         <button
           type="button"
           onClick={onDelete}
-          className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-red-500/20 hover:text-red-400"
+          className="rounded p-1 text-fg-subtle transition-colors hover:bg-danger-bg hover:text-danger-fg"
           title="Delete"
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -1045,7 +1045,7 @@ function AddTaskInline({
   };
 
   return (
-    <div className="mb-2.5 rounded-lg border border-violet-500/30 bg-card p-3.5">
+    <div className="mb-2.5 rounded-lg border border-border-strong bg-card p-3.5">
       <input
         ref={inputRef}
         value={title}
@@ -1055,14 +1055,14 @@ function AddTaskInline({
           if (e.key === "Escape") onCancel();
         }}
         placeholder="Task title..."
-        className="mb-2 w-full bg-transparent text-sm font-medium text-foreground/90 outline-none placeholder:text-muted-foreground/60"
+        className="mb-2 w-full bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-fg-subtle"
       />
       <textarea
         value={desc}
         onChange={(e) => setDesc(e.target.value)}
         placeholder="Description (optional)"
         rows={2}
-        className="mb-2 w-full resize-none bg-transparent text-xs leading-5 text-muted-foreground outline-none placeholder:text-muted-foreground/60"
+        className="mb-2 w-full resize-none bg-transparent text-xs leading-5 text-muted-foreground outline-none placeholder:text-fg-subtle"
       />
       <div className="flex flex-wrap items-center gap-2">
         <select
@@ -1094,14 +1094,14 @@ function AddTaskInline({
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
           placeholder="Assignee"
-          className="flex-1 rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/60"
+          className="flex-1 rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none placeholder:text-fg-subtle"
         />
       </div>
       <div className="mt-2 flex items-center gap-1.5">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded p-1 text-muted-foreground hover:text-foreground/70"
+          className="rounded p-1 text-muted-foreground hover:text-fg-secondary"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -1114,7 +1114,7 @@ function AddTaskInline({
               onAddAndRun(buildTask());
             }}
             disabled={!title.trim()}
-            className="flex items-center gap-1 rounded bg-emerald-600 text-white px-2.5 py-1 text-xs font-medium transition-colors hover:bg-emerald-700 disabled:opacity-40"
+            className="flex items-center gap-1 rounded bg-success text-primary-foreground px-2.5 py-1 text-xs font-medium transition-colors hover:bg-success disabled:opacity-40"
           >
             <Play className="h-3 w-3" /> Add & Run
           </button>
@@ -1196,15 +1196,15 @@ function BoardOnboarding({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
         <div className="relative">
-          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-violet-500/10">
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-muted-foreground/10">
             {initStep < 3 ? (
               <span className="inline-flex items-center gap-1">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
               </span>
             ) : (
-              <CheckCircle className="h-9 w-9 text-emerald-400" />
+              <CheckCircle className="h-9 w-9 text-success-fg" />
             )}
           </div>
         </div>
@@ -1246,8 +1246,8 @@ function BoardOnboarding({
             <div className="mx-auto max-w-xl px-4 md:px-6 py-12">
             {/* Hero */}
             <div className="text-center">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10">
-                <ListChecks className="h-8 w-8 text-violet-400" />
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted-foreground/10">
+                <ListChecks className="h-8 w-8 text-fg-secondary" />
               </div>
               <h1 className="text-sm font-semibold text-foreground">
                 Task Board
@@ -1262,19 +1262,19 @@ function BoardOnboarding({
             <div className="mt-8 space-y-3">
               <FeatureRow
                 icon={FileJson}
-                iconColor="text-sky-400"
+                iconColor="text-info-fg"
                 title="kanban.json"
                 desc="A simple JSON file in your workspace. Portable, version-controlled, no lock-in."
               />
               <FeatureRow
                 icon={Bot}
-                iconColor="text-violet-400"
+                iconColor="text-fg-secondary"
                 title="Agent-aware"
                 desc='Your agent learns about the board instantly. Say "add a task" in chat and it appears here.'
               />
               <FeatureRow
                 icon={Brain}
-                iconColor="text-emerald-400"
+                iconColor="text-success-fg"
                 title="Bidirectional"
                 desc="Tasks you add show up for the agent. Tasks the agent adds show up for you. Always in sync."
               />
@@ -1282,7 +1282,7 @@ function BoardOnboarding({
 
             {/* Board preview */}
             <div className="mt-8">
-              <p className="mb-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+              <p className="mb-2.5 text-xs font-medium uppercase tracking-wider text-fg-subtle">
                 Your board columns
               </p>
               <div className="flex gap-2">
@@ -1295,7 +1295,7 @@ function BoardOnboarding({
                       className="h-2.5 w-2.5 rounded-full"
                       style={{ backgroundColor: col.color }}
                     />
-                    <span className="text-xs font-medium text-foreground/70">
+                    <span className="text-xs font-medium text-fg-secondary">
                       {col.title}
                     </span>
                   </div>
@@ -1313,7 +1313,7 @@ function BoardOnboarding({
                 <Rocket className="h-4.5 w-4.5" />
                 Set Up Task Board
               </button>
-              <p className="max-w-xs text-center text-xs leading-relaxed text-muted-foreground/60">
+              <p className="max-w-xs text-center text-xs leading-relaxed text-fg-subtle">
                 Creates <code className="rounded bg-foreground/5 px-1 text-xs">kanban.json</code>
                 {" "}&amp;{" "}
                 <code className="rounded bg-foreground/5 px-1 text-xs">TASKS.md</code>
@@ -1327,11 +1327,11 @@ function BoardOnboarding({
               <p className="mb-2 text-xs font-medium text-muted-foreground">
                 Or create the file yourself
               </p>
-              <p className="mb-3 text-xs leading-relaxed text-muted-foreground/80">
+              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
                 Save as <code className="rounded bg-foreground/5 px-1 text-xs">kanban.json</code> in your workspace and paste:
               </p>
               <div className="relative">
-                <pre className="overflow-x-auto rounded-lg border border-foreground/10 bg-foreground/5 px-4 py-3.5 pr-12 text-left text-[11px] leading-snug text-foreground/90">
+                <pre className="overflow-x-auto rounded-lg border border-foreground/10 bg-foreground/5 px-4 py-3.5 pr-12 text-left text-[11px] leading-snug text-foreground">
                   {exampleJson}
                 </pre>
                 <button
@@ -1366,8 +1366,8 @@ function BoardOnboarding({
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-lg px-4 md:px-6 py-12">
           <div className="text-center">
-            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10">
-              <CheckCircle className="h-7 w-7 text-emerald-400" />
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-success-bg">
+              <CheckCircle className="h-7 w-7 text-success-fg" />
             </div>
             <h1 className="text-sm font-semibold text-foreground">
               Board is clear
@@ -1386,7 +1386,7 @@ function BoardOnboarding({
               <Plus className="h-4.5 w-4.5" />
               Add a task
             </button>
-            <p className="text-xs text-muted-foreground/60">
+            <p className="text-xs text-fg-subtle">
               Or tell your agent: &ldquo;Add a task to&hellip;&rdquo;
             </p>
           </div>
@@ -1394,7 +1394,7 @@ function BoardOnboarding({
           {addingToColumn && (
             <div className="mx-auto mt-6 max-w-sm">
               <p className="mb-2 text-xs font-medium text-muted-foreground">
-                Adding to: <span className="text-violet-400 capitalize">{addingToColumn}</span>
+                Adding to: <span className="text-fg-secondary capitalize">{addingToColumn}</span>
               </p>
               <AddTaskInline
                 column={addingToColumn}
@@ -1432,7 +1432,7 @@ function FeatureRow({
         <Icon className={cn("h-4 w-4", iconColor)} />
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground/90">{title}</p>
+        <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{desc}</p>
       </div>
     </div>
@@ -1460,34 +1460,34 @@ function StepIndicator({
     <div
       className={cn(
         "flex items-center gap-3 rounded-lg px-4 py-2.5 transition-all duration-300",
-        isDone && "bg-emerald-500/5",
-        isActive && "bg-violet-500/5",
+        isDone && "bg-success-bg",
+        isActive && "bg-muted-foreground/5",
         isPending && "opacity-40"
       )}
     >
       <div className="flex h-6 w-6 shrink-0 items-center justify-center">
         {isDone ? (
-          <CheckCircle className="h-5 w-5 text-emerald-400" />
+          <CheckCircle className="h-5 w-5 text-success-fg" />
         ) : isActive ? (
           <span className="inline-flex items-center gap-0.5">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
           </span>
         ) : (
-          <div className="h-2 w-2 rounded-full bg-zinc-600" />
+          <div className="h-2 w-2 rounded-full bg-fg-secondary" />
         )}
       </div>
       <div className="min-w-0">
         <p
           className={cn(
             "text-sm font-medium",
-            isDone ? "text-emerald-300" : isActive ? "text-foreground/90" : "text-muted-foreground"
+            isDone ? "text-success-fg" : isActive ? "text-foreground" : "text-muted-foreground"
           )}
         >
           {label}
         </p>
-        <p className="text-xs text-muted-foreground/60">{sublabel}</p>
+        <p className="text-xs text-fg-subtle">{sublabel}</p>
       </div>
     </div>
   );
@@ -1530,7 +1530,7 @@ function EditTaskInline({
   };
 
   return (
-    <div className="rounded-lg border border-violet-500/30 bg-card p-3.5">
+    <div className="rounded-lg border border-border-strong bg-card p-3.5">
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -1538,7 +1538,7 @@ function EditTaskInline({
           if (e.key === "Enter") save();
           if (e.key === "Escape") onCancel();
         }}
-        className="mb-2 w-full bg-transparent text-sm font-medium text-foreground/90 outline-none placeholder:text-muted-foreground/60"
+        className="mb-2 w-full bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-fg-subtle"
         autoFocus
       />
       <textarea
@@ -1546,7 +1546,7 @@ function EditTaskInline({
         onChange={(e) => setDesc(e.target.value)}
         placeholder="Description"
         rows={2}
-        className="mb-2 w-full resize-none bg-transparent text-xs leading-5 text-muted-foreground outline-none placeholder:text-muted-foreground/60"
+        className="mb-2 w-full resize-none bg-transparent text-xs leading-5 text-muted-foreground outline-none placeholder:text-fg-subtle"
       />
       <div className="flex flex-wrap items-center gap-2">
         <select
@@ -1589,14 +1589,14 @@ function EditTaskInline({
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
           placeholder="Assignee"
-          className="flex-1 rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/60"
+          className="flex-1 rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none placeholder:text-fg-subtle"
         />
       </div>
       <div className="mt-3 flex items-center gap-1.5">
         <button
           type="button"
           onClick={onDelete}
-          className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-red-500/20 hover:text-red-400"
+          className="rounded p-1 text-fg-subtle transition-colors hover:bg-danger-bg hover:text-danger-fg"
           title="Delete task"
           aria-label="Delete task"
         >
@@ -1606,7 +1606,7 @@ function EditTaskInline({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground/70"
+          className="rounded px-2.5 py-1 text-xs text-muted-foreground hover:text-fg-secondary"
         >
           Cancel
         </button>

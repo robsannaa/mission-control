@@ -70,14 +70,14 @@ export function RestartAnnouncementBar() {
   const handleRestart = doRestart;
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 sm:gap-3 sm:px-5 sm:py-2.5">
-      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-warning-border bg-warning-bg px-3 py-2 sm:gap-3 sm:px-5 sm:py-2.5">
+      <AlertTriangle className="h-4 w-4 shrink-0 text-warning-fg" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-amber-600 dark:text-amber-200">
+        <p className="text-xs font-medium text-warning-fg">
           Configuration changed — gateway restart recommended
         </p>
         {reason && (
-          <p className="text-xs text-amber-500/70 dark:text-amber-400/60">
+          <p className="text-xs text-warning-fg">
             {reason}
           </p>
         )}
@@ -85,7 +85,7 @@ export function RestartAnnouncementBar() {
       <button
         onClick={handleRestart}
         disabled={restarting}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-500/15 px-4 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-500/25 disabled:opacity-60 dark:text-amber-200 dark:hover:bg-amber-500/30"
+        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-warning-bg px-4 py-1.5 text-xs font-semibold text-warning-fg transition-colors hover:bg-warning-bg disabled:opacity-60"
       >
         {restarting ? (
           <>
@@ -105,7 +105,7 @@ export function RestartAnnouncementBar() {
       </button>
       <button
         onClick={dismissRestart}
-        className="rounded p-1 text-amber-400/50 transition-colors hover:text-amber-500 dark:hover:text-amber-300"
+        className="rounded p-1 text-warning-fg transition-colors hover:text-warning-fg"
         title="Dismiss"
       >
         <X className="h-4 w-4" />

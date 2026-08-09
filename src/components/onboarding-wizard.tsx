@@ -9,6 +9,7 @@ import { StepModel } from "@/components/onboarding/step-model";
 import { StepChannel } from "@/components/onboarding/step-channel";
 import { StepChat } from "@/components/onboarding/step-chat";
 import { ONBOARDING_STEP_IDS, type OnboardingStepId } from "@/components/onboarding/types";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 
 /** chat-view reads this to show its post-onboarding welcome. */
 const POST_ONBOARDING_KEY = "mc-post-onboarding";
@@ -74,22 +75,14 @@ export function OnboardingWizard({ onComplete }: Props) {
   );
 
   if (!loaded || activeStep === null) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 dark:bg-black/70 backdrop-blur-sm">
-        <div className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:0ms]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:150ms]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:300ms]" />
-        </div>
-      </div>
-    );
+    return <ScreenLoadingState className="bg-muted dark:bg-background" />;
   }
 
   const activeIdx = ONBOARDING_STEP_IDS.indexOf(activeStep);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 dark:bg-black/70 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-[480px] overflow-hidden rounded-2xl border border-stone-200 dark:border-[#23282e] bg-white dark:bg-[#171a1d] shadow-2xl shadow-black/30">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 dark:bg-black/70 backdrop-blur-sm">
+      <div className="mx-4 w-full max-w-[480px] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl shadow-black/30">
         {/* Step rail */}
         <div className="px-8 pt-7 pb-5">
           <div className="flex items-center gap-0">
@@ -111,10 +104,10 @@ export function OnboardingWizard({ onComplete }: Props) {
                       className={cn(
                         "flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ring-1 transition-all duration-300",
                         done && !active
-                          ? "bg-emerald-500 text-white ring-emerald-500"
+                          ? "bg-success text-primary-foreground ring-success-border"
                           : active
-                            ? "bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 ring-stone-900 dark:ring-stone-100"
-                            : "bg-transparent text-stone-400 dark:text-stone-600 ring-stone-200 dark:ring-[#2e343b]",
+                            ? "bg-primary text-primary-foreground ring-border-strong"
+                            : "bg-transparent text-fg-subtle dark:text-fg-secondary ring-border",
                       )}
                     >
                       {done && !active ? <Check className="h-3.5 w-3.5" /> : i + 1}
@@ -123,10 +116,10 @@ export function OnboardingWizard({ onComplete }: Props) {
                       className={cn(
                         "text-[10px] font-medium uppercase tracking-wide transition-colors duration-300",
                         active
-                          ? "text-stone-900 dark:text-[#f5f7fa]"
+                          ? "text-foreground"
                           : done
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-stone-400 dark:text-stone-600",
+                            ? "text-success-fg"
+                            : "text-fg-subtle dark:text-fg-secondary",
                       )}
                     >
                       {STEP_LABELS[id]}
@@ -134,9 +127,9 @@ export function OnboardingWizard({ onComplete }: Props) {
                   </button>
                   {i < ONBOARDING_STEP_IDS.length - 1 && (
                     <div className="relative mx-2 mb-4 flex-1">
-                      <div className="h-px w-full bg-stone-200 dark:bg-[#23282e]" />
+                      <div className="h-px w-full bg-secondary" />
                       <div
-                        className="absolute inset-y-0 left-0 h-px bg-emerald-500 transition-all duration-500"
+                        className="absolute inset-y-0 left-0 h-px bg-success transition-all duration-500"
                         style={{ width: i < activeIdx ? "100%" : "0%" }}
                       />
                     </div>
@@ -147,7 +140,7 @@ export function OnboardingWizard({ onComplete }: Props) {
           </div>
         </div>
 
-        <div className="h-px bg-stone-100 dark:bg-[#23282e]" />
+        <div className="h-px bg-muted dark:bg-secondary" />
 
         <div className="max-h-[min(72vh,560px)] overflow-y-auto overscroll-contain px-8 py-7">
           {activeStep === "gateway" && (

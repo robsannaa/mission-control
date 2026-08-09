@@ -277,14 +277,16 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
         const showBadge = item.section === "chat" && chatUnread > 0;
         const isDisabled = item.comingSoon;
         const linkClass = cn(
-          "group relative flex items-center gap-2 rounded-md py-1.5 text-xs font-medium transition-colors duration-150",
+          // ElevenLabs nav row: 34px tall, 8px radius, quiet label that
+          // resolves to full ink when active.
+          "group relative flex items-center gap-2.5 rounded-lg py-2 text-sm font-medium transition-colors duration-150",
           collapsed ? "justify-center px-2" : "px-2.5",
-          item.isSubItem && !collapsed && "ml-6 py-1",
+          item.isSubItem && !collapsed && "ml-6 py-1.5",
           isDisabled
-            ? "cursor-not-allowed opacity-50 text-stone-400 dark:text-stone-500"
+            ? "cursor-not-allowed text-fg-subtle opacity-60"
             : isActive
-              ? "bg-stone-100 text-stone-900 font-semibold dark:bg-[#171b1f] dark:text-[#f5f7fa]"
-              : "text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-[#a8b0ba] dark:hover:bg-[#171b1f] dark:hover:text-[#f5f7fa]"
+              ? "bg-sidebar-accent text-sidebar-foreground"
+              : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
         );
         return (
           <div key={`${item.section}:${item.label}`}>
@@ -293,20 +295,20 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
                 <button
                   type="button"
                   onClick={() => setAdvancedExpanded((prev) => !prev)}
-                  className="mb-1.5 mt-4 first:mt-0 flex w-full items-center justify-between rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-widest text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-[#171b1f] dark:hover:text-[#a8b0ba]"
+                  className="mb-1.5 mt-5 first:mt-0 flex w-full items-center justify-between rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle transition-colors hover:bg-sidebar-accent hover:text-fg-secondary"
                   aria-expanded={advancedExpanded}
                 >
                   <span>Advanced</span>
                   <ChevronRight className={cn("h-3 w-3 transition-transform", advancedExpanded && "rotate-90")} />
                 </button>
               ) : (
-                <div className="mb-1.5 mt-4 first:mt-0 px-2.5 text-xs font-semibold uppercase tracking-widest text-stone-400 dark:text-stone-500">
+                <div className="mb-1.5 mt-5 first:mt-0 px-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle">
                   {item.group}
                 </div>
               )
             )}
             {showGroupHeader && collapsed && (
-              <div className="my-2 mx-1 border-t border-stone-200 dark:border-[#23282e]" />
+              <div className="my-2 mx-1 border-t border-sidebar-border" />
             )}
             {shouldHideAdvancedItem ? null : isDisabled ? (
               <span className={linkClass} aria-disabled>
@@ -314,7 +316,7 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
                 {!collapsed && (
                   <>
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                    <span className="shrink-0 whitespace-nowrap rounded-full border border-border bg-muted/50 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    <span className="shrink-0 whitespace-nowrap rounded-full border border-border bg-card px-2 py-0.5 text-xs font-medium uppercase tracking-[0.06em] text-fg-subtle">
                       Soon
                     </span>
                   </>
@@ -344,7 +346,7 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
                         setCronExpanded((prev) => !prev);
                       }
                     }}
-                    className="rounded-md p-1.5 text-foreground/60 transition-colors hover:text-foreground"
+                    className="rounded-md p-1.5 text-fg-secondary transition-colors hover:text-foreground"
                     aria-label={
                       isSkillsParent
                         ? (showSkillsChildren ? "Collapse skills submenu" : "Expand skills submenu")
@@ -372,17 +374,17 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
                   <span className="relative inline-flex shrink-0">
                     <Icon className="h-3 w-3" />
                     {collapsed && showBadge && (
-                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-stone-900 ring-2 ring-sidebar dark:bg-stone-100" title={`${chatUnread} unread`} aria-hidden />
+                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-sidebar" title={`${chatUnread} unread`} aria-hidden />
                   )}
                 </span>
                 {!collapsed && <span className="flex-1">{item.label}</span>}
                 {!collapsed && item.beta && (
-                    <span className="shrink-0 rounded-sm bg-stone-100 px-1.5 py-0.5 font-mono text-xs font-semibold uppercase tracking-wider text-stone-400 dark:bg-[#1c2128] dark:text-[#5a6270]">
+                    <span className="shrink-0 rounded-full border border-border bg-card px-2 py-0.5 font-mono text-xs font-medium uppercase tracking-[0.06em] text-fg-subtle">
                       beta
                     </span>
                   )}
                 {!collapsed && showBadge && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-stone-900 px-1.5 text-xs font-bold text-white shadow-sm dark:bg-stone-100 dark:text-stone-900">
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground shadow-sm">
                       {chatUnread > 9 ? "9+" : chatUnread}
                     </span>
                   )}
@@ -511,7 +513,7 @@ export function Sidebar() {
         style={expandedWidthStyle}
         className={cn(
           "relative flex h-full shrink-0 flex-col transition-[width,transform] duration-200 ease-in-out",
-          "border-r border-stone-200 bg-stone-50 dark:border-[#23282e] dark:bg-[#0d0f12]",
+          "border-r border-sidebar-border bg-sidebar",
           collapsed ? "w-14 md:w-14" : "w-72 md:w-72",
           "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:shadow-2xl",
           mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"
@@ -531,23 +533,23 @@ export function Sidebar() {
         <div className={cn("shrink-0", collapsed ? "px-2 pb-2" : "px-3 pb-3 pt-3")}>
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-base shadow-sm ring-1 ring-stone-200 dark:bg-[#171a1d] dark:ring-[#2c343d]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-base">
                 🦞
               </div>
             </div>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-base shadow-sm ring-1 ring-stone-200 dark:bg-[#171a1d] dark:ring-[#2c343d]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-base">
                   🦞
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold tracking-tight text-stone-900 dark:text-[#f5f7fa]">
+                    <span className="text-sm font-semibold tracking-[-0.01em] text-foreground">
                       Mission Control
                     </span>
                     {commitHash && (
-                      <span className="shrink-0 rounded-full bg-stone-100 px-1.5 py-0.5 text-xs font-mono font-medium text-stone-500 dark:bg-[#171a1d] dark:text-[#7a8591]">
+                      <span className="shrink-0 rounded-full border border-border bg-card px-2 py-0.5 font-mono text-xs font-medium text-fg-subtle">
                         {commitHash}
                       </span>
                     )}
@@ -561,12 +563,12 @@ export function Sidebar() {
           <SidebarNav onNavigate={closeMobile} collapsed={collapsed} />
         </Suspense>
         {/* Collapse / expand toggle — desktop only */}
-        <div className={cn("hidden border-t border-stone-200 dark:border-[#23282e] md:block", collapsed ? "px-2 py-2" : "px-3 py-2")}>
+        <div className={cn("hidden border-t border-sidebar-border md:block", collapsed ? "px-2 py-2" : "px-3 py-2")}>
           <button
             type="button"
             onClick={toggleCollapsed}
             className={cn(
-              "flex w-full items-center rounded-md py-1.5 text-stone-400 transition-colors duration-150 hover:bg-stone-100 hover:text-stone-700 dark:text-[#7a8591] dark:hover:bg-[#171b1f] dark:hover:text-[#d6dce3]",
+              "flex w-full items-center rounded-md py-1.5 text-fg-subtle transition-colors duration-150 hover:bg-muted hover:text-fg-secondary",
               collapsed ? "justify-center px-0" : "justify-start px-2.5"
             )}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -587,7 +589,7 @@ export function Sidebar() {
             onPointerDown={startResize}
             className="absolute inset-y-0 right-0 hidden w-2 -translate-x-1/2 cursor-col-resize md:block"
           >
-            <div className="mx-auto h-full w-px bg-transparent transition-colors hover:bg-stone-300 dark:hover:bg-[#3d4752]" />
+            <div className="mx-auto h-full w-px bg-transparent transition-colors hover:bg-border-strong dark:hover:bg-border-strong" />
           </div>
         )}
       </aside>

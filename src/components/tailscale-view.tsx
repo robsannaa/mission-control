@@ -257,13 +257,13 @@ export function TailscaleView() {
     }
     if (loadedMode !== "off") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">
+        <span className="inline-flex items-center gap-1 rounded-full border border-success-border bg-success-bg px-2 py-1 text-xs text-success-fg">
           <CheckCircle2 className="h-3.5 w-3.5" /> Exposure {loadedMode}
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-zinc-500/30 bg-zinc-500/10 px-2 py-1 text-xs text-zinc-300">
+      <span className="inline-flex items-center gap-1 rounded-full border border-border-strong/30 bg-muted-foreground/10 px-2 py-1 text-xs text-fg-subtle">
         <CircleX className="h-3.5 w-3.5" /> Exposure off
       </span>
     );
@@ -275,27 +275,27 @@ export function TailscaleView() {
     }
     if (!runtime?.installed) {
       return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-300">
+        <span className="inline-flex items-center gap-1 rounded-full border border-danger-border bg-danger-bg px-2 py-1 text-xs text-danger-fg">
           <AlertTriangle className="h-3.5 w-3.5" /> Tailscale CLI missing
         </span>
       );
     }
     if (loadedMode === "off") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-zinc-500/30 bg-zinc-500/10 px-2 py-1 text-xs text-zinc-300">
+        <span className="inline-flex items-center gap-1 rounded-full border border-border-strong/30 bg-muted-foreground/10 px-2 py-1 text-xs text-fg-subtle">
           <CircleX className="h-3.5 w-3.5" /> Tunnel disabled
         </span>
       );
     }
     if (tunnelActive) {
       return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">
+        <span className="inline-flex items-center gap-1 rounded-full border border-success-border bg-success-bg px-2 py-1 text-xs text-success-fg">
           <CheckCircle2 className="h-3.5 w-3.5" /> Tunnel active
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+      <span className="inline-flex items-center gap-1 rounded-full border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-fg">
         <AlertTriangle className="h-3.5 w-3.5" /> Tunnel not active
       </span>
     );
@@ -319,7 +319,7 @@ export function TailscaleView() {
             <button
               type="button"
               onClick={() => void quickToggle()}
-              className="inline-flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-md border border-success-border bg-success-bg px-3 py-1.5 text-xs text-success-fg hover:bg-success-bg disabled:opacity-60"
               disabled={loading || saving || runtimeBusy !== null || !baseHash}
             >
               {quickToggleLabel}
@@ -387,7 +387,7 @@ export function TailscaleView() {
               <p className="mb-1 font-medium text-foreground">Exposed URL{runtime.urls.length > 1 ? "s" : ""}</p>
               {runtime.urls.map((url) => (
                 <p key={url}>
-                  <a className="text-violet-300 hover:text-violet-200" href={url} target="_blank" rel="noreferrer">
+                  <a className="text-fg-secondary hover:text-fg-secondary" href={url} target="_blank" rel="noreferrer">
                     {url}
                   </a>
                 </p>
@@ -485,13 +485,13 @@ export function TailscaleView() {
           </div>
 
           {mode !== loadedMode && (
-            <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+            <div className="mt-3 rounded-md border border-warning-border bg-warning-bg p-3 text-xs text-warning-fg">
               Draft exposure mode is <code>{mode}</code> (not saved yet).
             </div>
           )}
 
           {runtime?.error && (
-            <div className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+            <div className="mt-3 rounded-md border border-danger-border bg-danger-bg p-3 text-xs text-danger-fg">
               Runtime status error: {runtime.error}
             </div>
           )}
@@ -554,7 +554,7 @@ export function TailscaleView() {
           )}
 
           {mode === "funnel" && authMode !== "password" && (
-            <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+            <div className="mt-4 rounded-md border border-warning-border bg-warning-bg p-3 text-xs text-warning-fg">
               <div className="mb-1 inline-flex items-center gap-1 font-medium">
                 <ShieldAlert className="h-3.5 w-3.5" />
                 Funnel mode requires password auth.
@@ -564,13 +564,13 @@ export function TailscaleView() {
           )}
 
           {error && (
-            <div className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+            <div className="mt-4 rounded-md border border-danger-border bg-danger-bg p-3 text-xs text-danger-fg">
               {error}
             </div>
           )}
 
           {notice && (
-            <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+            <div className="mt-4 rounded-md border border-success-border bg-success-bg p-3 text-xs text-success-fg">
               {notice}
             </div>
           )}
@@ -595,7 +595,7 @@ export function TailscaleView() {
             <button
               type="button"
               onClick={() => void save({ restartNow: true })}
-              className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-sm font-medium text-violet-200 hover:bg-violet-500/20 disabled:opacity-60"
+              className="rounded-md border border-border-strong bg-muted-foreground/10 px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-muted-foreground/20 disabled:opacity-60"
               disabled={loading || saving || !baseHash || !hasUnsaved}
             >
               Save + Restart

@@ -33,7 +33,7 @@ export function SaveShortcut({ className, keyClassName }: SaveShortcutProps) {
       <kbd className={cn("rounded bg-muted px-1 py-0.5 font-mono text-xs text-muted-foreground", keyClassName)}>
         {modifier === "cmd" ? "⌘" : modifier === "ctrl" ? "Ctrl" : "Mod"}
       </kbd>
-      <span className="text-muted-foreground/70">+</span>
+      <span className="text-muted-foreground">+</span>
       <kbd className={cn("rounded bg-muted px-1 py-0.5 font-mono text-xs text-muted-foreground", keyClassName)}>
         S
       </kbd>

@@ -44,18 +44,18 @@ export function CliModeBanner() {
     <div
       role="alert"
       aria-live="polite"
-      className="relative z-40 flex items-center gap-2.5 bg-amber-400/15 px-4 py-2 text-amber-800 dark:bg-amber-400/10 dark:text-amber-300 border-b border-amber-400/30"
+      className="relative z-40 flex items-center gap-2.5 bg-warning-bg px-4 py-2 text-warning-fg border-b border-warning-border"
     >
       <TriangleAlert className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
       <p className="flex-1 text-xs font-medium">
         {isForcedCli ? (
           <>
             Running in CLI mode because{" "}
-            <code className="rounded bg-amber-400/20 px-1 py-0.5 font-mono text-[11px]">
+            <code className="rounded bg-warning-bg px-1 py-0.5 font-mono text-[11px]">
               OPENCLAW_TRANSPORT=cli
             </code>{" "}
             is explicitly configured. Set{" "}
-            <code className="rounded bg-amber-400/20 px-1 py-0.5 font-mono text-[11px]">
+            <code className="rounded bg-warning-bg px-1 py-0.5 font-mono text-[11px]">
               OPENCLAW_TRANSPORT=auto
             </code>{" "}
             to re-enable automatic HTTP transport.
@@ -64,7 +64,7 @@ export function CliModeBanner() {
           <>
             Running in CLI fallback mode &mdash; HTTP transport is currently unavailable. Check Gateway connectivity and
             auth configuration, or set{" "}
-            <code className="rounded bg-amber-400/20 px-1 py-0.5 font-mono text-[11px]">
+            <code className="rounded bg-warning-bg px-1 py-0.5 font-mono text-[11px]">
               OPENCLAW_TRANSPORT=http
             </code>{" "}
             on stable VPS setups.
@@ -74,7 +74,7 @@ export function CliModeBanner() {
       <button
         type="button"
         onClick={handleDismiss}
-        className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+        className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-warning-border"
         aria-label="Dismiss CLI fallback warning"
       >
         <X className="h-3.5 w-3.5" />

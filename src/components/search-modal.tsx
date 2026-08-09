@@ -113,8 +113,8 @@ function scoreLabel(score: number): string {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 0.6) return "text-emerald-400";
-  if (score >= 0.45) return "text-amber-400";
+  if (score >= 0.6) return "text-success-fg";
+  if (score >= 0.45) return "text-warning-fg";
   return "text-muted-foreground";
 }
 
@@ -139,8 +139,8 @@ function escapeHtml(text: string): string {
 /** Highlight markdown-style bold tokens as HTML (sanitized) */
 function highlightSnippet(text: string): string {
   return escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, '<span class="text-foreground/90 font-semibold">$1</span>')
-    .replace(/`([^`]+)`/g, '<code class="rounded bg-muted px-1 py-0.5 text-xs text-violet-300 font-mono">$1</code>');
+    .replace(/\*\*(.+?)\*\*/g, '<span class="text-foreground font-semibold">$1</span>')
+    .replace(/`([^`]+)`/g, '<code class="rounded bg-muted px-1 py-0.5 text-xs text-fg-secondary font-mono">$1</code>');
 }
 
 /* ── sessionStorage result cache ── */
@@ -196,28 +196,44 @@ export function SearchModal({ open, onClose }: Props) {
   const isCommandMode = query.startsWith(">");
   const commandQuery = isCommandMode ? query.slice(1).trim().toLowerCase() : "";
 
-  // Filter quick actions for command palette
+  /**
+   * Destination matching. Plain text searches EVERYTHING — pages, settings and
+   * memory — because a user who presses Cmd+K and types "cron" wants the Cron
+   * page, not a semantic memory hit. The ">" prefix remains as an explicit
+   * "commands only" filter for people who know it, but nothing depends on
+   * discovering it.
+   */
   const filteredActions = useMemo(() => {
-    if (!isCommandMode && query.trim().length === 0) {
-      // Show top actions when empty (no ">" prefix needed)
-      return [];
-    }
-    if (!isCommandMode) return [];
-    if (!commandQuery) return quickActions;
-    return quickActions.filter(
-      (a) =>
-        a.label.toLowerCase().includes(commandQuery) ||
-        a.group.toLowerCase().includes(commandQuery) ||
-        a.keywords.some((k) => k.includes(commandQuery))
-    );
+    const term = (isCommandMode ? commandQuery : query.trim().toLowerCase());
+
+    // Empty input: show the most useful destinations rather than a blank panel.
+    if (!term) return isCommandMode ? quickActions : quickActions.slice(0, 6);
+
+    const scored = quickActions
+      .map((a) => {
+        const label = a.label.toLowerCase();
+        let score = 0;
+        if (label === term) score = 100;
+        else if (label.startsWith(term)) score = 80;
+        else if (label.includes(term)) score = 60;
+        else if (a.keywords.some((k) => k === term)) score = 55;
+        else if (a.keywords.some((k) => k.startsWith(term))) score = 45;
+        else if (a.keywords.some((k) => k.includes(term))) score = 35;
+        else if (a.group.toLowerCase().includes(term)) score = 25;
+        return { action: a, score };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || a.action.label.localeCompare(b.action.label));
+
+    return scored.map((x) => x.action);
   }, [isCommandMode, commandQuery, query]);
 
-  // Build unified items list for keyboard navigation
+  // Build unified items list for keyboard navigation. Destinations come first:
+  // they are exact, instant and local, while memory results are fuzzy.
   const unifiedItems = useMemo((): UnifiedItem[] => {
-    if (isCommandMode) {
-      return filteredActions.map((a) => ({ kind: "action" as const, action: a }));
-    }
-    return results.map((r) => ({ kind: "result" as const, result: r }));
+    const actions = filteredActions.map((a) => ({ kind: "action" as const, action: a }));
+    if (isCommandMode) return actions;
+    return [...actions, ...results.map((r) => ({ kind: "result" as const, result: r }))];
   }, [isCommandMode, filteredActions, results]);
 
   // Check vector index status on modal open
@@ -402,9 +418,9 @@ export function SearchModal({ open, onClose }: Props) {
           <div className="flex min-w-0 items-center gap-3 border-b border-foreground/10 px-4 py-3 sm:px-6">
             {loading ? (
               <span className="inline-flex shrink-0 items-center gap-0.5">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
               </span>
             ) : (
               <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
@@ -415,11 +431,11 @@ export function SearchModal({ open, onClose }: Props) {
               onChange={(e) => handleQueryChange(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search memories or type > to navigate..."
-              className="min-w-0 flex-1 bg-transparent text-sm text-foreground/90 outline-none placeholder:text-muted-foreground/60"
+              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-fg-subtle"
               spellCheck={false}
               autoComplete="off"
             />
-            <kbd className="hidden rounded border border-foreground/10 bg-muted/70 px-1.5 py-0.5 text-xs text-muted-foreground/60 sm:inline">
+            <kbd className="hidden rounded border border-foreground/10 bg-muted/70 px-1.5 py-0.5 text-xs text-fg-subtle sm:inline">
               ESC
             </kbd>
           </div>
@@ -428,22 +444,22 @@ export function SearchModal({ open, onClose }: Props) {
           <div ref={resultListRef} className="max-h-96 overflow-x-hidden overflow-y-auto">
             {/* Index warning banner */}
             {indexWarning && !isCommandMode && (
-              <div className="flex items-center gap-2 border-b border-foreground/5 bg-amber-500/5 px-4 py-2 sm:px-6">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                <span className="text-xs text-amber-400/90">{indexWarning}</span>
+              <div className="flex items-center gap-2 border-b border-foreground/5 bg-warning-bg px-4 py-2 sm:px-6">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning-fg" />
+                <span className="text-xs text-warning-fg">{indexWarning}</span>
               </div>
             )}
 
             {/* Empty state hint */}
             {showEmptyHint && (
               <div className="flex flex-col items-center gap-3 px-4 py-10 text-center sm:px-6">
-                <div className="flex items-center gap-2 text-muted-foreground/60">
+                <div className="flex items-center gap-2 text-fg-subtle">
                   <Brain className="h-5 w-5" />
                   <span className="text-sm font-medium">
                     Semantic Memory Search
                   </span>
                 </div>
-                <p className="max-w-sm text-xs leading-5 text-muted-foreground/60">
+                <p className="max-w-sm text-xs leading-5 text-fg-subtle">
                   Search across MEMORY.md and daily journals using vector
                   search. Type at least 2 characters, or type{" "}
                   <kbd className="rounded border border-foreground/10 bg-muted/60 px-1 py-0.5 font-mono">
@@ -454,11 +470,11 @@ export function SearchModal({ open, onClose }: Props) {
               </div>
             )}
 
-            {/* Command palette mode */}
-            {isCommandMode && (
+            {/* Destinations — pages, settings, features */}
+            {(isCommandMode || filteredActions.length > 0) && (
               <div className="min-w-0 py-2">
-                {filteredActions.length === 0 ? (
-                  <div className="px-4 py-10 text-center text-sm text-muted-foreground/60 sm:px-6">
+                {isCommandMode && filteredActions.length === 0 ? (
+                  <div className="px-4 py-10 text-center text-sm text-fg-subtle sm:px-6">
                     No matching pages for &quot;{commandQuery}&quot;
                   </div>
                 ) : (
@@ -475,7 +491,7 @@ export function SearchModal({ open, onClose }: Props) {
                           <div key={action.id}>
                             {showGroup && (
                               <div className="px-4 pb-1 pt-3 first:pt-1 sm:px-6">
-                                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/40">
+                                <span className="text-xs font-medium uppercase tracking-wider text-fg-subtle">
                                   {action.group}
                                 </span>
                               </div>
@@ -486,15 +502,15 @@ export function SearchModal({ open, onClose }: Props) {
                               className={cn(
                                 "flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors sm:px-6",
                                 isSelected
-                                  ? "bg-violet-500/10 text-foreground"
-                                  : "text-foreground/70 hover:bg-muted/60"
+                                  ? "bg-muted-foreground/10 text-foreground"
+                                  : "text-fg-secondary hover:bg-muted/60"
                               )}
                               onMouseEnter={() => setSelectedIdx(idx)}
                               onClick={() => openAction(action)}
                             >
                               <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                               <span className="flex-1">{action.label}</span>
-                              <span className="text-xs text-muted-foreground/40">{action.group}</span>
+                              <span className="text-xs text-fg-subtle">{action.group}</span>
                             </button>
                           </div>
                         );
@@ -519,14 +535,14 @@ export function SearchModal({ open, onClose }: Props) {
 
             {/* Error state */}
             {!isCommandMode && error && !loading && (
-              <div className="px-4 py-10 text-center text-sm text-red-400 sm:px-6">
+              <div className="px-4 py-10 text-center text-sm text-danger-fg sm:px-6">
                 {error}
               </div>
             )}
 
             {/* No results */}
             {!isCommandMode && searched && !loading && !error && results.length === 0 && (
-              <div className="px-4 py-10 text-center text-sm text-muted-foreground/60 sm:px-6">
+              <div className="px-4 py-10 text-center text-sm text-fg-subtle sm:px-6">
                 No matches found for &quot;{query}&quot;
               </div>
             )}
@@ -535,11 +551,12 @@ export function SearchModal({ open, onClose }: Props) {
             {!isCommandMode && results.length > 0 && (
               <div className="min-w-0 py-2">
                 <div className="px-4 pb-2 sm:px-6">
-                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+                  <span className="text-xs font-medium uppercase tracking-wider text-fg-subtle">
                     {results.length} result{results.length !== 1 ? "s" : ""}
                   </span>
                 </div>
-                {results.map((result, idx) => {
+                {results.map((result, rIdx) => {
+                  const idx = filteredActions.length + rIdx;
                   const { icon, label } = pathDisplay(result.path);
                   const isSelected = idx === selectedIdx;
                   return (
@@ -550,7 +567,7 @@ export function SearchModal({ open, onClose }: Props) {
                       className={cn(
                         "flex w-full min-w-0 flex-col gap-1.5 px-4 py-3 text-left transition-colors sm:px-6",
                         isSelected
-                          ? "bg-violet-500/10"
+                          ? "bg-muted-foreground/10"
                           : "hover:bg-muted/60"
                       )}
                       onMouseEnter={() => setSelectedIdx(idx)}
@@ -559,10 +576,10 @@ export function SearchModal({ open, onClose }: Props) {
                       {/* Header row */}
                       <div className="flex min-w-0 items-center gap-2">
                         <span className="shrink-0 text-sm">{icon}</span>
-                        <span className="min-w-0 truncate text-xs font-medium text-foreground/70">
+                        <span className="min-w-0 truncate text-xs font-medium text-fg-secondary">
                           {label}
                         </span>
-                        <span className="text-xs text-muted-foreground/60">
+                        <span className="text-xs text-fg-subtle">
                           L{result.startLine}–{result.endLine}
                         </span>
                         <div className="flex-1" />
@@ -594,7 +611,7 @@ export function SearchModal({ open, onClose }: Props) {
           </div>
 
           {/* Footer */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-foreground/10 px-4 py-2 text-xs text-muted-foreground/60 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-foreground/10 px-4 py-2 text-xs text-fg-subtle sm:px-6">
             <span>
               {isCommandMode ? (
                 "Type to filter pages"

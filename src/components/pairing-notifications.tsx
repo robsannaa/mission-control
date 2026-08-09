@@ -60,11 +60,11 @@ const CHANNEL_ICONS: Record<string, string> = {
 };
 
 const CHANNEL_COLORS: Record<string, string> = {
-  telegram: "bg-sky-500/20 text-sky-400 border-sky-500/30",
-  whatsapp: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  discord: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
-  slack: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  signal: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  telegram: "bg-info-bg text-info-fg border-info-border",
+  whatsapp: "bg-success-bg text-success-fg border-success-border",
+  discord: "bg-info-bg text-info-fg border-info-border",
+  slack: "bg-muted-foreground/20 text-fg-secondary border-border-strong",
+  signal: "bg-info-bg text-info-fg border-info-border",
 };
 
 function formatTimeAgo(dateStr?: string, ms?: number): string {
@@ -100,7 +100,7 @@ function DmRequestCard({
 }) {
   const icon = CHANNEL_ICONS[req.channel] || "\u{1F4E8}";
   const colorClass =
-    CHANNEL_COLORS[req.channel] || "bg-zinc-500/20 text-muted-foreground border-zinc-500/30";
+    CHANNEL_COLORS[req.channel] || "bg-muted-foreground/20 text-muted-foreground border-border-strong/30";
 
   return (
     <div className="rounded-lg border border-foreground/10 bg-foreground/5 p-3 transition-all hover:border-foreground/10">
@@ -115,14 +115,14 @@ function DmRequestCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold capitalize text-foreground/90">
+            <span className="text-xs font-semibold capitalize text-foreground">
               {req.channel}
             </span>
-            <MessageCircle className="h-3 w-3 text-muted-foreground/60" />
-            <span className="text-xs text-muted-foreground/60">DM pairing</span>
+            <MessageCircle className="h-3 w-3 text-fg-subtle" />
+            <span className="text-xs text-fg-subtle">DM pairing</span>
           </div>
           <div className="mt-0.5 flex items-center gap-2">
-            <code className="rounded bg-violet-500/10 px-1.5 py-0.5 text-xs font-bold tracking-wider text-violet-300">
+            <code className="rounded bg-muted-foreground/10 px-1.5 py-0.5 text-xs font-bold tracking-wider text-fg-secondary">
               {req.code}
             </code>
             {req.senderName && (
@@ -137,13 +137,13 @@ function DmRequestCard({
             )}
           </div>
           {req.message && (
-            <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/60 italic">
+            <p className="mt-1 line-clamp-1 text-xs text-fg-subtle italic">
               &ldquo;{req.message}&rdquo;
             </p>
           )}
           <div className="mt-1.5 flex items-center gap-2">
             {req.createdAt && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground/60">
+              <span className="flex items-center gap-1 text-xs text-fg-subtle">
                 <Clock className="h-2.5 w-2.5" />
                 {formatTimeAgo(req.createdAt)}
               </span>
@@ -155,7 +155,7 @@ function DmRequestCard({
         <button
           onClick={onApprove}
           disabled={busy}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-success py-1.5 text-xs font-medium text-white transition-colors hover:bg-success disabled:opacity-50"
         >
           {busy ? (
             <span className="inline-flex items-center gap-0.5">
@@ -189,16 +189,16 @@ function DeviceRequestCard({
   return (
     <div className="rounded-lg border border-foreground/10 bg-foreground/5 p-3 transition-all hover:border-foreground/10">
       <div className="flex items-start gap-2.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/20 text-amber-400">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-warning-border bg-warning-bg text-warning-fg">
           <PlatformIcon platform={req.platform} className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-foreground/90">
+            <span className="text-xs font-semibold text-foreground">
               {req.displayName || req.clientId || "Unknown Device"}
             </span>
-            <Smartphone className="h-3 w-3 text-muted-foreground/60" />
-            <span className="text-xs text-muted-foreground/60">Device pairing</span>
+            <Smartphone className="h-3 w-3 text-fg-subtle" />
+            <span className="text-xs text-fg-subtle">Device pairing</span>
           </div>
           {req.platform && (
             <p className="mt-0.5 text-xs text-muted-foreground">{req.platform}</p>
@@ -215,7 +215,7 @@ function DeviceRequestCard({
               </span>
             )}
             {req.createdAtMs && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground/60">
+              <span className="flex items-center gap-1 text-xs text-fg-subtle">
                 <Clock className="h-2.5 w-2.5" />
                 {formatTimeAgo(undefined, req.createdAtMs)}
               </span>
@@ -227,7 +227,7 @@ function DeviceRequestCard({
         <button
           onClick={onApprove}
           disabled={busy}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-success py-1.5 text-xs font-medium text-white transition-colors hover:bg-success disabled:opacity-50"
         >
           {busy ? (
             <span className="inline-flex items-center gap-0.5">
@@ -243,7 +243,7 @@ function DeviceRequestCard({
         <button
           onClick={onReject}
           disabled={busy}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/15 disabled:opacity-50"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-danger-border bg-danger-bg py-1.5 text-xs font-medium text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-50"
         >
           {busy ? (
             <span className="inline-flex items-center gap-0.5">
@@ -421,7 +421,7 @@ export function PairingNotifications() {
         className={cn(
           "relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors",
           count > 0
-            ? "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+            ? "border-warning-border bg-warning-bg text-warning-fg hover:bg-warning-bg"
             : "border-foreground/10 bg-card text-muted-foreground hover:bg-muted/80"
         )}
         aria-label={`Pairing requests: ${count}`}
@@ -439,14 +439,14 @@ export function PairingNotifications() {
 
         {/* Badge */}
         {count > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white shadow-lg shadow-red-500/30">
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-xs font-bold text-white shadow-lg shadow-danger-border">
             {count}
           </span>
         )}
 
         {/* Pulse ring when new */}
         {hasNew && count > 0 && (
-          <span className="absolute inset-0 animate-ping rounded-lg border border-amber-400/40" />
+          <span className="absolute inset-0 animate-ping rounded-lg border border-warning-border" />
         )}
       </button>
 
@@ -456,12 +456,12 @@ export function PairingNotifications() {
           {/* Header */}
           <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-2.5">
             <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-violet-400" />
-              <span className="text-sm font-semibold text-foreground/90">
+              <Shield className="h-4 w-4 text-fg-secondary" />
+              <span className="text-sm font-semibold text-foreground">
                 Pairing Requests
               </span>
               {count > 0 && (
-                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-xs font-bold text-red-400">
+                <span className="rounded-full bg-danger-bg px-1.5 py-0.5 text-xs font-bold text-danger-fg">
                   {count}
                 </span>
               )}
@@ -469,7 +469,7 @@ export function PairingNotifications() {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded p-0.5 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              className="rounded p-0.5 text-fg-subtle transition-colors hover:text-muted-foreground"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -479,11 +479,11 @@ export function PairingNotifications() {
           <div className="max-h-96 overflow-y-auto">
             {count === 0 ? (
               <div className="px-4 py-8 text-center">
-                <ShieldCheck className="mx-auto mb-2 h-8 w-8 text-emerald-500/40" />
+                <ShieldCheck className="mx-auto mb-2 h-8 w-8 text-success-fg" />
                 <p className="text-sm font-medium text-muted-foreground">
                   All clear
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground/60">
+                <p className="mt-1 text-xs text-fg-subtle">
                   No pending pairing requests. When someone tries to DM your
                   bot or a new device connects, it will show up here.
                 </p>
@@ -516,7 +516,7 @@ export function PairingNotifications() {
 
           {/* Footer */}
           <div className="border-t border-foreground/10 px-4 py-2">
-            <p className="text-xs text-muted-foreground/60">
+            <p className="text-xs text-fg-subtle">
               Polling every 15s &middot; DM codes expire after 1 hour
             </p>
           </div>
@@ -527,8 +527,8 @@ export function PairingNotifications() {
               className={cn(
                 "absolute bottom-10 left-1/2 z-10 -translate-x-1/2 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-lg",
                 toast.type === "success"
-                  ? "border-emerald-500/30 bg-emerald-950/90 text-emerald-300"
-                  : "border-red-500/30 bg-red-950/90 text-red-300"
+                  ? "border-success-border bg-success-bg text-success-fg"
+                  : "border-danger-border bg-danger-bg text-danger-fg"
               )}
             >
               <div className="flex items-center gap-1.5">

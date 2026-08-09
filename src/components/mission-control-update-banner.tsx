@@ -115,10 +115,10 @@ export function MissionControlUpdateBanner() {
 
   return (
     <div className="fixed bottom-4 left-4 z-50 w-80 animate-in slide-in-from-bottom-4 fade-in duration-300">
-      <div className="rounded-xl border border-emerald-500/20 bg-card/95 shadow-2xl backdrop-blur-sm">
+      <div className="rounded-xl border border-success-border bg-card/95 shadow-2xl backdrop-blur-sm">
         <div className="flex items-start gap-3 px-4 py-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15">
-            <ArrowUpCircle className="h-4 w-4 text-emerald-400" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-success-bg">
+            <ArrowUpCircle className="h-4 w-4 text-success-fg" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold text-foreground">
@@ -128,7 +128,7 @@ export function MissionControlUpdateBanner() {
               <p className="text-xs text-muted-foreground">You have v{info.currentVersion}</p>
             )}
             {!info.supported && (
-              <p className="mt-1 text-[11px] text-amber-400">
+              <p className="mt-1 text-[11px] text-warning-fg">
                 {info.unsupportedReason || "In-dashboard update is unavailable for this install mode."}
               </p>
             )}
@@ -136,7 +136,7 @@ export function MissionControlUpdateBanner() {
           <button
             type="button"
             onClick={handleDismiss}
-            className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+            className="shrink-0 rounded-md p-1 text-fg-subtle transition-colors hover:text-muted-foreground"
             aria-label="Dismiss Mission Control update"
           >
             <X className="h-3.5 w-3.5" />
@@ -159,7 +159,7 @@ export function MissionControlUpdateBanner() {
               type="button"
               onClick={() => void handleRunUpdate()}
               disabled={updating}
-              className="ml-auto flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-xs font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="ml-auto flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
             >
               {updating ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowUpCircle className="h-3 w-3" />}
               {updating ? "Updating..." : "Update"}
@@ -168,8 +168,8 @@ export function MissionControlUpdateBanner() {
         </div>
         {(error || success) && (
           <div className="border-t border-border/50 px-4 py-2">
-            {error && <p className="text-[11px] text-red-400">{error}</p>}
-            {!error && success && <p className="text-[11px] text-emerald-400">{success}</p>}
+            {error && <p className="text-[11px] text-danger-fg">{error}</p>}
+            {!error && success && <p className="text-[11px] text-success-fg">{success}</p>}
           </div>
         )}
       </div>

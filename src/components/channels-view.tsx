@@ -15,7 +15,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { cn } from "@/lib/utils";
 
@@ -102,18 +102,18 @@ function getChannelBadge(channel: ChannelStatus): { label: string; className: st
   if (channel.connected) {
     return {
       label: "Connected",
-      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+      className: "border-success-border bg-success-bg text-success-fg",
     };
   }
   if (channel.configured || channel.enabled) {
     return {
       label: "Configured",
-      className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+      className: "border-warning-border bg-warning-bg text-warning-fg",
     };
   }
   return {
     label: "Not connected",
-    className: "border-stone-300/70 bg-stone-100 text-stone-600 dark:border-[#2a3139] dark:bg-[#151a20] dark:text-stone-400",
+    className: "border-border-strong/70 bg-muted text-fg-secondary dark:border-border dark:text-fg-subtle",
   };
 }
 
@@ -426,7 +426,7 @@ export function ChannelsView() {
       <SectionLayout>
         <SectionHeader title="Channels" description="Manage your agents' chat channels after onboarding." bordered />
         <SectionBody>
-          <LoadingState label="Loading channels..." />
+          <ScreenLoadingState label="Loading channels..." />
         </SectionBody>
       </SectionLayout>
     );
@@ -445,7 +445,7 @@ export function ChannelsView() {
               setAgentsLoading(true);
               void refreshAll().finally(() => setAgentsLoading(false));
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-100 dark:border-[#2a3139] dark:text-[#d6dce3] dark:hover:bg-[#171d23]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -454,22 +454,22 @@ export function ChannelsView() {
       />
       <SectionBody width="content" innerClassName="space-y-4">
         {error && (
-          <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+          <div className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-xs text-danger-fg">
             {error}
           </div>
         )}
         {notice && (
-          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-200">
+          <div className="rounded-xl border border-success-border bg-success-bg px-4 py-3 text-xs text-success-fg">
             {notice}
           </div>
         )}
 
         {gatewayOffline ? (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-10 text-center">
-            <PlugZap className="h-8 w-8 text-amber-400" />
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-warning-border bg-warning-bg px-4 py-10 text-center">
+            <PlugZap className="h-8 w-8 text-warning-fg" />
             <div>
-              <p className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">Gateway offline</p>
-              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-stone-500 dark:text-[#9aa3ad]">
+              <p className="text-sm font-semibold text-foreground">Gateway offline</p>
+              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                 Mission Control could not reach the OpenClaw gateway, so channel status is unknown.
                 Your channels may still be configured — this is not the same as &quot;not connected&quot;.
               </p>
@@ -480,7 +480,7 @@ export function ChannelsView() {
                 setAgentsLoading(true);
                 void refreshAll().finally(() => setAgentsLoading(false));
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 px-3 py-2 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/10"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-warning-border px-3 py-2 text-xs font-semibold text-warning-fg transition-colors hover:bg-warning-bg"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Retry
@@ -499,11 +499,11 @@ export function ChannelsView() {
           const tokenSetup = state.setupType === "token";
 
           return (
-            <section key={channel} className="space-y-3 rounded-xl border border-stone-200 bg-white/85 p-4 dark:border-[#232a32] dark:bg-[#11161c]">
+            <section key={channel} className="space-y-3 rounded-xl border border-border bg-white/85 p-4 dark:bg-background">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-base">{state.icon}</span>
-                  <h2 className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">{state.label}</h2>
+                  <h2 className="text-sm font-semibold text-foreground">{state.label}</h2>
                   <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", badge.className)}>
                     {badge.label}
                   </span>
@@ -522,20 +522,20 @@ export function ChannelsView() {
               </div>
 
               {state.setupHint && (
-                <p className="text-xs text-stone-500 dark:text-[#9aa3ad]">{state.setupHint}</p>
+                <p className="text-xs text-muted-foreground">{state.setupHint}</p>
               )}
               {state.error && (
-                <p className="inline-flex items-center gap-1 text-xs text-red-300">
+                <p className="inline-flex items-center gap-1 text-xs text-danger-fg">
                   <AlertTriangle className="h-3 w-3" />
                   {state.error}
                 </p>
               )}
 
-              <div className="flex flex-wrap items-end gap-2 rounded-lg border border-stone-200/80 bg-stone-50/70 p-3 dark:border-[#27303a] dark:bg-[#0f141a]">
+              <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border/80 bg-muted/70 p-3 dark:border-border dark:bg-background">
                 {tokenSetup ? (
                   <>
                     <label className="min-w-[220px] flex-1">
-                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-400 dark:text-[#7d8793]">
+                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
                         {state.tokenLabel || "Bot Token"}
                       </span>
                       <input
@@ -543,7 +543,7 @@ export function ChannelsView() {
                         value={tokenDraft}
                         onChange={(e) => setTokenDrafts((prev) => ({ ...prev, [channel]: e.target.value }))}
                         placeholder={state.tokenPlaceholder || "Paste bot token"}
-                        className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs text-stone-900 outline-none focus:border-stone-400 dark:border-[#2d3640] dark:bg-[#0d1116] dark:text-[#f5f7fa] dark:focus:border-[#566474]"
+                        className="w-full rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground outline-none focus:border-border-strong dark:bg-sidebar"
                       />
                     </label>
                     <button
@@ -558,11 +558,11 @@ export function ChannelsView() {
                   </>
                 ) : (
                   <div className="min-w-[220px] flex-1">
-                    <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-400 dark:text-[#7d8793]">
+                    <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
                       {state.setupType === "qr" ? "QR link setup" : "CLI setup"}
                     </span>
                     {state.setupCommand ? (
-                      <code className="block w-full truncate rounded-lg border border-stone-200 bg-white px-3 py-2 font-mono text-[11px] text-stone-700 dark:border-[#2d3640] dark:bg-[#0d1116] dark:text-[#d6dce3]">
+                      <code className="block w-full truncate rounded-lg border border-border bg-card px-3 py-2 font-mono text-[11px] text-fg-secondary dark:bg-sidebar">
                         {state.setupCommand}
                       </code>
                     ) : null}
@@ -572,7 +572,7 @@ export function ChannelsView() {
                   type="button"
                   disabled={(!state.enabled && !state.configured) || connectBusy || disconnectBusy || deleteBusy}
                   onClick={() => void mutateChannel(channel, "disconnect")}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-40 dark:border-[#2a3139] dark:text-[#d6dce3] dark:hover:bg-[#171d23]"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-fg-secondary transition-colors hover:bg-muted disabled:opacity-40"
                 >
                   {disconnectBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
                   Disconnect
@@ -581,21 +581,21 @@ export function ChannelsView() {
                   type="button"
                   disabled={(!state.enabled && !state.configured) || connectBusy || disconnectBusy || deleteBusy}
                   onClick={() => void mutateChannel(channel, "delete")}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-2 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-40"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-danger-border px-3 py-2 text-xs font-semibold text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-40"
                 >
                   {deleteBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                   Delete config
                 </button>
               </div>
 
-              <div className="rounded-lg border border-stone-200/80 bg-stone-50/70 p-3 dark:border-[#27303a] dark:bg-[#0f141a]">
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-stone-700 dark:text-[#d6dce3]">
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+              <div className="rounded-lg border border-border/80 bg-muted/70 p-3 dark:border-border dark:bg-background">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-fg-secondary">
+                  <ShieldCheck className="h-3.5 w-3.5 text-success-fg" />
                   Pairing approvals
                 </div>
                 {state.enabled || state.configured ? (
                   <>
-                    <p className="mb-2 text-xs text-stone-500 dark:text-[#9aa3ad]">
+                    <p className="mb-2 text-xs text-muted-foreground">
                       Send any DM to your {state.label} bot
                       {botHandles[channel] ? (
                         <>
@@ -620,7 +620,7 @@ export function ChannelsView() {
                       , then approve it here.
                     </p>
                     {pending.length === 0 ? (
-                      <p className="text-xs text-stone-400 dark:text-[#6f7b87]">No pending requests.</p>
+                      <p className="text-xs text-fg-subtle">No pending requests.</p>
                     ) : (
                       <div className="space-y-2">
                         {pending.map((req) => {
@@ -629,27 +629,27 @@ export function ChannelsView() {
                           return (
                             <div
                               key={key}
-                              className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs dark:border-[#2a323c] dark:bg-[#121820]"
+                              className="rounded-lg border border-border bg-card px-3 py-2 text-xs dark:bg-background"
                             >
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="space-y-0.5">
-                                  <p className="font-semibold text-stone-800 dark:text-[#f0f4f8]">
+                                  <p className="font-semibold text-foreground">
                                     {req.senderName || req.senderId || "Unknown sender"}
                                   </p>
-                                  <p className="font-mono text-[11px] text-violet-400">{req.code}</p>
+                                  <p className="font-mono text-[11px] text-fg-secondary">{req.code}</p>
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => void handleApprove(req)}
                                   disabled={isApproving}
-                                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                                  className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/88 disabled:opacity-50"
                                 >
                                   {isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
                                   Approve
                                 </button>
                               </div>
                               {req.message ? (
-                                <p className="mt-1 line-clamp-1 text-[11px] italic text-stone-500 dark:text-[#8f9aa6]">
+                                <p className="mt-1 line-clamp-1 text-[11px] italic text-muted-foreground">
                                   &quot;{req.message}&quot;
                                 </p>
                               ) : null}
@@ -660,18 +660,18 @@ export function ChannelsView() {
                     )}
                   </>
                 ) : (
-                  <p className="text-xs text-stone-400 dark:text-[#6f7b87]">Connect the channel first to receive pairing requests.</p>
+                  <p className="text-xs text-fg-subtle">Connect the channel first to receive pairing requests.</p>
                 )}
               </div>
 
-              <div className="rounded-lg border border-stone-200/80 bg-stone-50/70 p-3 dark:border-[#27303a] dark:bg-[#0f141a]">
-                <div className="mb-2 text-xs font-semibold text-stone-700 dark:text-[#d6dce3]">Default routing</div>
+              <div className="rounded-lg border border-border/80 bg-muted/70 p-3 dark:border-border dark:bg-background">
+                <div className="mb-2 text-xs font-semibold text-fg-secondary">Default routing</div>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={routeDrafts[channel] || ""}
                     onChange={(e) => setRouteDrafts((prev) => ({ ...prev, [channel]: e.target.value }))}
                     disabled={agentsLoading}
-                    className="min-w-[220px] flex-1 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs text-stone-800 outline-none focus:border-stone-400 dark:border-[#2d3640] dark:bg-[#0d1116] dark:text-[#f5f7fa] dark:focus:border-[#566474]"
+                    className="min-w-[220px] flex-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground outline-none focus:border-border-strong dark:bg-sidebar"
                   >
                     <option value="">{agentsLoading ? "Loading agents..." : "No default route"}</option>
                     {agents.map((agent) => (
@@ -684,13 +684,13 @@ export function ChannelsView() {
                     type="button"
                     disabled={saveRouteBusy || agentsLoading}
                     onClick={() => void setDefaultRoute(channel, routeDrafts[channel] || "")}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-40 dark:border-[#2a3139] dark:text-[#d6dce3] dark:hover:bg-[#171d23]"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-fg-secondary transition-colors hover:bg-muted disabled:opacity-40"
                   >
                     {saveRouteBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                     Save route
                   </button>
                 </div>
-                <p className="mt-2 text-[11px] text-stone-400 dark:text-[#768290]">
+                <p className="mt-2 text-[11px] text-fg-subtle">
                   This manages the default binding (`{channel}:default`). For account-specific bindings, use{" "}
                   <Link href="/agents" className="text-[var(--accent-brand-text)] hover:text-[var(--accent-brand)]">
                     Agents

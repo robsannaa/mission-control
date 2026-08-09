@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 
 /* ── types ────────────────────────────────────────── */
@@ -59,26 +59,26 @@ const TYPE_CONFIG: Record<
 > = {
   cron: {
     icon: Clock,
-    iconClass: "text-amber-600 dark:text-amber-400",
-    dotClass: "bg-amber-500",
+    iconClass: "text-muted-foreground",
+    dotClass: "bg-warning",
     label: "Cron",
   },
   session: {
     icon: Zap,
-    iconClass: "text-emerald-600 dark:text-emerald-400",
-    dotClass: "bg-emerald-500",
+    iconClass: "text-muted-foreground",
+    dotClass: "bg-success",
     label: "Session",
   },
   log: {
     icon: Terminal,
-    iconClass: "text-stone-500 dark:text-stone-400",
-    dotClass: "bg-stone-400 dark:bg-stone-500",
+    iconClass: "text-muted-foreground dark:text-fg-subtle",
+    dotClass: "bg-muted-foreground",
     label: "Log",
   },
   system: {
     icon: Radio,
-    iconClass: "text-sky-600 dark:text-sky-400",
-    dotClass: "bg-sky-500",
+    iconClass: "text-muted-foreground",
+    dotClass: "bg-info",
     label: "System",
   },
 };
@@ -94,27 +94,27 @@ const STATUS_CONFIG: Record<
 > = {
   ok: {
     icon: CheckCircle,
-    iconClass: "text-emerald-500 dark:text-emerald-400",
-    dotClass: "bg-emerald-500",
-    borderClass: "border-l-emerald-400 dark:border-l-emerald-500/70",
+    iconClass: "text-success-fg",
+    dotClass: "bg-success",
+    borderClass: "border-l-success",
   },
   error: {
     icon: AlertCircle,
-    iconClass: "text-red-500 dark:text-red-400",
-    dotClass: "bg-red-500",
-    borderClass: "border-l-red-400 dark:border-l-red-500/70",
+    iconClass: "text-danger-fg",
+    dotClass: "bg-danger",
+    borderClass: "border-l-danger",
   },
   warning: {
     icon: AlertTriangle,
-    iconClass: "text-amber-500 dark:text-amber-400",
-    dotClass: "bg-amber-500",
-    borderClass: "border-l-amber-400 dark:border-l-amber-500/70",
+    iconClass: "text-warning-fg",
+    dotClass: "bg-warning",
+    borderClass: "border-l-warning",
   },
   info: {
     icon: Info,
-    iconClass: "text-sky-500 dark:text-sky-400",
-    dotClass: "bg-sky-500",
-    borderClass: "border-l-sky-400 dark:border-l-sky-500/70",
+    iconClass: "text-info-fg",
+    dotClass: "bg-info",
+    borderClass: "border-l-info",
   },
 };
 
@@ -127,13 +127,14 @@ const FILTER_PILLS: { key: FilterType; label: string }[] = [
 
 function EventCard({ event }: { event: ActivityEvent }) {
   const typeConf = TYPE_CONFIG[event.type];
-  const statusConf = event.status ? STATUS_CONFIG[event.status] : null;
+  const needsAttention = event.status === "error" || event.status === "warning";
+  const statusConf = needsAttention && event.status ? STATUS_CONFIG[event.status] : null;
   const TypeIcon = typeConf.icon;
 
   return (
     <div
       className={cn(
-        "rounded-xl border border-stone-200 bg-white p-4 shadow-sm dark:border-[#2c343d] dark:bg-[#171a1d]",
+        "rounded-xl border border-border bg-card p-4 shadow-sm",
       )}
     >
       <div className="flex items-start gap-3">
@@ -142,19 +143,17 @@ function EventCard({ event }: { event: ActivityEvent }) {
           <div
             className={cn(
               "flex h-7 w-7 items-center justify-center rounded-lg",
-              "bg-stone-100 dark:bg-[#20252a]",
+              "bg-muted dark:bg-secondary",
             )}
           >
             <TypeIcon className={cn("h-3.5 w-3.5", typeConf.iconClass)} />
           </div>
-          {/* Type dot */}
-          <span className={cn("h-1.5 w-1.5 rounded-full", typeConf.dotClass)} />
         </div>
 
         {/* Main content */}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-            <p className="min-w-0 truncate text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
+            <p className="min-w-0 truncate text-sm font-semibold text-foreground">
               {event.title}
             </p>
 
@@ -165,13 +164,13 @@ function EventCard({ event }: { event: ActivityEvent }) {
                   className={cn(
                     "flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
                     event.status === "ok" &&
-                      "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+                      "text-muted-foreground",
                     event.status === "error" &&
-                      "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+                      "bg-danger-bg text-danger-fg",
                     event.status === "warning" &&
-                      "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+                      "bg-warning-bg text-warning-fg",
                     event.status === "info" &&
-                      "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+                      "text-muted-foreground",
                   )}
                 >
                   <span className={cn("h-1.5 w-1.5 rounded-full", statusConf.dotClass)} />
@@ -180,7 +179,7 @@ function EventCard({ event }: { event: ActivityEvent }) {
               )}
 
               {/* Relative time */}
-              <span className="text-xs text-stone-500 dark:text-[#8d98a5]">
+              <span className="text-xs text-muted-foreground">
                 {timeAgo(event.timestamp)}
               </span>
             </div>
@@ -188,14 +187,14 @@ function EventCard({ event }: { event: ActivityEvent }) {
 
           {/* Detail line */}
           {event.detail && (
-            <p className="mt-1 text-xs text-stone-500 dark:text-[#8d98a5] line-clamp-2">
+            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
               {event.detail}
             </p>
           )}
 
           {/* Source badge */}
           {event.source && (
-            <p className="mt-1.5 text-xs font-medium text-stone-400 dark:text-[#7a8591]">
+            <p className="mt-1.5 text-xs font-medium text-fg-subtle">
               {event.source}
             </p>
           )}
@@ -237,7 +236,7 @@ export function ActivityView() {
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading activity..." />
+        <ScreenLoadingState />
       </SectionLayout>
     );
   }
@@ -255,7 +254,7 @@ export function ActivityView() {
               setLoading(true);
               void fetchActivity();
             }}
-            className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900 dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#c7d0d9] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-secondary"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -266,7 +265,7 @@ export function ActivityView() {
       <SectionBody>
         {/* Filter pills */}
         <div className="mb-5 flex flex-wrap items-center gap-2" role="group" aria-label="Filter activity by type">
-          <Filter className="h-3.5 w-3.5 shrink-0 text-stone-400 dark:text-[#8d98a5]" />
+          <Filter className="h-3.5 w-3.5 shrink-0 text-fg-subtle dark:text-muted-foreground" />
           {FILTER_PILLS.map((pill) => (
             <button
               key={pill.key}
@@ -276,8 +275,8 @@ export function ActivityView() {
               className={cn(
                 "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
                 activeFilter === pill.key
-                  ? "bg-stone-900 text-white dark:bg-[#f5f7fa] dark:text-[#101214]"
-                  : "border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 hover:text-stone-900 dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#c7d0d9] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]",
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border bg-card text-fg-secondary hover:bg-muted hover:text-foreground dark:hover:bg-secondary",
               )}
             >
               {pill.label}
@@ -289,10 +288,10 @@ export function ActivityView() {
         {filtered.length === 0 ? (
           /* Empty state */
           <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-stone-100 dark:bg-[#20252a]">
-              <Activity className="h-6 w-6 text-stone-400 dark:text-[#8d98a5]" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted dark:bg-secondary">
+              <Activity className="h-6 w-6 text-fg-subtle dark:text-muted-foreground" />
             </div>
-            <p className="text-sm font-medium text-stone-500 dark:text-[#8d98a5]">
+            <p className="text-sm font-medium text-muted-foreground">
               {activeFilter === "all"
                 ? "No recent activity"
                 : `No ${activeFilter} events — try a different filter`}

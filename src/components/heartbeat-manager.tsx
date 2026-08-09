@@ -13,7 +13,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { requestRestart } from "@/lib/restart-store";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
 
 type JsonObject = Record<string, unknown>;
@@ -603,7 +603,7 @@ function HeartbeatFormFields({
 
       <div className="rounded-lg border border-foreground/10 bg-muted/25 p-3">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium text-foreground/80">Active Hours</p>
+          <p className="text-xs font-medium text-foreground">Active Hours</p>
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -664,7 +664,7 @@ function HeartbeatFormFields({
                       }}
                       className={`rounded-md border px-2 py-1 text-[11px] ${
                         selected
-                          ? "border-violet-400/40 bg-violet-500/15 text-violet-200"
+                          ? "border-border bg-muted-foreground/15 text-fg-secondary"
                           : "border-foreground/10 text-muted-foreground hover:bg-muted/50"
                       }`}
                     >
@@ -681,7 +681,7 @@ function HeartbeatFormFields({
       {!compact && (
         <>
           <div className="rounded-lg border border-foreground/10 bg-muted/25 p-3">
-            <p className="mb-2 text-xs font-medium text-foreground/80">Display And Delivery Behavior</p>
+            <p className="mb-2 text-xs font-medium text-foreground">Display And Delivery Behavior</p>
             <div className="grid gap-2 sm:grid-cols-2">
               {BOOLEAN_KEYS.map((key) => (
                 <div key={key} className="flex items-center justify-between gap-2 rounded border border-foreground/10 px-2 py-1.5">
@@ -1133,14 +1133,14 @@ export function HeartbeatManager() {
   if (loading) {
     return (
       <div className="flex flex-1 flex-col">
-        <LoadingState label="Loading heartbeat configuration..." />
+        <ScreenLoadingState label="Loading heartbeat configuration..." />
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+      <div className="rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-fg">
         Failed to load heartbeat configuration.
       </div>
     );
@@ -1152,8 +1152,8 @@ export function HeartbeatManager() {
         <div
           className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
             toast.type === "success"
-              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-              : "border-red-500/20 bg-red-500/10 text-red-300"
+              ? "border-success-border bg-success-bg text-success-fg"
+              : "border-danger-border bg-danger-bg text-danger-fg"
           }`}
         >
           {toast.type === "success" ? (
@@ -1166,7 +1166,7 @@ export function HeartbeatManager() {
       )}
 
       {busyMessage && (
-        <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-200">
+        <div className="rounded-lg border border-info-border bg-info-bg px-3 py-2 text-xs text-info-fg">
           {busyMessage}
         </div>
       )}
@@ -1174,8 +1174,8 @@ export function HeartbeatManager() {
       <div className="rounded-xl border border-foreground/10 bg-card/90 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
-              <Heart className="h-4 w-4 text-rose-400" />
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Heart className="h-4 w-4 text-danger-fg" />
               Heartbeat Controls
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -1218,19 +1218,19 @@ export function HeartbeatManager() {
         <div className="mt-3 grid gap-2 sm:grid-cols-3 text-xs">
           <div className="rounded-lg border border-foreground/10 bg-muted/40 px-3 py-2">
             <p className="text-muted-foreground">Agents</p>
-            <p className="mt-1 font-semibold text-foreground/90">
+            <p className="mt-1 font-semibold text-foreground">
               {data.stats.agentsWithOverrides}/{data.stats.agentsTotal} with overrides
             </p>
           </div>
           <div className="rounded-lg border border-foreground/10 bg-muted/40 px-3 py-2">
             <p className="text-muted-foreground">Channels</p>
-            <p className="mt-1 font-semibold text-foreground/90">
+            <p className="mt-1 font-semibold text-foreground">
               {data.stats.channelsWithOverrides} with visibility overrides
             </p>
           </div>
           <div className="rounded-lg border border-foreground/10 bg-muted/40 px-3 py-2">
             <p className="text-muted-foreground">Effective Defaults</p>
-            <p className="mt-1 font-mono text-[11px] text-foreground/80">
+            <p className="mt-1 font-mono text-[11px] text-foreground">
               {data.effectiveDefaultsHeartbeat
                 ? JSON.stringify(data.effectiveDefaultsHeartbeat)
                 : "not configured"}
@@ -1287,7 +1287,7 @@ export function HeartbeatManager() {
           </div>
         </div>
 
-        <p className="mt-1 text-xs text-muted-foreground/80">
+        <p className="mt-1 text-xs text-muted-foreground">
           Use these fields to create or update heartbeat behavior without writing JSON.
         </p>
 
@@ -1327,7 +1327,7 @@ export function HeartbeatManager() {
               void clearDefaults();
             }}
             disabled={Boolean(busyKey)}
-            className="inline-flex items-center gap-1 rounded-lg border border-red-500/20 px-2.5 py-1.5 text-xs text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-danger-border px-2.5 py-1.5 text-xs text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-50"
           >
             <Trash2 className="h-3.5 w-3.5" />
             Clear Override
@@ -1353,7 +1353,7 @@ export function HeartbeatManager() {
               }
               spellCheck={false}
               placeholder='{"customField": true}'
-              className="h-36 w-full rounded-lg border border-foreground/10 bg-zinc-950/85 px-3 py-2 font-mono text-xs text-zinc-100 outline-none"
+              className="h-36 w-full rounded-lg border border-foreground/10 bg-surface-inset px-3 py-2 font-mono text-xs text-foreground outline-none"
             />
           </div>
         )}
@@ -1363,7 +1363,7 @@ export function HeartbeatManager() {
         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Manual Wake
         </h4>
-        <p className="mt-1 text-xs text-muted-foreground/80">
+        <p className="mt-1 text-xs text-muted-foreground">
           Trigger a heartbeat event now or on the next heartbeat cycle.
         </p>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -1389,7 +1389,7 @@ export function HeartbeatManager() {
               void wakeNow();
             }}
             disabled={Boolean(busyKey)}
-            className="inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-1 rounded-full bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/88 disabled:opacity-50"
           >
             {busyKey === "wake-now" ? (
               <span className="inline-flex items-center gap-0.5">
@@ -1409,7 +1409,7 @@ export function HeartbeatManager() {
         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Per-Agent Overrides
         </h4>
-        <p className="mt-1 text-xs text-muted-foreground/80">
+        <p className="mt-1 text-xs text-muted-foreground">
           Add or edit heartbeat behavior for specific agents.
         </p>
         <div className="mt-3 space-y-3">
@@ -1425,7 +1425,7 @@ export function HeartbeatManager() {
                   <span
                     className={`rounded px-1.5 py-0.5 text-[10px] ${
                       agent.heartbeat
-                        ? "bg-emerald-500/15 text-emerald-300"
+                        ? "bg-success-bg text-success-fg"
                         : "bg-foreground/10 text-muted-foreground"
                     }`}
                   >
@@ -1489,7 +1489,7 @@ export function HeartbeatManager() {
                       void clearAgent(agent.id);
                     }}
                     disabled={Boolean(busyKey)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-red-500/20 px-2.5 py-1.5 text-xs text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded-lg border border-danger-border px-2.5 py-1.5 text-xs text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-50"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Clear Override
@@ -1517,7 +1517,7 @@ export function HeartbeatManager() {
             {showVisibilityAdvanced ? "Hide" : "Show"} Advanced JSON
           </button>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground/80">
+        <p className="mt-1 text-xs text-muted-foreground">
           Channel/account visibility uses advanced keys and stays editable in JSON.
         </p>
 
@@ -1527,7 +1527,7 @@ export function HeartbeatManager() {
               value={visibilityEditor}
               onChange={(e) => setVisibilityEditor(e.target.value)}
               spellCheck={false}
-              className="mt-2 h-52 w-full rounded-lg border border-foreground/10 bg-zinc-950/85 px-3 py-2 font-mono text-xs text-zinc-100 outline-none"
+              className="mt-2 h-52 w-full rounded-lg border border-foreground/10 bg-surface-inset px-3 py-2 font-mono text-xs text-foreground outline-none"
             />
             <div className="mt-2 flex items-center gap-2">
               <button

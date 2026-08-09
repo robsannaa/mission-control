@@ -148,18 +148,18 @@ export function StepChannel({
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
-          <MessageCircle className="h-3.5 w-3.5 text-stone-400 dark:text-[#a8b0ba]" />
-          <h2 className="text-base font-semibold tracking-tight text-stone-900 dark:text-[#f5f7fa]">
+          <MessageCircle className="h-3.5 w-3.5 text-fg-subtle dark:text-muted-foreground" />
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
             Put your agent in your pocket
           </h2>
         </div>
-        <p className="text-sm leading-relaxed text-stone-500 dark:text-[#a8b0ba]">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           Connect Telegram and chat with your agent from your phone. Message{" "}
           <a
             href="https://t.me/BotFather"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-emerald-600 dark:text-emerald-400 underline underline-offset-2"
+            className="text-foreground underline underline-offset-2"
           >
             @BotFather
           </a>{" "}
@@ -185,8 +185,8 @@ export function StepChannel({
             className={inputClass}
           />
           {error && (
-            <p className="flex items-center gap-1.5 text-xs text-red-500 dark:text-red-400">
-              <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-red-500 dark:bg-red-400" />
+            <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+              <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-danger" />
               {error}
             </p>
           )}
@@ -213,8 +213,8 @@ export function StepChannel({
 
       {configured && !connected && (
         <div className={cn(cardClass, "flex items-center gap-3")}>
-          <Loader2 className="h-4 w-4 animate-spin text-stone-400 dark:text-[#5a6270]" />
-          <p className="text-xs leading-relaxed text-stone-500 dark:text-[#a8b0ba]">
+          <Loader2 className="h-4 w-4 animate-spin text-fg-subtle" />
+          <p className="text-xs leading-relaxed text-muted-foreground">
             Token saved — the gateway is restarting and connecting to Telegram. This usually takes a
             few seconds…
           </p>
@@ -241,21 +241,21 @@ export function StepChannel({
               alt={`QR code for ${deepLink}`}
               width={96}
               height={96}
-              className="h-24 w-24 rounded-lg bg-white p-1 ring-1 ring-stone-200 dark:ring-[#23282e]"
+              className="h-24 w-24 rounded-lg bg-card p-1 ring-1 ring-border"
               onError={() => setQrFailed(true)}
             />
           )}
           <div className="min-w-0 space-y-1">
-            <p className="text-xs font-semibold text-stone-800 dark:text-[#d6dce3]">
+            <p className="text-xs font-semibold text-foreground dark:text-fg-secondary">
               Scan with your phone
             </p>
-            <p className="text-xs leading-relaxed text-stone-500 dark:text-[#a8b0ba]">
+            <p className="text-xs leading-relaxed text-muted-foreground">
               or open{" "}
               <a
                 href={deepLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 underline underline-offset-2"
+                className="inline-flex items-center gap-1 text-foreground underline underline-offset-2"
               >
                 t.me/{status?.botUsername}
                 <ExternalLink className="h-2.5 w-2.5" />
@@ -263,7 +263,7 @@ export function StepChannel({
               and send your bot a message.
             </p>
             {!firstMessage && (
-              <p className="flex items-center gap-1.5 text-[11px] text-stone-400 dark:text-[#5a6270]">
+              <p className="flex items-center gap-1.5 text-[11px] text-fg-subtle">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Waiting for your first message…
               </p>
@@ -278,7 +278,7 @@ export function StepChannel({
 
       {pairing.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-stone-800 dark:text-[#d6dce3]">
+          <p className="text-xs font-semibold text-foreground dark:text-fg-secondary">
             Approve access for:
           </p>
           {pairing.map((req) => (
@@ -287,11 +287,11 @@ export function StepChannel({
               className={cn(cardClass, "flex items-center justify-between gap-3 py-3")}
             >
               <div className="min-w-0">
-                <p className="truncate text-xs font-medium text-stone-700 dark:text-[#d6dce3]">
+                <p className="truncate text-xs font-medium text-fg-secondary">
                   {req.senderName || "Telegram user"}
                 </p>
                 {req.message && (
-                  <p className="truncate text-[11px] text-stone-400 dark:text-[#5a6270]">
+                  <p className="truncate text-[11px] text-fg-subtle">
                     &ldquo;{req.message}&rdquo;
                   </p>
                 )}

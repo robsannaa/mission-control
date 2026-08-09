@@ -57,17 +57,17 @@ const previewComponents = {
     </h1>
   ),
   h2: ({ children, ...props }: React.ComponentPropsWithoutRef<"h2">) => (
-    <h2 id={slugify(extractText(children))} className="mb-2 mt-5 text-sm font-semibold text-violet-600 dark:text-violet-400 first:mt-0" {...props}>
+    <h2 id={slugify(extractText(children))} className="mb-2 mt-5 text-sm font-semibold text-muted-foreground dark:text-fg-secondary first:mt-0" {...props}>
       {children}
     </h2>
   ),
   h3: ({ children, ...props }: React.ComponentPropsWithoutRef<"h3">) => (
-    <h3 id={slugify(extractText(children))} className="mb-2 mt-4 text-sm font-semibold text-foreground/90 first:mt-0" {...props}>
+    <h3 id={slugify(extractText(children))} className="mb-2 mt-4 text-sm font-semibold text-foreground first:mt-0" {...props}>
       {children}
     </h3>
   ),
   h4: ({ children, ...props }: React.ComponentPropsWithoutRef<"h4">) => (
-    <h4 id={slugify(extractText(children))} className="mb-1.5 mt-3 text-sm font-medium text-foreground/70 first:mt-0" {...props}>
+    <h4 id={slugify(extractText(children))} className="mb-1.5 mt-3 text-sm font-medium text-fg-secondary first:mt-0" {...props}>
       {children}
     </h4>
   ),
@@ -93,7 +93,7 @@ const previewComponents = {
   ),
   code: ({ children, ...props }: React.ComponentPropsWithoutRef<"code">) => (
     <code
-      className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-xs text-foreground/80"
+      className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-xs text-foreground"
       {...props}
     >
       {children}
@@ -101,7 +101,7 @@ const previewComponents = {
   ),
   pre: ({ children, ...props }: React.ComponentPropsWithoutRef<"pre">) => (
     <pre
-      className="my-3 overflow-x-auto rounded-lg bg-foreground/[0.04] p-3 text-xs text-foreground/80"
+      className="my-3 overflow-x-auto rounded-lg bg-foreground/[0.04] p-3 text-xs text-foreground"
       {...props}
     >
       {children}
@@ -109,7 +109,7 @@ const previewComponents = {
   ),
   blockquote: ({ children, ...props }: React.ComponentPropsWithoutRef<"blockquote">) => (
     <blockquote
-      className="my-2 border-l-2 border-violet-500/40 pl-4 italic text-muted-foreground"
+      className="my-2 border-l-2 border-border-strong pl-4 italic text-muted-foreground"
       {...props}
     >
       {children}
@@ -118,7 +118,7 @@ const previewComponents = {
   a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<"a">) => (
     <a
       href={href}
-      className="text-violet-600 dark:text-violet-400 hover:underline"
+      className="text-muted-foreground dark:text-fg-secondary hover:underline"
       target="_blank"
       rel="noopener noreferrer"
       {...props}
@@ -145,12 +145,12 @@ const previewComponents = {
   ),
   hr: (props: React.ComponentPropsWithoutRef<"hr">) => <hr className="my-4 border-foreground/10" {...props} />,
   strong: ({ children, ...props }: React.ComponentPropsWithoutRef<"strong">) => (
-    <strong className="font-semibold text-foreground/90" {...props}>
+    <strong className="font-semibold text-foreground" {...props}>
       {children}
     </strong>
   ),
   em: ({ children, ...props }: React.ComponentPropsWithoutRef<"em">) => (
-    <em className="italic text-foreground/80" {...props}>
+    <em className="italic text-foreground" {...props}>
       {children}
     </em>
   ),
@@ -205,8 +205,8 @@ export function InlineMarkdownEditor({
         const el = container.querySelector(`#${CSS.escape(bestSlug)}`);
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "start" });
-          el.classList.add("bg-violet-500/20", "rounded", "transition-colors");
-          setTimeout(() => el.classList.remove("bg-violet-500/20", "rounded", "transition-colors"), 2000);
+          el.classList.add("bg-muted-foreground/20", "rounded", "transition-colors");
+          setTimeout(() => el.classList.remove("bg-muted-foreground/20", "rounded", "transition-colors"), 2000);
           return;
         }
       }
@@ -278,7 +278,7 @@ export function InlineMarkdownEditor({
     >
       <div className="border-b border-foreground/[0.06] bg-card/30 px-4 py-2">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             {isEditing ? "Editor" : "Preview"}
           </p>
           <button
@@ -306,9 +306,9 @@ export function InlineMarkdownEditor({
           placeholder={placeholder}
           spellCheck={true}
           className={cn(
-            "h-full min-h-0 w-full flex-1 resize-none rounded-none border-0 bg-transparent px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50",
+            "h-full min-h-0 w-full flex-1 resize-none rounded-none border-0 bg-transparent px-4 py-3 text-sm text-foreground placeholder:text-fg-subtle",
             "focus:outline-none focus:ring-0",
-            "font-mono leading-relaxed caret-violet-500"
+            "font-mono leading-relaxed text-muted-foreground"
           )}
           aria-label="Markdown editor"
         />
@@ -320,14 +320,14 @@ export function InlineMarkdownEditor({
                 {localValue}
               </ReactMarkdown>
             ) : (
-              <p className="text-sm italic text-muted-foreground/50">Nothing to preview yet.</p>
+              <p className="text-sm italic text-fg-subtle">Nothing to preview yet.</p>
             )}
           </div>
         </div>
       )}
 
       {isEditing && (
-        <div className="border-t border-foreground/[0.06] bg-card/20 px-4 py-2 text-[11px] text-muted-foreground/70">
+        <div className="border-t border-foreground/[0.06] bg-card/20 px-4 py-2 text-[11px] text-muted-foreground">
           Press <SaveShortcut keyClassName="text-[10px]" /> to save.
         </div>
       )}

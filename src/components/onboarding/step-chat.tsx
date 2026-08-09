@@ -100,12 +100,12 @@ export function StepChat({
     <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
-          <Sparkles className="h-3.5 w-3.5 text-stone-400 dark:text-[#a8b0ba]" />
-          <h2 className="text-base font-semibold tracking-tight text-stone-900 dark:text-[#f5f7fa]">
+          <Sparkles className="h-3.5 w-3.5 text-fg-subtle dark:text-muted-foreground" />
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
             Say hello to your agent
           </h2>
         </div>
-        <p className="text-sm leading-relaxed text-stone-500 dark:text-[#a8b0ba]">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           One last thing — send a message and watch the reply stream in.
         </p>
       </div>
@@ -118,7 +118,7 @@ export function StepChat({
               type="button"
               onClick={() => void send(p)}
               disabled={streaming}
-              className="rounded-full border border-stone-200 dark:border-[#23282e] bg-white dark:bg-[#0d1014] px-3 py-1.5 text-xs text-stone-600 dark:text-[#a8b0ba] hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors"
+              className="rounded-full border border-border bg-card dark:bg-sidebar px-3 py-1.5 text-xs text-fg-secondary dark:text-muted-foreground hover:border-success-border hover:text-success-fg transition-colors"
             >
               {p}
             </button>
@@ -129,7 +129,7 @@ export function StepChat({
       {turns.length > 0 && (
         <div
           ref={scrollRef}
-          className="max-h-56 space-y-3 overflow-y-auto rounded-xl border border-stone-200 dark:border-[#23282e] bg-stone-50 dark:bg-[#0d1014] p-3.5"
+          className="max-h-56 space-y-3 overflow-y-auto rounded-xl border border-border bg-muted dark:bg-sidebar p-3.5"
         >
           {turns.map((turn, i) => (
             <div
@@ -140,16 +140,16 @@ export function StepChat({
                 className={cn(
                   "max-w-[85%] whitespace-pre-wrap rounded-xl px-3 py-2 text-xs leading-relaxed",
                   turn.role === "user"
-                    ? "bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900"
-                    : "bg-white dark:bg-[#171a1d] text-stone-700 dark:text-[#d6dce3] ring-1 ring-stone-200 dark:ring-[#23282e]",
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-fg-secondary ring-1 ring-border",
                 )}
               >
                 {turn.text ||
                   (turn.role === "assistant" && streaming ? (
                     <span className="flex items-center gap-1">
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-stone-400 [animation-delay:0ms]" />
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-stone-400 [animation-delay:150ms]" />
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-stone-400 [animation-delay:300ms]" />
+                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
                     </span>
                   ) : (
                     ""
@@ -184,8 +184,8 @@ export function StepChat({
       </div>
 
       {error && (
-        <p className="flex items-center gap-1.5 text-xs text-red-500 dark:text-red-400">
-          <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-red-500 dark:bg-red-400" />
+        <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+          <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-danger" />
           {error}
         </p>
       )}

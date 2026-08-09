@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { LoadingState, ScreenLoadingState } from "@/components/ui/loading-state";
 
 /* ── types ─────────────────────────────────────── */
 
@@ -65,16 +65,16 @@ type HookDetail = {
 /* ── helpers ───────────────────────────────────── */
 
 const EVENT_COLORS: Record<string, string> = {
-  "command:new": "border-violet-500/20 bg-violet-500/10 text-violet-400",
-  "command:reset": "border-rose-500/20 bg-rose-500/10 text-rose-400",
-  "command:stop": "border-red-500/20 bg-red-500/10 text-red-400",
-  command: "border-purple-500/20 bg-purple-500/10 text-purple-400",
-  "agent:bootstrap": "border-sky-500/20 bg-sky-500/10 text-sky-400",
-  "gateway:startup": "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
-  "message:received": "border-amber-500/20 bg-amber-500/10 text-amber-400",
-  "message:sent": "border-orange-500/20 bg-orange-500/10 text-orange-400",
-  message: "border-yellow-500/20 bg-yellow-500/10 text-yellow-400",
-  tool_result_persist: "border-teal-500/20 bg-teal-500/10 text-teal-400",
+  "command:new": "border-border-strong bg-muted-foreground/10 text-fg-secondary",
+  "command:reset": "border-danger-border bg-danger-bg text-danger-fg",
+  "command:stop": "border-danger-border bg-danger-bg text-danger-fg",
+  command: "border-border-strong bg-muted-foreground/10 text-fg-secondary",
+  "agent:bootstrap": "border-info-border bg-info-bg text-info-fg",
+  "gateway:startup": "border-success-border bg-success-bg text-success-fg",
+  "message:received": "border-warning-border bg-warning-bg text-warning-fg",
+  "message:sent": "border-warning-border bg-warning-bg text-warning-fg",
+  message: "border-warning-border bg-warning-bg text-warning-fg",
+  tool_result_persist: "border-success-border bg-success-bg text-success-fg",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -130,13 +130,13 @@ function Toggle({
       className={cn(
         "relative shrink-0 rounded-full transition-colors duration-200",
         dims,
-        checked ? "bg-emerald-500" : "bg-muted",
+        checked ? "bg-success" : "bg-muted",
         disabled && "opacity-50 cursor-not-allowed",
       )}
     >
       <span
         className={cn(
-          "absolute top-0.5 block rounded-full bg-white shadow-sm transition-transform duration-200",
+          "absolute top-0.5 block rounded-full bg-card shadow-sm transition-transform duration-200",
           knob,
           checked ? translate : "left-0.5",
         )}
@@ -161,7 +161,7 @@ function SourceBadge({ source, bundled }: { source: string; bundled: boolean }) 
       className={cn(
         "rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
         bundled
-          ? "border-sky-500/20 bg-sky-500/10 text-sky-400"
+          ? "border-info-border bg-info-bg text-info-fg"
           : "border-foreground/10 bg-foreground/[0.04] text-muted-foreground",
       )}
     >
@@ -188,9 +188,9 @@ function HookCard({
       className={cn(
         "glass-glow rounded-lg px-4 py-3.5 transition-colors",
         hook.enabled
-          ? "border-emerald-500/20"
+          ? "border-success-border"
           : missing
-            ? "border-amber-500/15"
+            ? "border-warning-border"
             : "",
       )}
     >
@@ -202,10 +202,10 @@ function HookCard({
         >
           <div className="flex items-center gap-2">
             {hook.emoji && <span className="text-sm">{hook.emoji}</span>}
-            <span className="text-sm font-semibold text-foreground/90">{hook.name}</span>
+            <span className="text-sm font-semibold text-foreground">{hook.name}</span>
             <SourceBadge source={hook.source} bundled={hook.bundled} />
           </div>
-          <p className="mt-1 text-xs text-muted-foreground/70 line-clamp-2">{hook.description}</p>
+          <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{hook.description}</p>
         </button>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
           {isToggling ? (
@@ -229,15 +229,15 @@ function HookCard({
       </div>
 
       {missing && (
-        <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-amber-400/80">
+        <div className="mt-2 rounded-lg border border-warning-border bg-warning-bg px-2.5 py-1.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-warning-fg">
             Missing requirements
           </p>
           <div className="mt-1 flex flex-wrap gap-1">
             {missingList(hook.missing).map((m) => (
               <span
                 key={m}
-                className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400"
+                className="rounded border border-warning-border bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning-fg"
               >
                 {m}
               </span>
@@ -263,19 +263,19 @@ function HookDetailPanel({
         <div>
           <div className="flex items-center gap-2">
             {detail.emoji && <span className="text-lg">{detail.emoji}</span>}
-            <h3 className="text-sm font-semibold text-foreground/90">{detail.name}</h3>
+            <h3 className="text-sm font-semibold text-foreground">{detail.name}</h3>
             {detail.enabled && (
-              <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+              <span className="rounded-md border border-success-border bg-success-bg px-1.5 py-0.5 text-[10px] font-medium text-success-fg">
                 enabled
               </span>
             )}
             {detail.always && (
-              <span className="rounded-md border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-400">
+              <span className="rounded-md border border-border-strong bg-muted-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-fg-secondary">
                 always
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground/70">{detail.description}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{detail.description}</p>
         </div>
         <button
           type="button"
@@ -288,28 +288,28 @@ function HookDetailPanel({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="glass-subtle rounded-lg p-3">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">Source</p>
-          <p className="mt-1 text-xs text-foreground/80">{detail.bundled ? "Bundled" : detail.source}</p>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-fg-subtle">Source</p>
+          <p className="mt-1 text-xs text-foreground">{detail.bundled ? "Bundled" : detail.source}</p>
         </div>
         <div className="glass-subtle rounded-lg p-3">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">Eligible</p>
-          <p className={cn("mt-1 text-xs", detail.eligible ? "text-emerald-400" : "text-amber-400")}>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-fg-subtle">Eligible</p>
+          <p className={cn("mt-1 text-xs", detail.eligible ? "text-success-fg" : "text-warning-fg")}>
             {detail.eligible ? "Yes" : "No"}
           </p>
         </div>
         {detail.filePath && (
           <div className="sm:col-span-2 glass-subtle rounded-lg p-3">
-            <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">File Path</p>
-            <p className="mt-1 truncate text-xs font-mono text-foreground/70">{detail.filePath}</p>
+            <p className="text-[10px] font-medium uppercase tracking-widest text-fg-subtle">File Path</p>
+            <p className="mt-1 truncate text-xs font-mono text-fg-secondary">{detail.filePath}</p>
           </div>
         )}
       </div>
 
       <div className="mt-3">
-        <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">Events</p>
+        <p className="text-[10px] font-medium uppercase tracking-widest text-fg-subtle">Events</p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {detail.events?.map((e) => <EventBadge key={e} event={e} />) || (
-            <span className="text-xs text-muted-foreground/50">None</span>
+            <span className="text-xs text-fg-subtle">None</span>
           )}
         </div>
       </div>
@@ -320,8 +320,8 @@ function HookDetailPanel({
         detail.requirements?.config?.length > 0 ||
         detail.requirements?.os?.length > 0) && (
         <div className="mt-3">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">Requirements</p>
-          <div className="mt-1.5 space-y-1 text-xs text-foreground/70">
+          <p className="text-[10px] font-medium uppercase tracking-widest text-fg-subtle">Requirements</p>
+          <div className="mt-1.5 space-y-1 text-xs text-fg-secondary">
             {detail.requirements.bins?.length > 0 && (
               <p>Binaries: <span className="font-mono">{detail.requirements.bins.join(", ")}</span></p>
             )}
@@ -342,15 +342,15 @@ function HookDetailPanel({
       )}
 
       {missing && (
-        <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-amber-400/80">
+        <div className="mt-3 rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-warning-fg">
             Missing requirements
           </p>
           <div className="mt-1.5 flex flex-wrap gap-1">
             {missingList(detail.missing).map((m) => (
               <span
                 key={m}
-                className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400"
+                className="rounded border border-warning-border bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning-fg"
               >
                 {m}
               </span>
@@ -365,7 +365,7 @@ function HookDetailPanel({
             href={detail.homepage}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-violet-400 underline underline-offset-2 hover:text-violet-300"
+            className="text-xs text-fg-secondary underline underline-offset-2 hover:text-fg-secondary"
           >
             Documentation
           </a>
@@ -531,7 +531,7 @@ export function HooksView() {
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading hooks..." size="lg" />
+        <ScreenLoadingState label="Loading hooks..." size="lg" />
       </SectionLayout>
     );
   }
@@ -546,7 +546,7 @@ export function HooksView() {
             setLoading(true);
             void fetchData();
           }}
-          className="rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs text-foreground/80 hover:bg-muted"
+          className="rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs text-foreground hover:bg-muted"
         >
           Retry
         </button>
@@ -566,7 +566,7 @@ export function HooksView() {
               setLoading(true);
               void fetchData();
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-100"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
           >
             Refresh
           </button>
@@ -580,8 +580,8 @@ export function HooksView() {
             className={cn(
               "fixed bottom-4 right-4 z-50 rounded-lg border px-4 py-2.5 text-xs font-medium shadow-lg transition-all",
               toast.type === "ok"
-                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                : "border-red-500/20 bg-red-500/10 text-red-400",
+                ? "border-success-border bg-success-bg text-success-fg"
+                : "border-danger-border bg-danger-bg text-danger-fg",
             )}
           >
             {toast.message}
@@ -590,7 +590,7 @@ export function HooksView() {
 
         {/* Degraded warning */}
         {data.degraded && (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-400">
+          <div className="rounded-lg border border-warning-border bg-warning-bg px-4 py-2.5 text-xs text-warning-fg">
             {data.warning || "Could not reach gateway — showing cached data."}
           </div>
         )}
@@ -599,8 +599,8 @@ export function HooksView() {
         <div className="glass rounded-lg p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-xs font-sans font-semibold text-foreground/90">Hooks Engine</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground/70">
+              <h2 className="text-xs font-sans font-semibold text-foreground">Hooks Engine</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Master switch for the internal hooks system. When disabled, no hooks fire.
               </p>
             </div>
@@ -619,7 +619,7 @@ export function HooksView() {
               )}
               <span className={cn(
                 "text-xs font-medium",
-                data.hooksInternalEnabled ? "text-emerald-400" : "text-muted-foreground/50",
+                data.hooksInternalEnabled ? "text-success-fg" : "text-fg-subtle",
               )}>
                 {data.hooksInternalEnabled ? "Enabled" : "Disabled"}
               </span>
@@ -628,20 +628,20 @@ export function HooksView() {
 
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="glass-subtle rounded-lg px-3 py-2.5">
-              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">Total</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground/90">{stats.total}</p>
+              <p className="text-[10px] font-medium uppercase tracking-widest text-fg-subtle">Total</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{stats.total}</p>
             </div>
-            <div className="rounded-lg border border-emerald-500/15 bg-emerald-500/5 px-3 py-2.5">
-              <p className="text-[10px] font-medium uppercase tracking-widest text-emerald-400/60">Enabled</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-emerald-400">{stats.enabled}</p>
+            <div className="rounded-lg border border-success-border bg-success-bg px-3 py-2.5">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-success-fg">Enabled</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-success-fg">{stats.enabled}</p>
             </div>
             <div className="glass-subtle rounded-lg px-3 py-2.5">
-              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">Disabled</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground/90">{stats.disabled}</p>
+              <p className="text-[10px] font-medium uppercase tracking-widest text-fg-subtle">Disabled</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{stats.disabled}</p>
             </div>
-            <div className="rounded-lg border border-sky-500/15 bg-sky-500/5 px-3 py-2.5">
-              <p className="text-[10px] font-medium uppercase tracking-widest text-sky-400/60">Eligible</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-sky-400">{stats.eligible}</p>
+            <div className="rounded-lg border border-info-border bg-info-bg px-3 py-2.5">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-info-fg">Eligible</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-info-fg">{stats.eligible}</p>
             </div>
           </div>
 
@@ -656,7 +656,7 @@ export function HooksView() {
                   "rounded-lg border px-4 py-2 text-xs font-medium transition-colors",
                   enablingAll
                     ? "border-foreground/10 bg-foreground/5 text-muted-foreground cursor-wait"
-                    : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20",
+                    : "border-success-border bg-success-bg text-success-fg hover:bg-success-bg",
                 )}
               >
                 {enablingAll ? "Enabling all..." : `Enable all ${stats.total} hooks`}
@@ -688,7 +688,7 @@ export function HooksView() {
           <div className={cn(selectedHook ? "xl:col-span-7" : "xl:col-span-12")}>
             {filteredHooks.length === 0 ? (
               <div className="glass rounded-lg p-8 text-center">
-                <p className="text-sm text-muted-foreground/70">
+                <p className="text-sm text-muted-foreground">
                   {filter === "all"
                     ? "No hooks discovered. Install hooks or check your gateway."
                     : `No ${filter} hooks.`}
@@ -726,14 +726,14 @@ export function HooksView() {
                 />
               ) : (
                 <div className="glass rounded-lg p-8 text-center">
-                  <p className="text-xs text-muted-foreground/70">Could not load hook details.</p>
+                  <p className="text-xs text-muted-foreground">Could not load hook details.</p>
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedHook(null);
                       setHookDetail(null);
                     }}
-                    className="mt-2 text-xs text-violet-400 underline underline-offset-2 hover:text-violet-300"
+                    className="mt-2 text-xs text-fg-secondary underline underline-offset-2 hover:text-fg-secondary"
                   >
                     Close
                   </button>

@@ -25,6 +25,46 @@ type TabInfo = {
   alive: boolean;
 };
 
+/* ── Terminal palette, derived from the design tokens ──────────────
+   The terminal is intentionally "always dark" (it is a console), so it
+   reads the inset surface and the status tokens rather than inventing a
+   parallel palette. */
+function tokenColor(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+function terminalTheme() {
+  const bg = tokenColor("--surface-inset", "#151413");
+  const fg = tokenColor("--text-secondary", "#c5c3c0");
+  const accent = tokenColor("--accent-brand", "#2fa97a");
+  return {
+    background: bg,
+    foreground: fg,
+    cursor: accent,
+    cursorAccent: bg,
+    selectionBackground: tokenColor("--accent-brand-subtle", "rgba(82,201,154,0.12)"),
+    selectionForeground: tokenColor("--foreground", "#f2f1ef"),
+    black: tokenColor("--background", "#131211"),
+    red: tokenColor("--danger", "#c4402f"),
+    green: tokenColor("--success", "#2fa97a"),
+    yellow: tokenColor("--warning", "#b9862c"),
+    blue: tokenColor("--info", "#4f7fb5"),
+    magenta: tokenColor("--text-secondary", "#c5c3c0"),
+    cyan: tokenColor("--info-fg", "#8fb6e3"),
+    white: fg,
+    brightBlack: tokenColor("--border-strong", "#3b3936"),
+    brightRed: tokenColor("--danger-fg", "#f0857a"),
+    brightGreen: tokenColor("--success-fg", "#55ce9e"),
+    brightYellow: tokenColor("--warning-fg", "#e0b15f"),
+    brightBlue: tokenColor("--info-fg", "#8fb6e3"),
+    brightMagenta: tokenColor("--foreground", "#f2f1ef"),
+    brightCyan: tokenColor("--info-fg", "#8fb6e3"),
+    brightWhite: tokenColor("--foreground", "#f2f1ef"),
+  };
+}
+
 /* ── TerminalPane: single xterm.js instance connected to a backend session ── */
 
 function TerminalPane({
@@ -65,30 +105,9 @@ function TerminalPane({
         fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, Monaco, 'Courier New', monospace",
         lineHeight: 1.35,
         letterSpacing: 0,
-        theme: {
-          background: "#0c0c0c",
-          foreground: "#d4d4d8",
-          cursor: "#c87941",
-          cursorAccent: "#0c0c0c",
-          selectionBackground: "#c8794140",
-          selectionForeground: "#ffffff",
-          black: "#09090b",
-          red: "#ef4444",
-          green: "#22c55e",
-          yellow: "#eab308",
-          blue: "#3b82f6",
-          magenta: "#a855f7",
-          cyan: "#06b6d4",
-          white: "#d4d4d8",
-          brightBlack: "#52525b",
-          brightRed: "#f87171",
-          brightGreen: "#4ade80",
-          brightYellow: "#facc15",
-          brightBlue: "#60a5fa",
-          brightMagenta: "#c084fc",
-          brightCyan: "#22d3ee",
-          brightWhite: "#fafafa",
-        },
+        // xterm needs literal colours, so read them from the design tokens
+        // at construction time instead of hard-coding a second palette.
+        theme: terminalTheme(),
         scrollback: 10000,
         convertEol: true,
         allowProposedApi: true,
@@ -262,7 +281,7 @@ function TerminalPane({
     <div
       ref={containerRef}
       className={cn(
-        "absolute inset-0 bg-[#0c0c0c] p-1",
+        "absolute inset-0 bg-sidebar p-1",
         visible ? "block" : "hidden",
       )}
     />
@@ -379,22 +398,22 @@ export function TerminalView() {
       </div>
 
       {/* ── Tab bar ── */}
-      <div className="flex items-center gap-0 border-b border-border bg-[#0c0c0c] overflow-x-auto">
+      <div className="flex items-center gap-0 border-b border-border bg-sidebar overflow-x-auto">
         {tabs.map((tab) => (
           <div
             key={tab.id}
             className={cn(
-              "group flex items-center gap-1.5 border-r border-zinc-800 px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors",
+              "group flex items-center gap-1.5 border-r border-border px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors",
               activeTab === tab.id
-                ? "bg-zinc-900 text-zinc-200"
-                : "bg-[#0c0c0c] text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900",
+                ? "bg-muted text-foreground"
+                : "bg-sidebar text-muted-foreground hover:text-fg-subtle hover:bg-muted",
             )}
             onClick={() => setActiveTab(tab.id)}
           >
             <TerminalIcon className="h-3 w-3 shrink-0" />
             <span className="whitespace-nowrap">{tab.label}</span>
             {!tab.alive && (
-              <span className="h-1.5 w-1.5 rounded-full bg-red-500" title="Session ended" />
+              <span className="h-1.5 w-1.5 rounded-full bg-danger" title="Session ended" />
             )}
             <button
               type="button"
@@ -402,7 +421,7 @@ export function TerminalView() {
                 e.stopPropagation();
                 closeTab(tab.id);
               }}
-              className="ml-1 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-zinc-700"
+              className="ml-1 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent"
             >
               <X className="h-3 w-3" />
             </button>
@@ -412,7 +431,7 @@ export function TerminalView() {
           type="button"
           onClick={createTab}
           disabled={creating}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs text-zinc-500 transition-colors hover:text-zinc-300 disabled:opacity-50"
+          className="flex items-center gap-1 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-fg-subtle disabled:opacity-50"
           title="New terminal"
         >
           <Plus className="h-3 w-3" />
@@ -420,12 +439,12 @@ export function TerminalView() {
       </div>
 
       {/* ── Terminal panes ── */}
-      <div className="flex-1 min-h-0 relative bg-[#0c0c0c]">
+      <div className="flex-1 min-h-0 relative bg-sidebar">
         {tabs.length === 0 && (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
-              <TerminalIcon className="mx-auto h-10 w-10 text-muted-foreground/30 mb-3" />
-              <p className="text-sm text-muted-foreground/60 mb-3">No active terminals</p>
+              <TerminalIcon className="mx-auto h-10 w-10 text-fg-subtle mb-3" />
+              <p className="text-sm text-fg-subtle mb-3">No active terminals</p>
               <button
                 type="button"
                 onClick={createTab}

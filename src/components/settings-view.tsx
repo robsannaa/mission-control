@@ -28,7 +28,7 @@ import {
   SectionHeader,
   SectionLayout,
 } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 
 import {
   setTimeFormatPreference,
@@ -312,7 +312,7 @@ export function SettingsView() {
     return (
       <SectionLayout>
         <SectionHeader title="Settings" />
-        <LoadingState />
+        <ScreenLoadingState />
       </SectionLayout>
     );
   }
@@ -333,8 +333,8 @@ export function SettingsView() {
             className={cn(
               "fixed bottom-4 right-4 z-50 rounded-lg border px-4 py-2.5 text-xs font-medium shadow-lg transition-all",
               toast.type === "ok"
-                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                : "border-red-500/20 bg-red-500/10 text-red-400",
+                ? "border-success-border bg-success-bg text-success-fg"
+                : "border-danger-border bg-danger-bg text-danger-fg",
             )}
           >
             {toast.message}
@@ -432,8 +432,8 @@ export function SettingsView() {
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                   tzSaved
-                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                    : "border-foreground/10 bg-card text-foreground/70 hover:bg-muted/80 hover:text-foreground",
+                    ? "border-success-border bg-success-bg text-success-fg"
+                    : "border-foreground/10 bg-card text-fg-secondary hover:bg-muted/80 hover:text-foreground",
                 )}
               >
                 {tzSaving ? (
@@ -472,7 +472,7 @@ export function SettingsView() {
                           onChange={(e) => setTzSearch(e.target.value)}
                           placeholder="Search timezones..."
                           aria-label="Search timezones"
-                          className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+                          className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
                           autoFocus
                         />
                       </div>
@@ -484,7 +484,7 @@ export function SettingsView() {
                         onClick={() => handleSaveTimezone(localTz)}
                         className={cn(
                           "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted",
-                          selectedTz === localTz && "text-emerald-400",
+                          selectedTz === localTz && "text-success-fg",
                         )}
                       >
                         <Clock className="h-3 w-3 text-muted-foreground" />
@@ -499,7 +499,7 @@ export function SettingsView() {
                           onClick={() => handleSaveTimezone(tz)}
                           className={cn(
                             "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted",
-                            selectedTz === tz && "text-emerald-400",
+                            selectedTz === tz && "text-success-fg",
                           )}
                         >
                           <span className="flex-1">{tz.replace(/_/g, " ")}</span>
@@ -507,7 +507,7 @@ export function SettingsView() {
                         </button>
                       ))}
                       {filteredTimezones.length === 0 && (
-                        <p className="px-3 py-2 text-xs text-muted-foreground/50">No matching timezones</p>
+                        <p className="px-3 py-2 text-xs text-fg-subtle">No matching timezones</p>
                       )}
                     </div>
                   </div>
@@ -522,14 +522,14 @@ export function SettingsView() {
         <SettingsSection
           title="Gateway"
           icon={Radio}
-          iconColor="text-emerald-400"
+          iconColor="text-success-fg"
           defaultOpen
         >
           <SettingRow
             label="Gateway URL"
             description="The endpoint where the OpenClaw gateway is accessible."
           >
-            <span className="rounded-md bg-muted/50 px-2 py-1 font-mono text-xs text-foreground/70">
+            <span className="rounded-md bg-muted/50 px-2 py-1 font-mono text-xs text-fg-secondary">
               {onboard?.gatewayUrl || "—"}
             </span>
           </SettingRow>
@@ -538,7 +538,7 @@ export function SettingsView() {
             label="Port"
             description="Gateway listening port."
           >
-            <span className="font-mono text-xs text-foreground/70">
+            <span className="font-mono text-xs text-fg-secondary">
               {gw?.port || "—"}
             </span>
           </SettingRow>
@@ -607,8 +607,8 @@ export function SettingsView() {
                 restarting
                   ? "border-foreground/10 bg-foreground/5 text-muted-foreground cursor-wait"
                   : restartResult
-                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                    : "border-amber-500/20 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20",
+                    ? "border-success-border bg-success-bg text-success-fg"
+                    : "border-warning-border bg-warning-bg text-warning-fg hover:bg-warning-bg",
               )}
             >
               {restarting ? (
@@ -636,7 +636,7 @@ export function SettingsView() {
         <SettingsSection
           title="Notifications & Chat"
           icon={Bell}
-          iconColor="text-amber-400"
+          iconColor="text-warning-fg"
         >
           <SettingRow
             label="Browser notifications"
@@ -655,7 +655,7 @@ export function SettingsView() {
                   const result = await Notification.requestPermission();
                   setNotifPerm(result);
                 }}
-                className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-muted/80 hover:text-foreground"
+                className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted/80 hover:text-foreground"
               >
                 Request permission
               </button>
@@ -666,7 +666,7 @@ export function SettingsView() {
             label="Chat history"
             description="Messages are kept locally in your browser. Last 200 messages, 7-day expiry."
           >
-            <span className="text-xs text-muted-foreground/60">Browser-only</span>
+            <span className="text-xs text-fg-subtle">Browser-only</span>
           </SettingRow>
 
           <SettingRow
@@ -684,8 +684,8 @@ export function SettingsView() {
               className={cn(
                 "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                 chatCleared
-                  ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                  : "border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20",
+                  ? "border-success-border bg-success-bg text-success-fg"
+                  : "border-danger-border bg-danger-bg text-danger-fg hover:bg-danger-bg",
               )}
             >
               {chatCleared ? (
@@ -707,9 +707,9 @@ export function SettingsView() {
         <SettingsSection
           title="Reset & Maintenance"
           icon={ShieldAlert}
-          iconColor="text-red-400"
+          iconColor="text-danger-fg"
         >
-          <p className="text-xs text-muted-foreground/60 -mt-1 mb-3">
+          <p className="text-xs text-fg-subtle -mt-1 mb-3">
             Reset different parts of your OpenClaw installation. Each action shows a preview of what will be affected before executing.
           </p>
 
@@ -750,19 +750,19 @@ export function SettingsView() {
                   "rounded-lg border p-3 text-left transition-colors",
                   resetScope === item.scope
                     ? item.color === "red"
-                      ? "border-red-500/30 bg-red-500/5"
-                      : "border-amber-500/30 bg-amber-500/5"
+                      ? "border-danger-border bg-danger-bg"
+                      : "border-warning-border bg-warning-bg"
                     : "border-foreground/10 hover:bg-foreground/[0.03]",
                 )}
               >
                 <div className="flex items-center gap-2">
                   <AlertTriangle className={cn(
                     "h-3.5 w-3.5",
-                    item.color === "red" ? "text-red-400" : "text-amber-400",
+                    item.color === "red" ? "text-danger-fg" : "text-warning-fg",
                   )} />
-                  <p className="text-xs font-medium text-foreground/90">{item.label}</p>
+                  <p className="text-xs font-medium text-foreground">{item.label}</p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground/60">{item.desc}</p>
+                <p className="mt-1 text-xs text-fg-subtle">{item.desc}</p>
               </button>
             ))}
           </div>
@@ -771,7 +771,7 @@ export function SettingsView() {
           {resetScope && (
             <div className="mt-3 rounded-lg border border-foreground/10 bg-card p-4">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-xs font-semibold text-foreground/90">
+                <h3 className="text-xs font-semibold text-foreground">
                   {resetScope === "all" ? "Full Reset" : `Reset: ${resetScope}`} — Preview
                 </h3>
                 <button
@@ -797,7 +797,7 @@ export function SettingsView() {
                   Running preview...
                 </div>
               ) : resetPreview ? (
-                <div className="mt-3 max-h-40 overflow-y-auto rounded-md border border-foreground/[0.06] bg-muted/50 p-2.5 font-mono text-xs text-muted-foreground/80 leading-5">
+                <div className="mt-3 max-h-40 overflow-y-auto rounded-md border border-foreground/[0.06] bg-muted/50 p-2.5 font-mono text-xs text-muted-foreground leading-5">
                   {resetPreview.split("\n").map((line, i) => (
                     <div key={i}>{line || "\u00A0"}</div>
                   ))}
@@ -808,8 +808,8 @@ export function SettingsView() {
                 <div className={cn(
                   "mt-3 rounded-md border p-2.5 text-xs",
                   resetResult.ok
-                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                    : "border-red-500/20 bg-red-500/10 text-red-400",
+                    ? "border-success-border bg-success-bg text-success-fg"
+                    : "border-danger-border bg-danger-bg text-danger-fg",
                 )}>
                   {resetResult.message}
                 </div>
@@ -822,14 +822,14 @@ export function SettingsView() {
                     className={cn(
                       "rounded-lg border px-4 py-2 text-xs font-medium transition-colors",
                       resetScope === "all"
-                        ? "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                        : "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20",
+                        ? "border-danger-border bg-danger-bg text-danger-fg hover:bg-danger-bg"
+                        : "border-warning-border bg-warning-bg text-warning-fg hover:bg-warning-bg",
                       resetExecuting && "cursor-wait opacity-60",
                     )}
                   >
                     {resetExecuting ? "Executing..." : `Confirm ${resetScope === "all" ? "Full " : ""}Reset`}
                   </button>
-                  <p className="text-xs text-muted-foreground/50">This action cannot be undone.</p>
+                  <p className="text-xs text-fg-subtle">This action cannot be undone.</p>
                 </div>
               ) : null}
             </div>
@@ -840,34 +840,34 @@ export function SettingsView() {
         <SettingsSection
           title="About & Diagnostics"
           icon={Info}
-          iconColor="text-blue-400"
+          iconColor="text-info-fg"
         >
           <SettingRow label="Mission Control version">
-            <span className="font-mono text-xs text-foreground/70">
+            <span className="font-mono text-xs text-fg-secondary">
               {missionControlBuildLabel}
             </span>
           </SettingRow>
 
           <SettingRow label="OpenClaw version">
-            <span className="font-mono text-xs text-foreground/70">
+            <span className="font-mono text-xs text-fg-secondary">
               {onboard?.version || "—"}
             </span>
           </SettingRow>
 
           <SettingRow label="Gateway version">
-            <span className="font-mono text-xs text-foreground/70">
+            <span className="font-mono text-xs text-fg-secondary">
               {gw?.version || "—"}
             </span>
           </SettingRow>
 
           <SettingRow label="Home directory">
-            <span className="rounded-md bg-muted/50 px-2 py-1 font-mono text-xs text-foreground/70">
+            <span className="rounded-md bg-muted/50 px-2 py-1 font-mono text-xs text-fg-secondary">
               {onboard?.home || "—"}
             </span>
           </SettingRow>
 
           <SettingRow label="Config hash">
-            <span className="rounded-md bg-muted/50 px-2 py-1 font-mono text-xs text-foreground/70">
+            <span className="rounded-md bg-muted/50 px-2 py-1 font-mono text-xs text-fg-secondary">
               {settings?.configHash || "—"}
             </span>
           </SettingRow>
@@ -877,7 +877,7 @@ export function SettingsView() {
               href="https://docs.openclaw.ai"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-muted/80 hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted/80 hover:text-foreground"
             >
               Documentation
               <ExternalLink className="h-3 w-3" />
@@ -886,7 +886,7 @@ export function SettingsView() {
               href="https://github.com/robsannaa/openclaw-mission-control/issues"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-muted/80 hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted/80 hover:text-foreground"
             >
               Report an issue
               <ExternalLink className="h-3 w-3" />
@@ -922,7 +922,7 @@ function SettingsSection({
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between px-4 py-3 transition-colors hover:bg-foreground/5"
       >
-        <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <Icon className={cn("h-4 w-4", iconColor)} />
           {title}
         </div>
@@ -954,9 +954,9 @@ function SettingRow({
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
-        <p className="text-xs font-medium text-foreground/80">{label}</p>
+        <p className="text-xs font-medium text-foreground">{label}</p>
         {description && (
-          <p className="mt-0.5 text-xs text-muted-foreground/60">{description}</p>
+          <p className="mt-0.5 text-xs text-fg-subtle">{description}</p>
         )}
       </div>
       <div className="shrink-0">{children}</div>
@@ -984,7 +984,7 @@ function ToggleSwitch({
     >
       <span
         className={cn(
-          "absolute top-0.5 block h-4 w-4 rounded-full bg-white shadow transition-transform",
+          "absolute top-0.5 block h-4 w-4 rounded-full bg-card shadow transition-transform",
           checked ? "left-4" : "left-0.5",
         )}
       />
@@ -993,10 +993,10 @@ function ToggleSwitch({
 }
 
 const BADGE_COLORS: Record<string, string> = {
-  emerald: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
-  amber: "border-amber-500/20 bg-amber-500/10 text-amber-400",
-  red: "border-red-500/20 bg-red-500/10 text-red-400",
-  blue: "border-blue-500/20 bg-blue-500/10 text-blue-400",
+  emerald: "border-success-border bg-success-bg text-success-fg",
+  amber: "border-warning-border bg-warning-bg text-warning-fg",
+  red: "border-danger-border bg-danger-bg text-danger-fg",
+  blue: "border-info-border bg-info-bg text-info-fg",
   zinc: "border-foreground/10 bg-muted/50 text-muted-foreground",
 };
 

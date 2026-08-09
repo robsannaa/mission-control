@@ -18,14 +18,54 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Keys that are RPC parameters for config.patch, NOT valid config keys.
- * Some gateway versions accidentally persist these into openclaw.json.
+ * Top-level keys that are RPC parameters for `config.patch`/`config.apply`,
+ * NOT valid config keys. Some gateway versions accidentally persist these into
+ * openclaw.json, where they then fail schema validation on the next load.
+ *
+ * Each entry also carries a shape test, because "narrow" matters here: this is
+ * the one place in Mission Control that writes openclaw.json directly from
+ * Node, bypassing gateway validation entirely.
  */
-const LEAKED_RPC_KEYS = ["raw", "baseHash", "restartDelayMs"];
+const LEAKED_RPC_KEYS: Array<{
+  key: string;
+  looksLikeLeak: (value: unknown) => boolean;
+}> = [
+  {
+    // The RPC `raw` is always a serialized JSON document.
+    key: "raw",
+    looksLikeLeak: (value) => typeof value === "string" && /^\s*[{[]/.test(value),
+  },
+  {
+    // Config hashes are 64 lowercase hex characters (sha256).
+    key: "baseHash",
+    looksLikeLeak: (value) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value),
+  },
+  {
+    key: "restartDelayMs",
+    looksLikeLeak: (value) => typeof value === "number" && Number.isFinite(value),
+  },
+  {
+    key: "replacePaths",
+    looksLikeLeak: (value) =>
+      Array.isArray(value) && value.every((entry) => typeof entry === "string"),
+  },
+];
 
 /**
  * Strip leaked RPC parameters from the config file on disk.
  * Returns true if the file was modified.
+ *
+ * RISK — read before widening this. Rewriting openclaw.json from Node:
+ *   1. skips the gateway's schema gate, so a bug here can persist an invalid
+ *      config the gateway will then refuse to reload;
+ *   2. reserializes the document, discarding JSON5 comments and formatting;
+ *   3. races the gateway's own writes and its file watcher.
+ *
+ * It is therefore deliberately conservative and bails out unless every
+ * condition holds: the file is strict JSON, it uses no `$include` (whose
+ * layout a flat rewrite would destroy), and the offending key both sits at the
+ * top level and matches the RPC parameter's shape. A future config key legally
+ * named `raw` with a non-JSON string value is left alone.
  */
 export async function sanitizeConfigFile(): Promise<boolean> {
   const configPath = join(getOpenClawHome(), "openclaw.json");
@@ -39,14 +79,19 @@ export async function sanitizeConfigFile(): Promise<boolean> {
   try {
     config = JSON.parse(content) as Record<string, unknown>;
   } catch {
+    // JSON5/comments/trailing commas: not safely rewritable from here.
     return false;
   }
-  if (typeof config !== "object" || config === null || Array.isArray(config)) {
+  if (!isRecord(config)) {
+    return false;
+  }
+  // A `$include` layout must never be flattened by this helper.
+  if (content.includes("$include")) {
     return false;
   }
   let changed = false;
-  for (const key of LEAKED_RPC_KEYS) {
-    if (key in config) {
+  for (const { key, looksLikeLeak } of LEAKED_RPC_KEYS) {
+    if (key in config && looksLikeLeak(config[key])) {
       delete config[key];
       changed = true;
     }
@@ -57,16 +102,56 @@ export async function sanitizeConfigFile(): Promise<boolean> {
   return changed;
 }
 
+/** Parameters shared by `config.patch` and `config.apply`. */
+export type ConfigWriteParams = {
+  /** Serialized JSON document: a merge patch for patch, a full config for apply. */
+  raw: string;
+  /** Hash from `config.get`; required by the gateway once a config file exists. */
+  baseHash?: string;
+  /** Delay before the restart the gateway schedules, when one is needed. */
+  restartDelayMs?: number;
+  /**
+   * Dotted array paths whose shrink/reorder is intentional. `config.patch`
+   * refuses a destructive array replacement unless the exact path is listed
+   * here; nested arrays under array entries use `agents.list[].skills`.
+   * Ignored by `config.apply`, which is a full replacement by definition.
+   */
+  replacePaths?: string[];
+  /** Free-text audit note recorded with the write. */
+  note?: string;
+};
+
 /**
  * Central wrapper for `config.patch` that always sanitizes the config file
  * afterward — even if the gateway call throws (keys can leak before erroring).
  */
 export async function gatewayConfigPatch<T = void>(
-  params: { raw: string; baseHash?: string; restartDelayMs?: number },
+  params: ConfigWriteParams,
   timeout = 15000,
 ): Promise<T> {
   try {
     return await gatewayCall<T>("config.patch", params as Record<string, unknown>, timeout);
+  } finally {
+    await sanitizeConfigFile().catch(() => {});
+  }
+}
+
+/**
+ * `config.apply` — validate and replace the WHOLE config document.
+ *
+ * Use it when the caller genuinely owns the entire document (the raw JSON
+ * editor, or a whole-section delete): a full replacement deletes removed keys
+ * and shrinks arrays without needing `replacePaths`, which is exactly what a
+ * merge patch cannot express. Everything absent from `raw` is gone, so only
+ * call this with a document derived from the snapshot named by `baseHash`.
+ */
+export async function gatewayConfigApply<T = void>(
+  params: ConfigWriteParams,
+  timeout = 15000,
+): Promise<T> {
+  const { replacePaths: _ignored, ...applyParams } = params;
+  try {
+    return await gatewayCall<T>("config.apply", applyParams as Record<string, unknown>, timeout);
   } finally {
     await sanitizeConfigFile().catch(() => {});
   }
@@ -268,7 +353,7 @@ export async function fetchConfig(timeout = 10000): Promise<ConfigData> {
 
 export async function patchConfig(
   patch: Record<string, unknown>,
-  opts?: { maxAttempts?: number; restartDelayMs?: number },
+  opts?: { maxAttempts?: number; restartDelayMs?: number; replacePaths?: string[] },
 ): Promise<void> {
   const maxAttempts = opts?.maxAttempts ?? 8;
   const raw = JSON.stringify(patch);
@@ -287,11 +372,14 @@ export async function patchConfig(
         // Legacy gateway compatibility: some builds omit hash on config.get.
         // First try config.patch without baseHash; if rejected, use CLI config.set fallback.
         try {
-          const patchParams: { raw: string; restartDelayMs?: number } = { raw };
+          const patchParams: ConfigWriteParams = { raw };
           if (opts?.restartDelayMs) {
             patchParams.restartDelayMs = opts.restartDelayMs;
           }
-          await gatewayConfigPatch(patchParams, 15000);
+          if (opts?.replacePaths?.length) {
+            patchParams.replacePaths = opts.replacePaths;
+          }
+          await gatewayConfigPatch(patchParams, CONFIG_WRITE_TIMEOUT_MS);
           return;
         } catch {
           if (!fallback.entries) {
@@ -309,11 +397,14 @@ export async function patchConfig(
           return;
         }
       }
-      const patchParams: { raw: string; baseHash: string; restartDelayMs?: number } = { raw, baseHash: hash };
+      const patchParams: ConfigWriteParams = { raw, baseHash: hash };
       if (opts?.restartDelayMs) {
         patchParams.restartDelayMs = opts.restartDelayMs;
       }
-      await gatewayConfigPatch(patchParams, 15000);
+      if (opts?.replacePaths?.length) {
+        patchParams.replacePaths = opts.replacePaths;
+      }
+      await gatewayConfigPatch(patchParams, CONFIG_WRITE_TIMEOUT_MS);
       return;
     } catch (error) {
       lastError = error;

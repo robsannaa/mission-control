@@ -96,7 +96,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#101214",
+  themeColor: "#131211",
   width: "device-width",
   initialScale: 1,
 };
@@ -118,13 +118,13 @@ export default function RootLayout({
         <ThemeProvider>
           <SetupGate>
             <KeyboardShortcuts />
-            <div className="flex h-screen overflow-hidden bg-stone-50 text-stone-900 dark:bg-[#101214] dark:text-stone-100">
+            <div className="flex h-screen overflow-hidden bg-muted text-foreground dark:bg-background dark:text-foreground">
               <Sidebar />
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                 <Header />
                 <main
                   data-tour="main-content"
-                  className="flex flex-1 overflow-hidden bg-stone-50 dark:bg-[#101214]"
+                  className="flex flex-1 overflow-hidden bg-muted dark:bg-background"
                 >
                   {children}
                 </main>

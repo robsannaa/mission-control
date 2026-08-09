@@ -53,19 +53,19 @@ export type ChannelStatusPayload = {
   deepLink: string | null;
 };
 
-/* ── Style tokens (match the existing stone-palette wizard) ── */
+/* ── Style tokens (semantic design tokens; see src/app/globals.css) ── */
 
 export const inputClass =
-  "w-full rounded-lg px-3 py-2.5 text-sm bg-white dark:bg-[#0d1014] border border-stone-200 dark:border-[#23282e] text-stone-900 dark:text-[#f5f7fa] placeholder:text-stone-300 dark:placeholder:text-[#3a424c] focus:outline-none focus:ring-2 focus:ring-stone-400/40 dark:focus:ring-stone-500/30 focus:border-stone-400 dark:focus:border-stone-500 disabled:opacity-50 transition-all duration-200";
+  "w-full rounded-lg px-3 py-2.5 text-sm bg-card border border-input text-foreground placeholder:text-fg-subtle dark:placeholder:text-fg-placeholder focus:outline-none focus:ring-2 focus:ring-border-strong/40 dark:focus:ring-border-strong/30 focus:border-border-strong dark:focus:border-border-strong disabled:opacity-50 transition-all duration-200";
 
 export const labelClass =
-  "block text-xs font-medium uppercase tracking-wide text-stone-400 dark:text-[#5a6270]";
+  "block text-xs font-medium uppercase tracking-wide text-fg-subtle";
 
 export const primaryBtnClass =
-  "flex items-center gap-1.5 rounded-lg px-5 py-2.5 text-sm font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 shadow-sm";
+  "flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/88 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 shadow-sm";
 
 export const secondaryBtnClass =
-  "rounded-lg px-3 py-2 text-xs font-medium text-stone-500 dark:text-[#a8b0ba] ring-1 ring-stone-200 dark:ring-[#2c343d] hover:bg-stone-100 dark:hover:bg-[#1c2128] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200";
+  "rounded-full px-3 py-2 text-xs font-medium text-fg-secondary ring-1 ring-border hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200";
 
 export const cardClass =
-  "rounded-xl border border-stone-200 dark:border-[#23282e] bg-stone-50 dark:bg-[#0d1014] p-4";
+  "rounded-xl border border-border bg-card p-5";

@@ -28,18 +28,18 @@ function StatusRow({
     <div className="flex items-center gap-3 py-2">
       <span className="relative flex h-2 w-2 shrink-0">
         {ok && (
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
         )}
         <span
           className={cn(
             "relative inline-flex h-2 w-2 rounded-full",
-            pending ? "bg-stone-300 dark:bg-[#3a424c]" : ok ? "bg-emerald-500" : "bg-red-400",
+            pending ? "bg-border-strong" : ok ? "bg-success" : "bg-danger",
           )}
         />
       </span>
-      <span className="text-sm text-stone-700 dark:text-[#d6dce3]">{label}</span>
+      <span className="text-sm text-fg-secondary">{label}</span>
       {detail && (
-        <span className="ml-auto font-mono text-[11px] text-stone-400 dark:text-[#5a6270]">
+        <span className="ml-auto font-mono text-[11px] text-fg-subtle">
           {detail}
         </span>
       )}
@@ -111,17 +111,17 @@ export function StepGateway({
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
-          <Server className="h-3.5 w-3.5 text-stone-400 dark:text-[#a8b0ba]" />
-          <h2 className="text-base font-semibold tracking-tight text-stone-900 dark:text-[#f5f7fa]">
+          <Server className="h-3.5 w-3.5 text-fg-subtle dark:text-muted-foreground" />
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
             Your OpenClaw gateway
           </h2>
         </div>
-        <p className="text-sm leading-relaxed text-stone-500 dark:text-[#a8b0ba]">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           Mission Control talks to a local OpenClaw gateway. Checking it now — this updates live.
         </p>
       </div>
 
-      <div className={cn(cardClass, "divide-y divide-stone-100 dark:divide-[#1c2128] py-1")}>
+      <div className={cn(cardClass, "divide-y divide-border dark:divide-border-subtle py-1")}>
         <StatusRow
           label="OpenClaw installed"
           ok={detect?.installed === true}
@@ -143,7 +143,7 @@ export function StepGateway({
       </div>
 
       {detect && !detect.installed && (
-        <p className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
+        <p className="text-xs leading-relaxed text-warning-fg">
           OpenClaw was not found on this machine. If it is hosted for you, this page will light up
           as soon as your instance is provisioned.
         </p>
@@ -166,8 +166,8 @@ export function StepGateway({
       )}
 
       {startError && (
-        <p className="flex items-center gap-1.5 text-xs text-red-500 dark:text-red-400">
-          <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-red-500 dark:bg-red-400" />
+        <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+          <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-danger" />
           {startError}
         </p>
       )}

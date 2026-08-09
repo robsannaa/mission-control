@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
 
 /* ── Types ────────────────────────────────────────── */
@@ -120,9 +120,9 @@ const PROVIDER_ICONS: Record<string, string> = {
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
-  openai: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
-  elevenlabs: "bg-violet-500/15 text-violet-400 border-violet-500/20",
-  edge: "bg-sky-500/15 text-sky-400 border-sky-500/20",
+  openai: "bg-success-bg text-success-fg border-success-border",
+  elevenlabs: "bg-muted-foreground/15 text-fg-secondary border-border-strong",
+  edge: "bg-info-bg text-info-fg border-info-border",
 };
 
 const AUTO_MODES = [
@@ -145,8 +145,8 @@ function ToastBar({ toast, onDone }: { toast: Toast; onDone: () => void }) {
       className={cn(
         "fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border px-4 py-2.5 text-sm font-medium shadow-xl backdrop-blur-sm",
         toast.type === "success"
-          ? "border-emerald-500/30 bg-emerald-950/80 text-emerald-300"
-          : "border-red-500/30 bg-red-950/80 text-red-300"
+          ? "border-success-border bg-success-bg text-success-fg"
+          : "border-danger-border bg-danger-bg text-danger-fg"
       )}
     >
       <div className="flex items-center gap-2">
@@ -187,7 +187,7 @@ function ProviderCard({
   const [expanded, setExpanded] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState<string>("");
   const [draftKey, setDraftKey] = useState("");
-  const color = PROVIDER_COLORS[provider.id] || "bg-zinc-500/15 text-muted-foreground border-zinc-500/20";
+  const color = PROVIDER_COLORS[provider.id] || "bg-muted-foreground/15 text-muted-foreground border-border-strong/20";
   const icon = PROVIDER_ICONS[provider.id] || "🔈";
   const availableVoices = provider.voices || [];
   const activeVoice =
@@ -196,17 +196,17 @@ function ProviderCard({
       : (availableVoices[0] ?? "");
   const authBadgeClasses =
     provider.authState === "ready" || provider.authState === "builtin"
-      ? "border border-emerald-500/25 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+      ? "border border-success-border bg-success-bg text-success-fg"
       : provider.authState === "external"
-        ? "border border-sky-500/25 bg-sky-500/15 text-sky-700 dark:text-sky-300"
-        : "border border-amber-500/25 bg-amber-500/15 text-amber-700 dark:text-amber-300";
+        ? "border border-info-border bg-info-bg text-info-fg"
+        : "border border-warning-border bg-warning-bg text-warning-fg";
 
   return (
     <div
       className={cn(
         "rounded-xl border transition-all",
         isActive
-          ? "border-emerald-500/30 bg-emerald-500/10"
+          ? "border-success-border bg-success-bg"
           : "border-foreground/10 bg-foreground/5 hover:border-foreground/15"
       )}
     >
@@ -215,11 +215,11 @@ function ProviderCard({
         <span className="text-base">{icon}</span>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-foreground/90">
+            <span className="text-xs font-semibold text-foreground">
               {provider.name}
             </span>
             {isActive && (
-              <span className="rounded-full border border-emerald-500/25 bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+              <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-success-fg">
                 Active
               </span>
             )}
@@ -247,7 +247,7 @@ function ProviderCard({
             <button
               onClick={onSelect}
               disabled={loading}
-              className="rounded-lg border border-foreground/10 bg-background px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              className="rounded-lg border border-foreground/10 bg-background px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
             >
               {loading ? (
                 <span className="inline-flex items-center gap-0.5">
@@ -262,7 +262,7 @@ function ProviderCard({
           )}
           <button
             onClick={() => setExpanded(!expanded)}
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground/70"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-fg-secondary"
           >
             {expanded ? (
               <ChevronUp className="h-4 w-4" />
@@ -300,7 +300,7 @@ function ProviderCard({
                     onChange={(e) => setDraftKey(e.target.value)}
                     placeholder={provider.configured ? "Paste a new API key to replace the current one" : "Paste API key"}
                     aria-label={`API key for ${provider.name || provider.id}`}
-                    className="flex-1 rounded-md border border-foreground/10 bg-background px-3 py-2 text-xs text-foreground/90 outline-none transition-colors focus:border-emerald-500/40"
+                    className="flex-1 rounded-md border border-foreground/10 bg-background px-3 py-2 text-xs text-foreground outline-none transition-colors focus:border-success-border"
                   />
                   <button
                     type="button"
@@ -309,7 +309,7 @@ function ProviderCard({
                       if (ok) setDraftKey("");
                     }}
                     disabled={loading || !draftKey.trim()}
-                    className="rounded-md border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300"
+                    className="rounded-md border border-success-border bg-success-bg px-3 py-2 text-xs font-medium text-success-fg transition-colors hover:bg-success-bg disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save key
                   </button>
@@ -321,14 +321,14 @@ function ProviderCard({
                         void onRemoveKey(provider.id, provider.removeMode, provider.envKey || undefined);
                       }}
                       disabled={loading}
-                      className="rounded-md border border-foreground/10 bg-background px-3 py-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-md border border-foreground/10 bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Remove saved key
                     </button>
                   )}
                 </div>
                 {provider.authState === "external" && (
-                  <p className="text-xs text-muted-foreground/80">
+                  <p className="text-xs text-muted-foreground">
                     This key is managed outside Mission Control. Saving a key here gives TTS its own local configuration.
                   </p>
                 )}
@@ -375,7 +375,7 @@ function ProviderCard({
                     }
                   }}
                   aria-label="Select voice"
-                  className="flex-1 rounded-md border border-foreground/10 bg-muted px-2.5 py-1.5 text-xs text-foreground/80 outline-none focus:border-emerald-500/30"
+                  className="flex-1 rounded-md border border-foreground/10 bg-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-success-border"
                 >
                   {provider.voices.map((v) => (
                     <option key={v} value={v}>
@@ -392,7 +392,7 @@ function ProviderCard({
                   Play
                 </button>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground/70">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Selecting a voice plays an instant sample.
               </p>
             </div>
@@ -499,23 +499,23 @@ function AudioPlayer({
   };
 
   return (
-    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+    <div className="rounded-xl border border-success-border bg-success-bg p-4 space-y-3">
       <audio ref={audioRef} src={audioUrl} preload="auto" />
 
-      <div className="flex items-center gap-2 text-sm font-medium text-emerald-300">
+      <div className="flex items-center gap-2 text-sm font-medium text-success-fg">
         <Check className="h-4 w-4" />
         Audio Generated Successfully
       </div>
 
       {/* Player controls */}
-      <div className="flex items-center gap-3 rounded-lg border border-emerald-500/15 bg-muted px-3 py-3">
+      <div className="flex items-center gap-3 rounded-lg border border-success-border bg-muted px-3 py-3">
         <button
           onClick={togglePlay}
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors",
             playing
-              ? "bg-emerald-500 text-black hover:bg-emerald-400"
-              : "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+              ? "bg-success text-black hover:bg-success"
+              : "bg-success-bg text-success-fg hover:bg-success-bg"
           )}
         >
           {playing ? (
@@ -532,11 +532,11 @@ function AudioPlayer({
             onClick={seekTo}
           >
             <div
-              className="absolute inset-y-0 left-0 rounded-full bg-emerald-400 transition-all"
+              className="absolute inset-y-0 left-0 rounded-full bg-success transition-all"
               style={{ width: `${progress * 100}%` }}
             />
             <div
-              className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-emerald-300 opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+              className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-success opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
               style={{ left: `calc(${progress * 100}% - 6px)` }}
             />
           </div>
@@ -612,8 +612,8 @@ function TtsTestPanel({
 
   return (
     <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
-        <Headphones className="h-3.5 w-3.5 text-violet-400" />
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Headphones className="h-3.5 w-3.5 text-fg-secondary" />
         Voice Sample Lab
       </div>
 
@@ -626,8 +626,8 @@ function TtsTestPanel({
             className={cn(
               "rounded-md border px-2 py-0.5 text-xs leading-tight transition-colors",
               text === preset
-                ? "border-violet-500/35 bg-violet-500/15 text-violet-300"
-                : "border-foreground/10 bg-muted text-muted-foreground hover:text-foreground/70"
+                ? "border-border-strong bg-muted-foreground/15 text-fg-secondary"
+                : "border-foreground/10 bg-muted text-muted-foreground hover:text-fg-secondary"
             )}
           >
             {preset.length > 40 ? `${preset.slice(0, 40)}…` : preset}
@@ -640,13 +640,13 @@ function TtsTestPanel({
         onChange={(e) => setText(e.target.value)}
         rows={3}
         aria-label="Text to convert to speech"
-        className="w-full rounded-lg border border-foreground/10 bg-muted px-3 py-2 text-sm text-foreground/90 placeholder-zinc-600 outline-none focus:border-violet-500/30 resize-none"
+        className="w-full rounded-lg border border-foreground/10 bg-muted px-3 py-2 text-sm text-foreground placeholder-fg-secondary outline-none focus:border-border-strong resize-none"
         placeholder="Enter text to convert to speech..."
       />
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Provider
           </p>
           <select
@@ -662,7 +662,7 @@ function TtsTestPanel({
               }
             }}
             aria-label="TTS provider"
-            className="w-full rounded-md border border-foreground/10 bg-muted px-2.5 py-2 text-xs text-foreground/80 outline-none focus:border-violet-500/30"
+            className="w-full rounded-md border border-foreground/10 bg-muted px-2.5 py-2 text-xs text-foreground outline-none focus:border-border-strong"
           >
             {configuredProviders.map((p) => (
               <option key={p.id} value={p.id}>
@@ -672,7 +672,7 @@ function TtsTestPanel({
           </select>
         </div>
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Voice
           </p>
           <select
@@ -686,7 +686,7 @@ function TtsTestPanel({
             }}
             disabled={!effectiveProviderId || availableVoices.length === 0}
             aria-label="TTS voice"
-            className="w-full rounded-md border border-foreground/10 bg-muted px-2.5 py-2 text-xs text-foreground/80 outline-none focus:border-violet-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-md border border-foreground/10 bg-muted px-2.5 py-2 text-xs text-foreground outline-none focus:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
           >
             {availableVoices.length > 0 ? (
               availableVoices.map((v) => (
@@ -796,8 +796,8 @@ function TalkModeSection({
 
   return (
     <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
-        <Mic className="h-3.5 w-3.5 text-emerald-400" />
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Mic className="h-3.5 w-3.5 text-success-fg" />
         Talk Mode
         <span className="text-xs text-muted-foreground font-normal">(macOS / iOS / Android)</span>
       </div>
@@ -808,7 +808,7 @@ function TalkModeSection({
           href="https://docs.openclaw.ai/nodes/talk#talk-mode"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-emerald-400 hover:underline"
+          className="text-foreground hover:underline"
         >
           Docs
         </a>
@@ -831,7 +831,7 @@ function TalkModeSection({
                 {Object.entries(config.voiceAliases).map(([alias, id]) => (
                   <span
                     key={alias}
-                    className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400"
+                    className="rounded-md border border-success-border bg-success-bg px-2 py-0.5 text-xs text-success-fg"
                     title={id}
                   >
                     {alias}
@@ -843,8 +843,8 @@ function TalkModeSection({
 
           {/* Test Talk in browser */}
           {onTestTalk && (
-            <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2">
-              <p className="text-xs font-medium text-foreground/80">Test in browser</p>
+            <div className="mt-3 rounded-lg border border-success-border bg-success-bg p-3 space-y-2">
+              <p className="text-xs font-medium text-foreground">Test in browser</p>
               <p className="text-xs text-muted-foreground">
                 Send a message to the agent and hear the reply in your Talk voice.
               </p>
@@ -856,7 +856,7 @@ function TalkModeSection({
                   onKeyDown={(e) => e.key === "Enter" && void onTestTalk(testMessage)}
                   placeholder="Say something to the agent…"
                   aria-label="Test message for Talk"
-                  className="flex-1 min-w-0 rounded-lg border border-foreground/10 bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  className="flex-1 min-w-0 rounded-lg border border-foreground/10 bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-success-border"
                   disabled={testingTalk}
                 />
                 <div className="flex gap-2">
@@ -869,8 +869,8 @@ function TalkModeSection({
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
                         listening
-                          ? "border-amber-500/40 bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                          : "border-foreground/15 bg-muted/50 text-foreground/80 hover:bg-muted"
+                          ? "border-warning-border bg-warning-bg text-warning-fg"
+                          : "border-foreground/15 bg-muted/50 text-foreground hover:bg-muted"
                       )}
                       title="Use microphone"
                     >
@@ -882,7 +882,7 @@ function TalkModeSection({
                     type="button"
                     onClick={() => void onTestTalk(testMessage)}
                     disabled={testingTalk || !testMessage.trim()}
-                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-sm font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-success-border bg-success-bg px-4 py-2 text-sm font-medium text-success-fg transition-colors hover:bg-success-bg disabled:opacity-50"
                   >
                     {testingTalk ? (
                       <>
@@ -907,19 +907,19 @@ function TalkModeSection({
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-foreground/10 bg-muted/50 px-4 py-6 text-center">
-          <Mic className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+          <Mic className="mx-auto h-8 w-8 text-fg-subtle mb-2" />
           <p className="text-xs text-muted-foreground">
             Talk Mode is not configured yet.
           </p>
-          <p className="text-xs text-muted-foreground/60 mt-1">
-            Add a <code className="rounded bg-foreground/10 px-1 py-0.5 text-xs">talk</code> section to enable voice conversation. Set <strong className="text-foreground/70">voiceId</strong> and <strong className="text-foreground/70">apiKey</strong> in Config → Raw or after enabling.
+          <p className="text-xs text-fg-subtle mt-1">
+            Add a <code className="rounded bg-foreground/10 px-1 py-0.5 text-xs">talk</code> section to enable voice conversation. Set <strong className="text-fg-secondary">voiceId</strong> and <strong className="text-fg-secondary">apiKey</strong> in Config → Raw or after enabling.
           </p>
           {onEnableTalk && (
             <button
               type="button"
               onClick={() => void onEnableTalk()}
               disabled={enabling}
-              className="mt-4 inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-sm font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25 disabled:opacity-50"
+              className="mt-4 inline-flex items-center gap-2 rounded-lg border border-success-border bg-success-bg px-4 py-2 text-sm font-medium text-success-fg transition-colors hover:bg-success-bg disabled:opacity-50"
             >
               {enabling ? (
                 <>
@@ -953,8 +953,8 @@ function TalkModeSection({
           ].map((step) => (
             <div key={step.label} className="text-center">
               <span className="text-sm">{step.icon}</span>
-              <p className="text-xs font-medium text-foreground/70 mt-0.5">{step.label}</p>
-              <p className="text-xs text-muted-foreground/60">{step.desc}</p>
+              <p className="text-xs font-medium text-fg-secondary mt-0.5">{step.label}</p>
+              <p className="text-xs text-fg-subtle">{step.desc}</p>
             </div>
           ))}
         </div>
@@ -968,10 +968,10 @@ function TalkModeSection({
 function ConfigField({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-foreground/5 bg-muted/50 px-3 py-2">
-      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+      <p className="text-xs font-medium uppercase tracking-wider text-fg-subtle">
         {label}
       </p>
-      <p className="text-sm text-foreground/70 mt-0.5 font-mono">{value}</p>
+      <p className="text-sm text-fg-secondary mt-0.5 font-mono">{value}</p>
     </div>
   );
 }
@@ -1006,7 +1006,7 @@ function TtsSettingsPanel({
 
   return (
     <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-4">
-      <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
         <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
         TTS Settings
       </div>
@@ -1017,12 +1017,12 @@ function TtsSettingsPanel({
           Provider Fallback Chain
         </p>
         <div className="flex items-center gap-2">
-          <span className="rounded-md border border-violet-500/30 bg-violet-500/15 px-2 py-0.5 text-xs font-medium text-violet-300">
+          <span className="rounded-md border border-border-strong bg-muted-foreground/15 px-2 py-0.5 text-xs font-medium text-fg-secondary">
             {status.provider}
           </span>
           {status.fallbackProviders?.map((fp) => (
             <div key={fp} className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground/60">→</span>
+              <span className="text-xs text-fg-subtle">→</span>
               <span className="rounded-md border border-foreground/10 bg-foreground/5 px-2 py-0.5 text-xs text-muted-foreground">
                 {fp}
               </span>
@@ -1047,8 +1047,8 @@ function TtsSettingsPanel({
               className={cn(
                 "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs",
                 k.has
-                  ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400"
-                  : "border-foreground/10 bg-foreground/5 text-muted-foreground/60"
+                  ? "border-success-border bg-success-bg text-success-fg"
+                  : "border-foreground/10 bg-foreground/5 text-fg-subtle"
               )}
             >
               {k.has ? (
@@ -1086,7 +1086,7 @@ function TtsSettingsPanel({
           >
             <span
               className={cn(
-                "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+                "absolute top-0.5 h-4 w-4 rounded-full bg-card transition-transform",
                 summarize ? "left-5" : "left-0.5"
               )}
             />
@@ -1109,11 +1109,11 @@ function TtsSettingsPanel({
                   });
                 }
               }}
-              className="w-24 rounded-md border border-foreground/10 bg-muted px-2 py-1 text-xs text-foreground/70 outline-none"
+              className="w-24 rounded-md border border-foreground/10 bg-muted px-2 py-1 text-xs text-fg-secondary outline-none"
               placeholder="1500"
               aria-label="Summary threshold (characters)"
             />
-            <span className="text-xs text-muted-foreground/60">chars</span>
+            <span className="text-xs text-fg-subtle">chars</span>
           </div>
         )}
       </div>
@@ -1518,7 +1518,7 @@ export function AudioView() {
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading audio configuration..." size="lg" />
+        <ScreenLoadingState label="Loading audio configuration..." size="lg" />
       </SectionLayout>
     );
   }
@@ -1543,7 +1543,7 @@ export function AudioView() {
       <SectionHeader
         title={
           <span className="inline-flex items-center gap-2">
-            <Volume2 className="h-5 w-5 text-stone-700 dark:text-stone-200" />
+            <Volume2 className="h-5 w-5 text-fg-secondary dark:text-foreground" />
             Audio & Voice
           </span>
         }
@@ -1553,7 +1553,7 @@ export function AudioView() {
             <ApiWarningBadge warning={apiWarning} degraded={apiDegraded} />
             <button
               onClick={fetchData}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-100"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
             >
               <RefreshCw className="h-4 w-4" />
               Refresh
@@ -1570,24 +1570,24 @@ export function AudioView() {
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="flex items-center gap-2">
-              <Waves className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+              <Waves className="h-3.5 w-3.5 text-fg-secondary shrink-0" />
               <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground/80">Auto-TTS</p>
-                <p className="text-xs font-medium text-foreground/90">{status.auto === "off" ? "Off" : status.auto}</p>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Auto-TTS</p>
+                <p className="text-xs font-medium text-foreground">{status.auto === "off" ? "Off" : status.auto}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Speaker className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+              <Speaker className="h-3.5 w-3.5 text-fg-secondary shrink-0" />
               <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground/80">Provider</p>
-                <p className="text-xs font-medium text-foreground/90">{providersData.active || status.provider || "none"}</p>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Provider</p>
+                <p className="text-xs font-medium text-foreground">{providersData.active || status.provider || "none"}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Mic className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              <Mic className="h-3.5 w-3.5 text-success-fg shrink-0" />
               <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground/80">Talk Mode</p>
-                <p className="text-xs font-medium text-foreground/90">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Talk Mode</p>
+                <p className="text-xs font-medium text-foreground">
                   {((configData.talk.parsed != null && typeof configData.talk.parsed === "object") || (configData.talk.resolved && Object.keys(configData.talk.resolved).length > 0))
                     ? "Configured"
                     : "Not configured"}
@@ -1595,10 +1595,10 @@ export function AudioView() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Globe className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+              <Globe className="h-3.5 w-3.5 text-info-fg shrink-0" />
               <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground/80">Providers</p>
-                <p className="text-xs font-medium text-foreground/90">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Providers</p>
+                <p className="text-xs font-medium text-foreground">
                   {providersData.providers.filter((p) => p.configured).length} configured
                 </p>
               </div>
@@ -1609,15 +1609,15 @@ export function AudioView() {
         <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="flex items-center gap-2 text-xs font-semibold text-foreground/90">
-                <Radio className="h-4 w-4 text-emerald-500" />
+              <h2 className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <Radio className="h-4 w-4 text-success-fg" />
                 Voice Provider
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 Switch the active TTS engine without digging into the provider cards.
               </p>
             </div>
-            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+            <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-success-fg">
               Active: {providersData.active || status.provider || "none"}
             </span>
           </div>
@@ -1639,7 +1639,7 @@ export function AudioView() {
                   className={cn(
                     "rounded-xl border px-3 py-3 text-left transition-all",
                     active
-                      ? "border-emerald-500/30 bg-emerald-500/10"
+                      ? "border-success-border bg-success-bg"
                       : canSwitch
                         ? "border-foreground/10 bg-background hover:border-foreground/20 hover:bg-muted"
                         : "border-foreground/10 bg-foreground/5 opacity-70"
@@ -1647,19 +1647,19 @@ export function AudioView() {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-base">{PROVIDER_ICONS[provider.id] || "🔈"}</span>
-                    <span className="text-sm font-medium text-foreground/90">{provider.name}</span>
+                    <span className="text-sm font-medium text-foreground">{provider.name}</span>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
                     {active ? (
-                      <span className="rounded-full border border-emerald-500/25 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                      <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-success-fg">
                         Active
                       </span>
                     ) : canSwitch ? (
-                      <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
+                      <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-fg-secondary">
                         Switch
                       </span>
                     ) : (
-                      <span className="rounded-full border border-amber-500/25 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                      <span className="rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-warning-fg">
                         {provider.authLabel || "Needs key"}
                       </span>
                     )}
@@ -1683,8 +1683,8 @@ export function AudioView() {
         {/* Auto-TTS mode selector */}
         <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-5 space-y-4">
               <div>
-                <h2 className="text-xs font-semibold text-foreground/90 flex items-center gap-2">
-                  <Waves className="h-4 w-4 text-violet-400" />
+                <h2 className="text-xs font-semibold text-foreground flex items-center gap-2">
+                  <Waves className="h-4 w-4 text-fg-secondary" />
                   Auto-TTS
                 </h2>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -1697,7 +1697,7 @@ export function AudioView() {
                         ? " Replies are spoken when you sent a voice message."
                         : " Only replies to messages tagged with /tts are spoken."}
                 </p>
-                <p className="mt-2 text-xs font-medium text-foreground/70">
+                <p className="mt-2 text-xs font-medium text-fg-secondary">
                   Click a mode below to switch Auto-TTS behavior.
                 </p>
               </div>
@@ -1710,7 +1710,7 @@ export function AudioView() {
                     className={cn(
                       "rounded-lg border px-3 py-2.5 text-left transition-all cursor-pointer shadow-sm",
                       status.auto === m.value
-                        ? "border-violet-500/35 bg-violet-500/12 ring-1 ring-violet-500/20"
+                        ? "border-border-strong bg-muted-foreground/12 ring-1 ring-border-strong"
                         : "border-foreground/10 bg-background hover:border-foreground/20 hover:bg-muted"
                     )}
                   >
@@ -1718,7 +1718,7 @@ export function AudioView() {
                       <p
                         className={cn(
                           "text-xs font-medium",
-                          status.auto === m.value ? "text-violet-300" : "text-foreground/80"
+                          status.auto === m.value ? "text-fg-secondary" : "text-foreground"
                         )}
                       >
                         {m.label}
@@ -1727,14 +1727,14 @@ export function AudioView() {
                         className={cn(
                           "rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
                           status.auto === m.value
-                            ? "bg-violet-500/20 text-violet-300"
+                            ? "bg-muted-foreground/20 text-fg-secondary"
                             : "bg-foreground/5 text-muted-foreground"
                         )}
                       >
                         {status.auto === m.value ? "Selected" : "Click to use"}
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground/60 mt-0.5">{m.desc}</p>
+                    <p className="text-xs text-fg-subtle mt-0.5">{m.desc}</p>
                   </button>
                 ))}
               </div>
@@ -1742,8 +1742,8 @@ export function AudioView() {
 
         {/* TTS Providers */}
         <div>
-          <h2 className="text-xs font-semibold text-foreground/90 mb-3 flex items-center gap-2">
-            <Speaker className="h-4 w-4 text-violet-400" />
+          <h2 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Speaker className="h-4 w-4 text-fg-secondary" />
             TTS Providers
           </h2>
           <div className="space-y-2">
@@ -1806,8 +1806,8 @@ export function AudioView() {
             onClick={() => setSlashCommandsOpen((o) => !o)}
             className="flex w-full items-center justify-between gap-2 p-4 text-left hover:bg-foreground/5 transition-colors"
           >
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
-              <Zap className="h-4 w-4 text-amber-400" />
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Zap className="h-4 w-4 text-warning-fg" />
               Slash Commands
             </div>
             <ChevronDown
@@ -1820,16 +1820,16 @@ export function AudioView() {
                 Control TTS from any channel using slash commands:
               </p>
               <div className="rounded-lg bg-muted p-3 font-mono text-xs text-muted-foreground space-y-1">
-                <p><span className="text-violet-400">/tts</span> off &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span className="text-muted-foreground/60"># Disable TTS</span></p>
-                <p><span className="text-violet-400">/tts</span> always &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-muted-foreground/60"># Speak all replies</span></p>
-                <p><span className="text-violet-400">/tts</span> inbound &nbsp;&nbsp;&nbsp;<span className="text-muted-foreground/60"># Reply to voice with voice</span></p>
-                <p><span className="text-violet-400">/tts</span> tagged &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-muted-foreground/60"># Only /tts tagged messages</span></p>
-                <p><span className="text-violet-400">/tts</span> status &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-muted-foreground/60"># Show current state</span></p>
-                <p><span className="text-violet-400">/tts</span> provider openai <span className="text-muted-foreground/60"># Switch provider</span></p>
-                <p><span className="text-violet-400">/tts</span> limit 2000 &nbsp;<span className="text-muted-foreground/60"># Summary threshold</span></p>
-                <p><span className="text-violet-400">/tts</span> audio Hello! &nbsp;<span className="text-muted-foreground/60"># One-off TTS</span></p>
+                <p><span className="text-fg-secondary">/tts</span> off &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span className="text-fg-subtle"># Disable TTS</span></p>
+                <p><span className="text-fg-secondary">/tts</span> always &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-fg-subtle"># Speak all replies</span></p>
+                <p><span className="text-fg-secondary">/tts</span> inbound &nbsp;&nbsp;&nbsp;<span className="text-fg-subtle"># Reply to voice with voice</span></p>
+                <p><span className="text-fg-secondary">/tts</span> tagged &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-fg-subtle"># Only /tts tagged messages</span></p>
+                <p><span className="text-fg-secondary">/tts</span> status &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-fg-subtle"># Show current state</span></p>
+                <p><span className="text-fg-secondary">/tts</span> provider openai <span className="text-fg-subtle"># Switch provider</span></p>
+                <p><span className="text-fg-secondary">/tts</span> limit 2000 &nbsp;<span className="text-fg-subtle"># Summary threshold</span></p>
+                <p><span className="text-fg-secondary">/tts</span> audio Hello! &nbsp;<span className="text-fg-subtle"># One-off TTS</span></p>
               </div>
-              <p className="text-xs text-muted-foreground/60">
+              <p className="text-xs text-fg-subtle">
                 Note: Discord uses <code className="rounded bg-foreground/10 px-1 text-xs">/voice</code> instead
                 (because <code className="rounded bg-foreground/10 px-1 text-xs">/tts</code> is a built-in Discord command).
               </p>
@@ -1844,8 +1844,8 @@ export function AudioView() {
             onClick={() => setGatewayRpcOpen((o) => !o)}
             className="flex w-full items-center justify-between gap-2 p-4 text-left hover:bg-foreground/5 transition-colors"
           >
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
-              <Radio className="h-4 w-4 text-sky-400" />
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Radio className="h-4 w-4 text-info-fg" />
               Gateway RPC Methods
             </div>
             <ChevronDown
@@ -1865,7 +1865,7 @@ export function AudioView() {
                 ].map((m) => (
                   <div
                     key={m}
-                    className="rounded-lg border border-foreground/10 bg-muted/50 px-3 py-2 font-mono text-xs text-sky-400"
+                    className="rounded-lg border border-foreground/10 bg-muted/50 px-3 py-2 font-mono text-xs text-info-fg"
                   >
                     {m}
                   </div>

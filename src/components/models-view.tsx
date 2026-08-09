@@ -124,12 +124,12 @@ function StatusDot({ active, className }: { active: boolean; className?: string 
   return (
     <span className={cn("relative flex h-2.5 w-2.5 shrink-0", className)}>
       {active && (
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-40" />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-40" />
       )}
       <span
         className={cn(
           "relative inline-flex h-2.5 w-2.5 rounded-full",
-          active ? "bg-emerald-400" : "bg-[#3d4752]"
+          active ? "bg-success" : "bg-border-strong"
         )}
       />
     </span>
@@ -138,7 +138,7 @@ function StatusDot({ active, className }: { active: boolean; className?: string 
 
 function ProviderAvatar({ name }: { name: string }) {
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#2c343d] bg-[#20252a] text-sm font-bold text-[#a8b0ba]">
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-sm font-bold text-muted-foreground">
       {name.charAt(0).toUpperCase()}
     </div>
   );
@@ -173,8 +173,8 @@ function ModelList({
   if (loading) {
     return (
       <div className="flex flex-col items-center gap-3 py-14">
-        <Loader2 className="h-6 w-6 animate-spin text-[#34d399]" />
-        <p className="text-xs text-[#7a8591]">Loading available models...</p>
+        <Loader2 className="h-6 w-6 animate-spin text-success-fg" />
+        <p className="text-xs text-fg-subtle">Loading available models...</p>
       </div>
     );
   }
@@ -182,33 +182,33 @@ function ModelList({
   if (models.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-14 text-center">
-        <AlertCircle className="h-8 w-8 text-[#3d4752]" />
-        <p className="text-sm text-[#a8b0ba]">No models found</p>
-        <p className="text-xs text-[#7a8591]">The provider may not have returned a model list.</p>
+        <AlertCircle className="h-8 w-8 text-fg-placeholder" />
+        <p className="text-sm text-muted-foreground">No models found</p>
+        <p className="text-xs text-fg-subtle">The provider may not have returned a model list.</p>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col">
-      <div className="sticky top-0 border-b border-[#2c343d] bg-[#171a1d] px-5 py-3">
+      <div className="sticky top-0 border-b border-border bg-card px-5 py-3">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#3d4752]" />
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-placeholder" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search models..."
-            className="w-full rounded-lg border border-[#2c343d] bg-[#15191d] py-2 pl-9 pr-3 text-sm text-[#f5f7fa] placeholder-[#3d4752] focus:border-[#34d399]/40 focus:outline-none focus:ring-2 focus:ring-[#34d399]/20"
+            className="w-full rounded-lg border border-border bg-muted py-2 pl-9 pr-3 text-sm text-foreground placeholder-fg-placeholder focus:border-success-border/40 focus:outline-none focus:ring-2 focus:ring-success/20"
           />
         </div>
-        <p className="mt-1.5 text-[11px] text-[#7a8591]">
+        <p className="mt-1.5 text-[11px] text-fg-subtle">
           {filtered.length} model{filtered.length !== 1 ? "s" : ""}
         </p>
       </div>
       <div className="max-h-72 overflow-y-auto">
         {filtered.length === 0 ? (
-          <p className="py-8 text-center text-xs text-[#7a8591]">No models match your search</p>
+          <p className="py-8 text-center text-xs text-fg-subtle">No models match your search</p>
         ) : (
           <div className="p-2">
             {filtered.map((m) => {
@@ -222,27 +222,27 @@ function ModelList({
                   onClick={() => void onSelect(m.id)}
                   className={cn(
                     "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
-                    isActive ? "bg-[#34d399]/10" : "hover:bg-[#20252a]"
+                    isActive ? "bg-success/10" : "hover:bg-secondary"
                   )}
                 >
                   <div className="flex h-5 w-5 shrink-0 items-center justify-center">
                     {isActive ? (
-                      <Check className="h-4 w-4 text-[#34d399]" strokeWidth={2.5} />
+                      <Check className="h-4 w-4 text-success-fg" strokeWidth={2.5} />
                     ) : (
-                      <div className="h-1.5 w-1.5 rounded-full bg-[#3d4752] transition-colors group-hover:bg-[#7a8591]" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-border-strong transition-colors group-hover:bg-fg-subtle" />
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <span
                       className={cn(
                         "block truncate text-sm font-medium",
-                        isActive ? "text-[#34d399]" : "text-[#f5f7fa]"
+                        isActive ? "text-success-fg" : "text-foreground"
                       )}
                     >
                       {displayName}
                     </span>
                     {displayName !== m.id && (
-                      <span className="block truncate font-mono text-[11px] text-[#7a8591]">
+                      <span className="block truncate font-mono text-[11px] text-fg-subtle">
                         {m.id}
                       </span>
                     )}
@@ -336,35 +336,35 @@ function ModelSelect({
         disabled={disabled || loading}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "flex w-full items-center gap-2 rounded-lg border border-[#2c343d] bg-[#15191d] px-3 py-2 text-sm transition-colors",
-          "hover:border-[#3d4752] focus:border-[#34d399]/40 focus:outline-none focus:ring-2 focus:ring-[#34d399]/20",
+          "flex w-full items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm transition-colors",
+          "hover:border-border-strong focus:border-success-border/40 focus:outline-none focus:ring-2 focus:ring-success/20",
           "disabled:cursor-not-allowed disabled:opacity-50",
-          open && "border-[#34d399]/40 ring-2 ring-[#34d399]/20"
+          open && "border-success-border/40 ring-2 ring-success/20"
         )}
       >
         {loading ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#34d399]" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-success-fg" />
         ) : value ? (
-          <span className="h-2 w-2 shrink-0 rounded-full bg-[#34d399]" />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-success" />
         ) : null}
-        <span className={cn("flex-1 truncate text-left", value ? "text-[#f5f7fa]" : "text-[#7a8591]")}>
+        <span className={cn("flex-1 truncate text-left", value ? "text-foreground" : "text-fg-subtle")}>
           {loading ? "Loading models..." : displayValue}
         </span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 text-[#7a8591] transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-fg-subtle transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-hidden rounded-xl border border-[#2c343d] bg-[#171a1d] shadow-2xl">
-          <div className="border-b border-[#2c343d] px-3 py-2">
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+          <div className="border-b border-border px-3 py-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-[#3d4752]" />
+              <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-fg-placeholder" />
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search models..."
-                className="w-full rounded-md border border-[#2c343d] bg-[#15191d] py-1.5 pl-8 pr-2 text-xs text-[#f5f7fa] placeholder-[#3d4752] focus:outline-none"
+                className="w-full rounded-md border border-border bg-muted py-1.5 pl-8 pr-2 text-xs text-foreground placeholder-fg-placeholder focus:outline-none"
               />
             </div>
           </div>
@@ -374,24 +374,24 @@ function ModelSelect({
                 type="button"
                 onClick={() => handleSelect(null)}
                 className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#20252a]",
-                  value === null ? "bg-[#34d399]/5 text-[#34d399]" : "text-[#a8b0ba]"
+                  "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-secondary",
+                  value === null ? "bg-success/5 text-success-fg" : "text-muted-foreground"
                 )}
               >
                 <div className="flex h-4 w-4 shrink-0 items-center justify-center">
-                  {value === null && <Check className="h-3 w-3 text-[#34d399]" />}
+                  {value === null && <Check className="h-3 w-3 text-success-fg" />}
                 </div>
                 Use default
               </button>
             )}
             {filteredGroups.length === 0 && (
-              <p className="py-6 text-center text-xs text-[#7a8591]">
+              <p className="py-6 text-center text-xs text-fg-subtle">
                 {query ? "No models match your search" : "No models available"}
               </p>
             )}
             {filteredGroups.map((group) => (
               <div key={group.providerId}>
-                <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#3d4752]">
+                <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-placeholder">
                   {group.providerLabel}
                 </p>
                 {group.models.map((m) => {
@@ -405,15 +405,15 @@ function ModelSelect({
                       onClick={() => handleSelect(m.id)}
                       className={cn(
                         "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
-                        isSelected ? "bg-[#34d399]/10 text-[#34d399]" : "text-[#f5f7fa] hover:bg-[#20252a]"
+                        isSelected ? "bg-success/10 text-success-fg" : "text-foreground hover:bg-secondary"
                       )}
                     >
                       <div className="flex h-4 w-4 shrink-0 items-center justify-center">
-                        {isSelected && <Check className="h-3 w-3 text-[#34d399]" />}
+                        {isSelected && <Check className="h-3 w-3 text-success-fg" />}
                       </div>
                       <span className="truncate">{displayName}</span>
                       {displayName !== m.id && (
-                        <span className="ml-auto shrink-0 font-mono text-[10px] text-[#7a8591]">
+                        <span className="ml-auto shrink-0 font-mono text-[10px] text-fg-subtle">
                           {m.id.split("/").pop()}
                         </span>
                       )}
@@ -530,29 +530,29 @@ function AddProviderWizard({
 
   return (
     <div className="animate-backdrop-in fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center">
-      <div className="animate-modal-in mx-0 flex w-full max-w-lg flex-col rounded-t-2xl border border-[#2c343d] bg-[#171a1d] shadow-2xl sm:mx-4 sm:rounded-2xl">
+      <div className="animate-modal-in mx-0 flex w-full max-w-lg flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:mx-4 sm:rounded-2xl">
         {/* Header */}
-        <div className="flex shrink-0 items-center gap-3 border-b border-[#2c343d] px-5 py-4">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
           {canGoBack && (
             <button
               type="button"
               onClick={goBack}
               disabled={wizard.step === "validating"}
               aria-label="Go back"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#a8b0ba] transition-colors hover:bg-[#20252a] hover:text-[#f5f7fa] disabled:opacity-40"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-[#f5f7fa]">{stepTitle[wizard.step]}</h2>
+            <h2 className="text-sm font-semibold text-foreground">{stepTitle[wizard.step]}</h2>
             {wizard.step === "pick" && (
-              <p className="mt-0.5 text-xs text-[#7a8591]">
+              <p className="mt-0.5 text-xs text-fg-subtle">
                 Connect an AI provider to power your assistant
               </p>
             )}
             {wizard.step === "key" && provider && (
-              <p className="mt-0.5 text-xs text-[#7a8591]">
+              <p className="mt-0.5 text-xs text-fg-subtle">
                 Paste your {provider.name} API key below
               </p>
             )}
@@ -561,7 +561,7 @@ function AddProviderWizard({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#7a8591] transition-colors hover:bg-[#20252a] hover:text-[#f5f7fa]"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-subtle transition-colors hover:bg-secondary hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
@@ -577,14 +577,14 @@ function AddProviderWizard({
                   key={p.id}
                   type="button"
                   onClick={() => pickProvider(p.id)}
-                  className="group flex w-full items-center gap-4 rounded-xl border border-[#2c343d] bg-[#15191d] p-4 text-left transition-all hover:border-[#3d4752] hover:bg-[#1d2227] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34d399]/30"
+                  className="group flex w-full items-center gap-4 rounded-xl border border-border bg-muted p-4 text-left transition-all hover:border-border-strong hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/30"
                 >
                   <ProviderAvatar name={p.name} />
                   <div className="min-w-0 flex-1">
-                    <span className="text-sm font-semibold text-[#f5f7fa]">{p.name}</span>
-                    <p className="mt-0.5 text-xs text-[#7a8591]">{p.hint}</p>
+                    <span className="text-sm font-semibold text-foreground">{p.name}</span>
+                    <p className="mt-0.5 text-xs text-fg-subtle">{p.hint}</p>
                   </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-[#3d4752] transition-colors group-hover:text-[#7a8591]" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-fg-placeholder transition-colors group-hover:text-fg-subtle" />
                 </button>
               ))}
             </div>
@@ -593,25 +593,25 @@ function AddProviderWizard({
           {/* Step: enter API key */}
           {wizard.step === "key" && provider && (
             <div className="space-y-4 p-5">
-              <div className="rounded-xl border border-[#2c343d] bg-[#15191d] p-4">
+              <div className="rounded-xl border border-border bg-muted p-4">
                 <div className="mb-3 flex items-center gap-2">
-                  <Key className="h-3.5 w-3.5 shrink-0 text-[#34d399]" />
-                  <span className="text-xs font-semibold text-[#d6dce3]">
+                  <Key className="h-3.5 w-3.5 shrink-0 text-success-fg" />
+                  <span className="text-xs font-semibold text-fg-secondary">
                     How to get your {provider.name} API key
                   </span>
                 </div>
                 <ol className="space-y-2.5">
                   <li className="flex items-start gap-3">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#20252a] text-[10px] font-semibold text-[#7a8591] ring-1 ring-[#2c343d]">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold text-fg-subtle ring-1 ring-border">
                       1
                     </span>
-                    <p className="pt-0.5 text-xs leading-relaxed text-[#a8b0ba]">
+                    <p className="pt-0.5 text-xs leading-relaxed text-muted-foreground">
                       Go to the{" "}
                       <a
                         href={provider.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[#34d399] underline-offset-2 hover:underline"
+                        className="inline-flex items-center gap-1 text-foreground underline-offset-2 hover:underline"
                       >
                         {provider.name} API keys page
                         <ExternalLink className="h-2.5 w-2.5" />
@@ -619,18 +619,18 @@ function AddProviderWizard({
                     </p>
                   </li>
                   <li className="flex items-start gap-3">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#20252a] text-[10px] font-semibold text-[#7a8591] ring-1 ring-[#2c343d]">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold text-fg-subtle ring-1 ring-border">
                       2
                     </span>
-                    <p className="pt-0.5 text-xs leading-relaxed text-[#a8b0ba]">
+                    <p className="pt-0.5 text-xs leading-relaxed text-muted-foreground">
                       Create a new API key and copy it
                     </p>
                   </li>
                   <li className="flex items-start gap-3">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#20252a] text-[10px] font-semibold text-[#7a8591] ring-1 ring-[#2c343d]">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold text-fg-subtle ring-1 ring-border">
                       3
                     </span>
-                    <p className="pt-0.5 text-xs leading-relaxed text-[#a8b0ba]">
+                    <p className="pt-0.5 text-xs leading-relaxed text-muted-foreground">
                       Paste it in the field below and click Validate
                     </p>
                   </li>
@@ -640,13 +640,13 @@ function AddProviderWizard({
               <div className="space-y-2">
                 <label
                   htmlFor="models-api-key-input"
-                  className="block text-xs font-medium text-[#d6dce3]"
+                  className="block text-xs font-medium text-fg-secondary"
                 >
                   API Key
                   {provider.keyPrefix && (
-                    <span className="ml-1.5 font-normal text-[#7a8591]">
+                    <span className="ml-1.5 font-normal text-fg-subtle">
                       (starts with{" "}
-                      <code className="font-mono text-[#a8b0ba]">{provider.keyPrefix}</code>)
+                      <code className="font-mono text-muted-foreground">{provider.keyPrefix}</code>)
                     </span>
                   )}
                 </label>
@@ -667,21 +667,21 @@ function AddProviderWizard({
                   autoComplete="off"
                   spellCheck={false}
                   className={cn(
-                    "w-full rounded-lg border bg-[#15191d] px-3 py-2.5 font-mono text-sm text-[#f5f7fa] placeholder-[#3d4752]",
+                    "w-full rounded-lg border bg-muted px-3 py-2.5 font-mono text-sm text-foreground placeholder-fg-placeholder",
                     "transition-colors focus:outline-none focus:ring-2",
                     wizard.error
-                      ? "border-red-500/40 focus:border-red-500/40 focus:ring-red-500/20"
-                      : "border-[#2c343d] focus:border-[#34d399]/40 focus:ring-[#34d399]/20"
+                      ? "border-danger-border focus:border-danger-border focus:ring-danger-border"
+                      : "border-border focus:border-success-border/40 focus:ring-success/20"
                   )}
                 />
                 {wizard.error && (
-                  <p className="flex items-center gap-1.5 text-xs text-red-400">
+                  <p className="flex items-center gap-1.5 text-xs text-danger-fg">
                     <AlertCircle className="h-3 w-3 shrink-0" />
                     {wizard.error}
                   </p>
                 )}
-                <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-[#7a8591]">
-                  <Check className="mt-0.5 h-3 w-3 shrink-0 text-[#34d399]" />
+                <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-fg-subtle">
+                  <Check className="mt-0.5 h-3 w-3 shrink-0 text-success-fg" />
                   Your key is stored only on this device and never sent to our servers.
                 </p>
               </div>
@@ -692,12 +692,12 @@ function AddProviderWizard({
           {wizard.step === "validating" && (
             <div className="flex flex-col items-center gap-4 py-14">
               <div className="relative flex h-16 w-16 items-center justify-center">
-                <div className="absolute inset-0 rounded-full bg-[#34d399]/10" />
-                <Loader2 className="h-8 w-8 animate-spin text-[#34d399]" />
+                <div className="absolute inset-0 rounded-full bg-success/10" />
+                <Loader2 className="h-8 w-8 animate-spin text-success-fg" />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-[#f5f7fa]">Checking your key...</p>
-                <p className="mt-1 text-xs text-[#7a8591]">This only takes a moment</p>
+                <p className="text-sm font-medium text-foreground">Checking your key...</p>
+                <p className="mt-1 text-xs text-fg-subtle">This only takes a moment</p>
               </div>
             </div>
           )}
@@ -706,12 +706,12 @@ function AddProviderWizard({
           {wizard.step === "done" && (
             <div className="flex flex-col items-center gap-5 px-5 py-10">
               <div className="relative flex h-16 w-16 items-center justify-center">
-                <div className="absolute inset-0 rounded-full bg-emerald-500/15" />
-                <Check className="h-8 w-8 text-emerald-400" strokeWidth={2.5} />
+                <div className="absolute inset-0 rounded-full bg-success-bg" />
+                <Check className="h-8 w-8 text-success-fg" strokeWidth={2.5} />
               </div>
               <div className="text-center">
-                <p className="text-sm font-semibold text-[#f5f7fa]">Provider connected!</p>
-                <p className="mt-1 text-xs leading-relaxed text-[#7a8591]">
+                <p className="text-sm font-semibold text-foreground">Provider connected!</p>
+                <p className="mt-1 text-xs leading-relaxed text-fg-subtle">
                   You can now pick a model in the Default Model section.
                 </p>
               </div>
@@ -720,12 +720,12 @@ function AddProviderWizard({
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 border-t border-[#2c343d] px-5 py-4">
+        <div className="shrink-0 border-t border-border px-5 py-4">
           {wizard.step === "pick" && (
             <button
               type="button"
               onClick={onClose}
-              className="w-full rounded-lg border border-[#2c343d] bg-[#20252a] px-4 py-2.5 text-sm font-medium text-[#a8b0ba] transition-colors hover:border-[#3d4752] hover:text-[#f5f7fa]"
+              className="w-full rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
             >
               Cancel
             </button>
@@ -736,7 +736,7 @@ function AddProviderWizard({
               type="button"
               onClick={() => void handleValidate()}
               disabled={!wizard.apiKey.trim()}
-              className="w-full rounded-lg bg-[#34d399] px-4 py-2.5 text-sm font-semibold text-[#0d1117] transition-all hover:bg-[#2dbe8c] disabled:cursor-not-allowed disabled:opacity-40"
+              className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/88 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Validate &amp; Connect
             </button>
@@ -746,7 +746,7 @@ function AddProviderWizard({
             <button
               type="button"
               onClick={onClose}
-              className="w-full rounded-lg bg-[#34d399] px-4 py-2.5 text-sm font-semibold text-[#0d1117] transition-all hover:bg-[#2dbe8c]"
+              className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/88"
             >
               Done
             </button>
@@ -798,17 +798,17 @@ function ModelPickerModal({
 
   return (
     <div className="animate-backdrop-in fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center">
-      <div className="animate-modal-in mx-0 flex w-full max-w-lg flex-col rounded-t-2xl border border-[#2c343d] bg-[#171a1d] shadow-2xl sm:mx-4 sm:rounded-2xl">
-        <div className="flex shrink-0 items-center gap-3 border-b border-[#2c343d] px-5 py-4">
+      <div className="animate-modal-in mx-0 flex w-full max-w-lg flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:mx-4 sm:rounded-2xl">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-[#f5f7fa]">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-xs text-[#7a8591]">{subtitle}</p>}
+            <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-xs text-fg-subtle">{subtitle}</p>}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#7a8591] transition-colors hover:bg-[#20252a] hover:text-[#f5f7fa]"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-subtle transition-colors hover:bg-secondary hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
@@ -816,40 +816,40 @@ function ModelPickerModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {error && (
-            <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2.5">
-              <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
-              <p className="text-xs text-red-400">{error}</p>
+            <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-danger-border bg-danger-bg px-3 py-2.5">
+              <AlertCircle className="h-4 w-4 shrink-0 text-danger-fg" />
+              <p className="text-xs text-danger-fg">{error}</p>
             </div>
           )}
           {saving ? (
             <div className="flex flex-col items-center gap-3 py-14">
-              <Loader2 className="h-6 w-6 animate-spin text-[#34d399]" />
-              <p className="text-xs text-[#7a8591]">Saving...</p>
+              <Loader2 className="h-6 w-6 animate-spin text-success-fg" />
+              <p className="text-xs text-fg-subtle">Saving...</p>
             </div>
           ) : (
             <div className="flex flex-col">
               {allowDefault && (
-                <div className="border-b border-[#2c343d] p-2">
+                <div className="border-b border-border p-2">
                   <button
                     type="button"
                     onClick={() => void handleSelect(null)}
                     className={cn(
                       "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
-                      currentModel === null ? "bg-[#34d399]/10" : "hover:bg-[#20252a]"
+                      currentModel === null ? "bg-success/10" : "hover:bg-secondary"
                     )}
                   >
                     <div className="flex h-5 w-5 shrink-0 items-center justify-center">
                       {currentModel === null ? (
-                        <Check className="h-4 w-4 text-[#34d399]" strokeWidth={2.5} />
+                        <Check className="h-4 w-4 text-success-fg" strokeWidth={2.5} />
                       ) : (
-                        <div className="h-1.5 w-1.5 rounded-full bg-[#3d4752]" />
+                        <div className="h-1.5 w-1.5 rounded-full bg-border-strong" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <span className={cn("block text-sm font-medium", currentModel === null ? "text-[#34d399]" : "text-[#f5f7fa]")}>
+                      <span className={cn("block text-sm font-medium", currentModel === null ? "text-success-fg" : "text-foreground")}>
                         Use default
                       </span>
-                      <span className="block text-[11px] text-[#7a8591]">
+                      <span className="block text-[11px] text-fg-subtle">
                         Inherits the primary model
                       </span>
                     </div>
@@ -866,11 +866,11 @@ function ModelPickerModal({
           )}
         </div>
 
-        <div className="shrink-0 border-t border-[#2c343d] px-5 py-4">
+        <div className="shrink-0 border-t border-border px-5 py-4">
           <button
             type="button"
             onClick={onClose}
-            className="w-full rounded-lg border border-[#2c343d] bg-[#20252a] px-4 py-2.5 text-sm font-medium text-[#a8b0ba] transition-colors hover:border-[#3d4752] hover:text-[#f5f7fa]"
+            className="w-full rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
           >
             Close
           </button>
@@ -904,8 +904,8 @@ function RemoveButton({ onRemove, label = "Remove" }: { onRemove: () => void; la
       className={cn(
         "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all",
         confirming
-          ? "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
-          : "border-[#2c343d] bg-[#20252a] text-[#7a8591] hover:border-[#3d4752] hover:text-[#a8b0ba]"
+          ? "border-danger-border bg-danger-bg text-danger-fg hover:bg-danger-bg"
+          : "border-border bg-secondary text-fg-subtle hover:border-border-strong hover:text-muted-foreground"
       )}
     >
       <Trash2 className="h-3 w-3 shrink-0" />
@@ -918,21 +918,21 @@ function RemoveButton({ onRemove, label = "Remove" }: { onRemove: () => void; la
 
 function Toast({ message, type = "error", onClose }: { message: string; type?: "error" | "success"; onClose: () => void }) {
   return (
-    <div className="animate-modal-in fixed bottom-6 left-1/2 z-60 flex -translate-x-1/2 items-center gap-3 rounded-xl border bg-[#1d2227] px-4 py-3 shadow-2xl"
+    <div className="animate-modal-in fixed bottom-6 left-1/2 z-60 flex -translate-x-1/2 items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-2xl"
       style={{
         borderColor: type === "success" ? "rgba(52,211,153,0.2)" : "rgba(239,68,68,0.2)",
       }}
     >
       {type === "success" ? (
-        <Check className="h-4 w-4 shrink-0 text-[#34d399]" />
+        <Check className="h-4 w-4 shrink-0 text-success-fg" />
       ) : (
-        <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+        <AlertCircle className="h-4 w-4 shrink-0 text-danger-fg" />
       )}
-      <span className="whitespace-nowrap text-sm text-[#f5f7fa]">{message}</span>
+      <span className="whitespace-nowrap text-sm text-foreground">{message}</span>
       <button
         type="button"
         onClick={onClose}
-        className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#7a8591] hover:text-[#f5f7fa]"
+        className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-fg-subtle hover:text-foreground"
       >
         <X className="h-3.5 w-3.5" />
       </button>
@@ -944,7 +944,7 @@ function Toast({ message, type = "error", onClose }: { message: string; type?: "
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("rounded-xl border border-[#2c343d] bg-[#15191d]", className)}>
+    <div className={cn("rounded-xl border border-border bg-muted", className)}>
       {children}
     </div>
   );
@@ -952,7 +952,7 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 
 function CardHeader({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#2c343d] px-5 py-4">
+    <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
       {children}
     </div>
   );
@@ -1031,8 +1031,8 @@ function DefaultModelCard({
     <Card>
       <CardHeader>
         <div>
-          <h2 className="text-sm font-semibold text-[#f5f7fa]">Default Model</h2>
-          <p className="mt-0.5 text-xs text-[#7a8591]">
+          <h2 className="text-sm font-semibold text-foreground">Default Model</h2>
+          <p className="mt-0.5 text-xs text-fg-subtle">
             Used by all agents unless overridden
           </p>
         </div>
@@ -1041,12 +1041,12 @@ function DefaultModelCard({
       <div className="p-5 space-y-5">
         {/* Primary model row */}
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-[#d6dce3]">Primary model</label>
+          <label className="block text-xs font-medium text-fg-secondary">Primary model</label>
           {!hasProviders ? (
             <button
               type="button"
               onClick={onAddProvider}
-              className="flex items-center gap-2 rounded-lg border border-dashed border-[#2c343d] bg-[#15191d] px-3 py-2.5 text-xs text-[#7a8591] transition-colors hover:border-[#3d4752] hover:text-[#a8b0ba]"
+              className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-muted px-3 py-2.5 text-xs text-fg-subtle transition-colors hover:border-border-strong hover:text-muted-foreground"
             >
               <Plus className="h-3.5 w-3.5 shrink-0" />
               Connect a provider to pick a model
@@ -1066,17 +1066,17 @@ function DefaultModelCard({
           )}
 
           {primaryModel && (
-            <div className="flex items-center gap-2 rounded-lg border border-[#34d399]/20 bg-[#34d399]/5 px-3 py-2">
+            <div className="flex items-center gap-2 rounded-lg border border-success-border/20 bg-success/5 px-3 py-2">
               <StatusDot active />
-              <span className="text-xs font-medium text-[#34d399]">{friendlyPrimary}</span>
-              <span className="ml-1 font-mono text-[10px] text-[#7a8591]">{primaryModel}</span>
+              <span className="text-xs font-medium text-success-fg">{friendlyPrimary}</span>
+              <span className="ml-1 font-mono text-[10px] text-fg-subtle">{primaryModel}</span>
             </div>
           )}
 
           {!primaryModel && hasProviders && (
-            <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-              <span className="text-xs text-amber-300">No primary model selected</span>
+            <div className="flex items-center gap-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning-fg" />
+              <span className="text-xs text-warning-fg">No primary model selected</span>
             </div>
           )}
         </div>
@@ -1084,47 +1084,47 @@ function DefaultModelCard({
         {/* Fallback chain */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="block text-xs font-medium text-[#d6dce3]">Fallback chain</label>
+            <label className="block text-xs font-medium text-fg-secondary">Fallback chain</label>
             {hasProviders && (
               <button
                 type="button"
                 onClick={() => setShowFallbackPicker(true)}
-                className="flex items-center gap-1 text-[11px] text-[#34d399] hover:text-[#2dbe8c] transition-colors"
+                className="flex items-center gap-1 text-xs font-medium text-fg-secondary transition-colors hover:text-foreground"
               >
                 <Plus className="h-3 w-3" />
                 Add fallback
               </button>
             )}
           </div>
-          <p className="text-[11px] text-[#7a8591]">
+          <p className="text-[11px] text-fg-subtle">
             Fallback models are tried in order if the primary is unavailable
           </p>
 
           {fallbacks.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[#2c343d] px-3 py-3 text-center">
-              <p className="text-xs text-[#3d4752]">No fallbacks configured</p>
+            <div className="rounded-lg border border-dashed border-border px-3 py-3 text-center">
+              <p className="text-xs text-fg-placeholder">No fallbacks configured</p>
             </div>
           ) : (
             <div className="space-y-1.5">
               {fallbacks.map((fb, i) => (
                 <div
                   key={fb}
-                  className="flex items-center gap-2.5 rounded-lg border border-[#2c343d] bg-[#15191d] px-3 py-2"
+                  className="flex items-center gap-2.5 rounded-lg border border-border bg-muted px-3 py-2"
                 >
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#20252a] text-[10px] font-semibold text-[#7a8591]">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold text-fg-subtle">
                     {i + 1}
                   </span>
-                  <span className="flex-1 truncate text-xs text-[#f5f7fa]">
+                  <span className="flex-1 truncate text-xs text-foreground">
                     {getFriendlyModelName(fb)}
                   </span>
-                  <span className="hidden truncate font-mono text-[10px] text-[#7a8591] sm:block">
+                  <span className="hidden truncate font-mono text-[10px] text-fg-subtle sm:block">
                     {fb}
                   </span>
                   <button
                     type="button"
                     onClick={() => void handleRemoveFallback(i)}
                     aria-label="Remove fallback"
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#3d4752] transition-colors hover:text-red-400"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-fg-placeholder transition-colors hover:text-danger-fg"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -1246,24 +1246,24 @@ function AgentModelRow({
 
   if (rowState === "editing") {
     return (
-      <div className="border-b border-[#2c343d] last:border-b-0">
+      <div className="border-b border-border last:border-b-0">
         <div className="flex items-center gap-3 px-4 py-3">
           <span className="shrink-0 text-base">{agent.emoji}</span>
           <div className="min-w-0 flex-1">
-            <span className="text-sm font-medium text-[#f5f7fa]">{agent.name}</span>
+            <span className="text-sm font-medium text-foreground">{agent.name}</span>
           </div>
           <button
             type="button"
             onClick={cancelEdit}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[#7a8591] hover:text-[#f5f7fa]"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-subtle hover:text-foreground"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
 
-        <div className="space-y-3 border-t border-[#1d2227] bg-[#13171b] px-4 pb-4 pt-3">
+        <div className="space-y-3 border-t border-border bg-background px-4 pb-4 pt-3">
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-medium text-[#7a8591] uppercase tracking-wide">Model</label>
+            <label className="block text-[11px] font-medium text-fg-subtle uppercase tracking-wide">Model</label>
             <ModelSelect
               value={editModel}
               onChange={setEditModel}
@@ -1276,32 +1276,32 @@ function AgentModelRow({
           {editModel && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="block text-[11px] font-medium text-[#7a8591] uppercase tracking-wide">
+                <label className="block text-[11px] font-medium text-fg-subtle uppercase tracking-wide">
                   Fallbacks
                 </label>
                 <button
                   type="button"
                   onClick={() => setShowFallbackPicker(true)}
-                  className="flex items-center gap-1 text-[10px] text-[#34d399] hover:text-[#2dbe8c]"
+                  className="flex items-center gap-1 text-[10px] text-success-fg hover:text-success-fg"
                 >
                   <Plus className="h-2.5 w-2.5" />
                   Add
                 </button>
               </div>
               {editFallbacks.length === 0 ? (
-                <p className="text-[11px] text-[#3d4752]">No fallbacks — add one above</p>
+                <p className="text-[11px] text-fg-placeholder">No fallbacks — add one above</p>
               ) : (
                 <div className="space-y-1">
                   {editFallbacks.map((fb, i) => (
-                    <div key={fb} className="flex items-center gap-2 rounded-md border border-[#2c343d] bg-[#15191d] px-2 py-1.5">
-                      <span className="text-[10px] text-[#7a8591]">{i + 1}</span>
-                      <span className="flex-1 truncate text-[11px] text-[#f5f7fa]">
+                    <div key={fb} className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5">
+                      <span className="text-[10px] text-fg-subtle">{i + 1}</span>
+                      <span className="flex-1 truncate text-[11px] text-foreground">
                         {getFriendlyModelName(fb)}
                       </span>
                       <button
                         type="button"
                         onClick={() => setEditFallbacks((prev) => prev.filter((_, j) => j !== i))}
-                        className="flex h-4 w-4 items-center justify-center rounded text-[#3d4752] hover:text-red-400"
+                        className="flex h-4 w-4 items-center justify-center rounded text-fg-placeholder hover:text-danger-fg"
                       >
                         <X className="h-2.5 w-2.5" />
                       </button>
@@ -1317,7 +1317,7 @@ function AgentModelRow({
               type="button"
               onClick={() => void handleSave()}
               disabled={saving}
-              className="flex items-center gap-1.5 rounded-lg bg-[#34d399] px-3 py-1.5 text-xs font-semibold text-[#0d1117] transition-all hover:bg-[#2dbe8c] disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary/88 disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
               Save
@@ -1325,7 +1325,7 @@ function AgentModelRow({
             <button
               type="button"
               onClick={cancelEdit}
-              className="rounded-lg border border-[#2c343d] px-3 py-1.5 text-xs text-[#a8b0ba] hover:border-[#3d4752] hover:text-[#f5f7fa]"
+              className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-border-strong hover:text-foreground"
             >
               Cancel
             </button>
@@ -1348,26 +1348,26 @@ function AgentModelRow({
   }
 
   return (
-    <div className="flex items-center gap-3 border-b border-[#2c343d] px-4 py-3 last:border-b-0">
+    <div className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
       <span className="shrink-0 text-base">{agent.emoji}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-medium text-[#f5f7fa]">{agent.name}</span>
+          <span className="text-sm font-medium text-foreground">{agent.name}</span>
           {agent.isDefault && (
-            <span className="rounded-full bg-[#20252a] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#7a8591]">
+            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-fg-subtle">
               default
             </span>
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className={cn("truncate text-xs", hasCustomModel ? "text-[#f5f7fa]" : "text-[#7a8591]")}>
+          <span className={cn("truncate text-xs", hasCustomModel ? "text-foreground" : "text-fg-subtle")}>
             {effectiveFriendly}
           </span>
           {!hasCustomModel && (
-            <span className="shrink-0 text-[10px] text-[#3d4752]">(default)</span>
+            <span className="shrink-0 text-[10px] text-fg-placeholder">(default)</span>
           )}
           {hasCustomModel && agent.fallbackModels.length > 0 && (
-            <span className="shrink-0 rounded border border-[#2c343d] bg-[#20252a] px-1 py-0.5 text-[9px] text-[#7a8591]">
+            <span className="shrink-0 rounded border border-border bg-secondary px-1 py-0.5 text-[9px] text-fg-subtle">
               {agent.fallbackModels.length} fallback{agent.fallbackModels.length !== 1 ? "s" : ""}
             </span>
           )}
@@ -1379,7 +1379,7 @@ function AgentModelRow({
             <button
               type="button"
               onClick={startEdit}
-              className="flex items-center gap-1.5 rounded-lg border border-[#2c343d] bg-[#20252a] px-2.5 py-1.5 text-xs font-medium text-[#a8b0ba] transition-all hover:border-[#34d399]/30 hover:text-[#34d399]"
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:border-success-border/30 hover:text-success-fg"
             >
               <Pencil className="h-3 w-3 shrink-0" />
               Edit
@@ -1389,7 +1389,7 @@ function AgentModelRow({
               onClick={() => void handleReset()}
               disabled={saving}
               title="Reset to default"
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#2c343d] bg-[#20252a] text-[#7a8591] transition-all hover:border-red-500/30 hover:text-red-400 disabled:opacity-50"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-secondary text-fg-subtle transition-all hover:border-danger-border hover:text-danger-fg disabled:opacity-50"
             >
               <RotateCcw className="h-3 w-3 shrink-0" />
             </button>
@@ -1398,7 +1398,7 @@ function AgentModelRow({
           <button
             type="button"
             onClick={startEdit}
-            className="flex items-center gap-1.5 rounded-lg border border-[#2c343d] bg-[#20252a] px-2.5 py-1.5 text-xs font-medium text-[#7a8591] transition-all hover:border-[#3d4752] hover:text-[#a8b0ba]"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-fg-subtle transition-all hover:border-border-strong hover:text-muted-foreground"
           >
             <Pencil className="h-3 w-3 shrink-0" />
             Override
@@ -1432,13 +1432,13 @@ function AgentModelsCard({
     <Card>
       <CardHeader>
         <div>
-          <h2 className="text-sm font-semibold text-[#f5f7fa]">Agent Models</h2>
-          <p className="mt-0.5 text-xs text-[#7a8591]">
+          <h2 className="text-sm font-semibold text-foreground">Agent Models</h2>
+          <p className="mt-0.5 text-xs text-fg-subtle">
             Override the model for individual agents
           </p>
         </div>
         {agents.length > 0 && (
-          <span className="rounded-full border border-[#2c343d] bg-[#20252a] px-2 py-0.5 text-[11px] font-medium text-[#7a8591]">
+          <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-fg-subtle">
             {agents.length}
           </span>
         )}
@@ -1446,13 +1446,13 @@ function AgentModelsCard({
 
       {loadingAgents && agents.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-10">
-          <Loader2 className="h-5 w-5 animate-spin text-[#34d399]" />
-          <p className="text-xs text-[#7a8591]">Loading agents...</p>
+          <Loader2 className="h-5 w-5 animate-spin text-success-fg" />
+          <p className="text-xs text-fg-subtle">Loading agents...</p>
         </div>
       ) : agents.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-10 text-center">
-          <p className="text-sm text-[#7a8591]">No agents configured</p>
-          <p className="text-xs text-[#3d4752]">Create an agent to assign a specific model</p>
+          <p className="text-sm text-fg-subtle">No agents configured</p>
+          <p className="text-xs text-fg-placeholder">Create an agent to assign a specific model</p>
         </div>
       ) : (
         <div>
@@ -1505,15 +1505,15 @@ function ProvidersCard({
     <Card>
       <CardHeader>
         <div>
-          <h2 className="text-sm font-semibold text-[#f5f7fa]">Providers</h2>
-          <p className="mt-0.5 text-xs text-[#7a8591]">
+          <h2 className="text-sm font-semibold text-foreground">Providers</h2>
+          <p className="mt-0.5 text-xs text-fg-subtle">
             Manage your AI provider connections
           </p>
         </div>
         <button
           type="button"
           onClick={() => onAddProvider()}
-          className="flex items-center gap-1.5 rounded-lg bg-[#34d399] px-3 py-1.5 text-xs font-semibold text-[#0d1117] transition-all hover:bg-[#2dbe8c]"
+          className="flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary/88"
         >
           <Plus className="h-3.5 w-3.5 shrink-0" />
           Add provider
@@ -1522,16 +1522,16 @@ function ProvidersCard({
 
       {configuredProviders.length === 0 && unconnectedProviders.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#2c343d] bg-[#20252a]">
-            <Key className="h-6 w-6 text-[#3d4752]" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-secondary">
+            <Key className="h-6 w-6 text-fg-placeholder" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-[#f5f7fa]">No providers available</p>
-            <p className="mt-1 text-xs text-[#7a8591]">Check back later for new integrations</p>
+            <p className="text-sm font-semibold text-foreground">No providers available</p>
+            <p className="mt-1 text-xs text-fg-subtle">Check back later for new integrations</p>
           </div>
         </div>
       ) : (
-        <div className="divide-y divide-[#2c343d]">
+        <div className="divide-y divide-border">
           {/* Connected providers */}
           {configuredProviders.map((pid) => {
             const providerMeta = findProvider(pid, providers);
@@ -1544,12 +1544,12 @@ function ProvidersCard({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <StatusDot active />
-                    <span className="text-sm font-semibold text-[#f5f7fa]">{displayName}</span>
+                    <span className="text-sm font-semibold text-foreground">{displayName}</span>
                   </div>
-                  <p className="mt-0.5 text-xs text-[#7a8591]">
+                  <p className="mt-0.5 text-xs text-fg-subtle">
                     Connected
                     {inUse > 0 && (
-                      <span className="ml-1 text-[#34d399]">
+                      <span className="ml-1 text-success-fg">
                         · {inUse} model{inUse !== 1 ? "s" : ""} in use
                       </span>
                     )}
@@ -1559,7 +1559,7 @@ function ProvidersCard({
                   <button
                     type="button"
                     onClick={() => onManageProvider(pid)}
-                    className="flex items-center gap-1.5 rounded-lg border border-[#2c343d] bg-[#20252a] px-2.5 py-1.5 text-xs font-medium text-[#a8b0ba] transition-all hover:border-[#3d4752] hover:text-[#f5f7fa]"
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:border-border-strong hover:text-foreground"
                   >
                     <Zap className="h-3 w-3 shrink-0" />
                     Manage
@@ -1573,12 +1573,12 @@ function ProvidersCard({
           {/* Empty state for connected section */}
           {configuredProviders.length === 0 && (
             <div className="flex flex-col items-center gap-3 px-5 py-8 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-dashed border-[#2c343d]">
-                <Key className="h-4 w-4 text-[#3d4752]" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-dashed border-border">
+                <Key className="h-4 w-4 text-fg-placeholder" />
               </div>
               <div>
-                <p className="text-sm text-[#a8b0ba]">No providers connected yet</p>
-                <p className="mt-0.5 text-xs text-[#7a8591]">
+                <p className="text-sm text-muted-foreground">No providers connected yet</p>
+                <p className="mt-0.5 text-xs text-fg-subtle">
                   Add a provider below to get started
                 </p>
               </div>
@@ -1588,7 +1588,7 @@ function ProvidersCard({
           {/* Available providers */}
           {unconnectedProviders.length > 0 && (
             <div className="px-5 py-4">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#3d4752]">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-fg-placeholder">
                 Available
               </p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -1597,14 +1597,14 @@ function ProvidersCard({
                     key={p.id}
                     type="button"
                     onClick={() => onAddProvider(p.id)}
-                    className="group flex flex-col items-start gap-2 rounded-xl border border-[#2c343d] bg-[#1d2227] p-3 text-left transition-all hover:border-[#3d4752] hover:bg-[#20252a]"
+                    className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-3 text-left transition-all hover:border-border-strong hover:bg-secondary"
                   >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#2c343d] bg-[#20252a] text-xs font-bold text-[#a8b0ba]">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-secondary text-xs font-bold text-muted-foreground">
                       {p.name.charAt(0)}
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-[#d6dce3]">{p.name}</p>
-                      <p className="text-[10px] text-[#7a8591]">{p.hint}</p>
+                      <p className="text-xs font-semibold text-fg-secondary">{p.name}</p>
+                      <p className="text-[10px] text-fg-subtle">{p.hint}</p>
                     </div>
                   </button>
                 ))}
@@ -1832,16 +1832,16 @@ export function ModelsView() {
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
-                  className="h-40 animate-pulse rounded-xl border border-[#2c343d] bg-[#15191d]"
+                  className="h-40 animate-pulse rounded-xl border border-border bg-muted"
                 />
               ))}
             </div>
           ) : (
             <div className="space-y-5">
               {gatewayOffline && (
-                <div className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3">
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
-                  <p className="text-xs text-amber-300">
+                <div className="flex items-center gap-2 rounded-xl border border-warning-border bg-warning-bg px-4 py-3">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning-fg" />
+                  <p className="text-xs text-warning-fg">
                     The gateway is unreachable — showing cached config data. Provider and model
                     status may be stale until the gateway comes back.
                   </p>
@@ -1849,20 +1849,20 @@ export function ModelsView() {
               )}
               {/* No providers at all — show big empty state */}
               {configuredProviders.length === 0 && (
-                <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-[#2c343d] py-16 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#2c343d] bg-[#15191d]">
-                    <Key className="h-6 w-6 text-[#3d4752]" />
+                <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-border py-16 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-muted">
+                    <Key className="h-6 w-6 text-fg-placeholder" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-[#f5f7fa]">No providers connected yet</p>
-                    <p className="mt-1 max-w-xs text-xs leading-relaxed text-[#7a8591]">
+                    <p className="text-sm font-semibold text-foreground">No providers connected yet</p>
+                    <p className="mt-1 max-w-xs text-xs leading-relaxed text-fg-subtle">
                       Add an AI provider API key to get started. Your key is stored securely on this device.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => openProviderWizard()}
-                    className="flex items-center gap-2 rounded-lg bg-[#34d399] px-4 py-2.5 text-sm font-semibold text-[#0d1117] transition-all hover:bg-[#2dbe8c]"
+                    className="flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/88"
                   >
                     <Plus className="h-4 w-4 shrink-0" />
                     Add your first provider

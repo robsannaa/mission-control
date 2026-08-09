@@ -5,7 +5,7 @@ import { Trash2, RefreshCw, MessageSquare, Clock, Zap, DollarSign, AlertCircle }
 import { estimateCostUsd } from "@/lib/model-metadata";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { notifyError } from "@/lib/notification-store";
 
@@ -51,14 +51,14 @@ function getAgeMs(session: Session): number | null {
 
 function sessionLabel(key: string): { type: string; badge: string } {
   if (key.includes(":cron:") && key.includes(":run:"))
-    return { type: "Cron Run", badge: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" };
+    return { type: "Cron Run", badge: "bg-warning-bg text-warning-fg" };
   if (key.includes(":cron:"))
-    return { type: "Cron", badge: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" };
+    return { type: "Cron", badge: "bg-warning-bg text-warning-fg" };
   if (key.includes(":main"))
-    return { type: "Main", badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" };
+    return { type: "Main", badge: "bg-success-bg text-success-fg" };
   if (key.includes(":hook:"))
-    return { type: "Hook", badge: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" };
-  return { type: "Session", badge: "bg-stone-100 text-stone-600 dark:bg-stone-700/60 dark:text-stone-300" };
+    return { type: "Hook", badge: "bg-info-bg text-info-fg" };
+  return { type: "Session", badge: "bg-muted text-fg-secondary dark:bg-accent dark:text-fg-subtle" };
 }
 
 export function SessionsView() {
@@ -139,7 +139,7 @@ export function SessionsView() {
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading sessions..." />
+        <ScreenLoadingState label="Loading sessions..." />
       </SectionLayout>
     );
   }
@@ -157,7 +157,7 @@ export function SessionsView() {
               fetchSessions();
             }}
             disabled={refreshing}
-            className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900 disabled:opacity-50 dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#c7d0d9] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 dark:hover:bg-secondary"
           >
             <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} /> Refresh
           </button>
@@ -167,13 +167,13 @@ export function SessionsView() {
       <SectionBody width="content" padding="compact" innerClassName="space-y-2">
         {/* Error banner */}
         {error && sessions.length === 0 && (
-          <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-500/20 dark:bg-red-500/10">
-            <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
+          <div className="flex items-center gap-3 rounded-xl border border-danger-border bg-danger-bg px-4 py-3">
+            <AlertCircle className="h-4 w-4 shrink-0 text-danger-fg" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-red-700 dark:text-red-400">
+              <p className="text-sm font-medium text-danger-fg">
                 Failed to load sessions
               </p>
-              <p className="mt-0.5 text-xs text-red-600 dark:text-red-300/70">
+              <p className="mt-0.5 text-xs text-danger-fg">
                 {error}
               </p>
             </div>
@@ -184,7 +184,7 @@ export function SessionsView() {
                 setError(null);
                 fetchSessions();
               }}
-              className="shrink-0 rounded-lg bg-red-100 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-500/20 dark:text-red-300 dark:hover:bg-red-500/30"
+              className="shrink-0 rounded-lg bg-danger-bg px-3 py-1.5 text-xs font-medium text-danger-fg transition-colors hover:bg-danger-bg"
             >
               Retry
             </button>
@@ -200,20 +200,20 @@ export function SessionsView() {
           return (
             <div
               key={s.key}
-              className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm dark:border-[#2c343d] dark:bg-[#171a1d]"
+              className="rounded-xl border border-border bg-card p-4 shadow-sm"
             >
               <div className="flex flex-col sm:flex-row sm:items-start gap-3">
-                <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-stone-400 dark:text-[#7a8591]" />
+                <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", badge)}>
                       {type}
                     </span>
-                    <span className="truncate text-xs font-mono text-stone-500 dark:text-[#8d98a5]">
+                    <span className="truncate text-xs font-mono text-muted-foreground">
                       {s.key}
                     </span>
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-stone-500 dark:text-[#8d98a5]">
+                  <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" /> {ageLabel}
                     </span>
@@ -233,7 +233,7 @@ export function SessionsView() {
                         </span>
                       );
                     })()}
-                    <span className="rounded-md border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-xs font-mono text-stone-600 dark:border-[#2c343d] dark:bg-[#15191d] dark:text-[#c7d0d9]">
+                    <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs font-mono text-fg-secondary">
                       {s.model}
                     </span>
                   </div>
@@ -247,14 +247,14 @@ export function SessionsView() {
                         type="button"
                         onClick={() => killSession(s.key)}
                         disabled={isDeleting}
-                        className="rounded-lg bg-red-500 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+                        className="rounded-full bg-destructive px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-destructive/88 disabled:opacity-50"
                       >
                         {isDeleting ? "Killing..." : "Confirm Kill"}
                       </button>
                       <button
                         type="button"
                         onClick={() => setConfirmDelete(null)}
-                        className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900 dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#c7d0d9] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]"
+                        className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-secondary"
                       >
                         Cancel
                       </button>
@@ -263,7 +263,7 @@ export function SessionsView() {
                     <button
                       type="button"
                       onClick={() => setConfirmDelete(s.key)}
-                      className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-[#7a8591] dark:hover:bg-red-500/10 dark:hover:text-red-300"
+                      className="rounded-lg p-1.5 text-fg-subtle transition-colors hover:bg-danger-bg hover:text-danger-fg"
                       title="Kill session"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -275,7 +275,7 @@ export function SessionsView() {
           );
         })}
         {sessions.length === 0 && !error && (
-          <div className="flex items-center justify-center py-12 text-sm text-stone-500 dark:text-[#8d98a5]">
+          <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
             No active sessions
           </div>
         )}

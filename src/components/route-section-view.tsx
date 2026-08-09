@@ -6,18 +6,11 @@ import { DashboardView } from "@/components/dashboard-view";
 import { ChatView } from "@/components/chat-view";
 import { PanelErrorBoundary } from "@/components/panel-error-boundary";
 import { GatewayOfflineBanner } from "@/components/gateway-offline-banner";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { setChatActive } from "@/lib/chat-store";
 
 function SectionLoading() {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3">
-      <div className="flex items-center gap-1.5">
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:0ms]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:150ms]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:300ms]" />
-      </div>
-    </div>
-  );
+  return <ScreenLoadingState />;
 }
 
 const TasksView = dynamic(

@@ -2,22 +2,20 @@
 
 import { useCallback, useState } from "react";
 import {
-  Activity,
   AlertTriangle,
   BarChart3,
   ChevronDown,
   ChevronUp,
   Clock,
-  Cpu,
   DollarSign,
   ExternalLink,
   RefreshCw,
   TrendingUp,
   Users,
-  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
+import { InlineSpinner } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { getFriendlyModelName, getProviderDisplayName } from "@/lib/model-metadata";
 import type {
@@ -70,7 +68,7 @@ const WINDOWS: { id: UsageWindow; label: string }[] = [
 
 function SkeletonBox({ className }: { className?: string }) {
   return (
-    <div className={cn("animate-pulse rounded-xl bg-[#15191d]", className)} />
+    <div className={cn("animate-pulse rounded-xl bg-muted", className)} />
   );
 }
 
@@ -80,12 +78,12 @@ function LoadingSkeleton() {
       {/* Hero stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <SkeletonBox key={i} className="h-28 border border-[#23282e]" />
+          <SkeletonBox key={i} className="h-28 border border-border" />
         ))}
       </div>
       {/* Table skeletons */}
-      <SkeletonBox className="h-64 border border-[#23282e]" />
-      <SkeletonBox className="h-48 border border-[#23282e]" />
+      <SkeletonBox className="h-64 border border-border" />
+      <SkeletonBox className="h-48 border border-border" />
     </div>
   );
 }
@@ -96,16 +94,16 @@ function FreshnessDot({ freshness }: { freshness: ProviderBillingFreshness }) {
   return (
     <span className="relative flex h-2 w-2 shrink-0">
       {freshness === "fresh" && (
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-40" />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-40" />
       )}
       <span
         className={cn(
           "relative inline-flex h-2 w-2 rounded-full",
           freshness === "fresh"
-            ? "bg-emerald-400"
+            ? "bg-success"
             : freshness === "stale"
-              ? "bg-amber-400"
-              : "bg-[#3d4752]",
+              ? "bg-warning"
+              : "bg-border-strong",
         )}
       />
     </span>
@@ -145,9 +143,9 @@ function ProviderLogo({ provider, name }: { provider: string; name: string }) {
 function SubHeading({ children, count }: { children: React.ReactNode; count?: number }) {
   return (
     <div className="mb-3 flex items-center gap-2">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-[#7a8591]">{children}</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">{children}</h2>
       {count !== undefined && (
-        <span className="rounded-full border border-[#23282e] bg-[#20252a] px-2 py-0.5 text-[11px] font-medium text-[#7a8591]">
+        <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-fg-subtle">
           {count}
         </span>
       )}
@@ -160,9 +158,9 @@ function SubHeading({ children, count }: { children: React.ReactNode; count?: nu
 function ProgressBar({ value, max, className }: { value: number; max: number; className?: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
-    <div className={cn("h-1 w-full overflow-hidden rounded-full bg-[#23282e]", className)}>
+    <div className={cn("h-1 w-full overflow-hidden rounded-full bg-secondary", className)}>
       <div
-        className="h-full rounded-full bg-[#34d399] transition-all"
+        className="h-full rounded-full bg-success transition-all"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -175,20 +173,15 @@ type StatCardProps = {
   label: string;
   value: string;
   sub?: string;
-  icon: React.ReactNode;
-  accent?: string;
 };
 
-function StatCard({ label, value, sub, icon, accent = "text-[#34d399]" }: StatCardProps) {
+function StatCard({ label, value, sub }: StatCardProps) {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-[#23282e] bg-[#15191d] p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider text-[#7a8591]">{label}</span>
-        <span className={cn("shrink-0", accent)}>{icon}</span>
-      </div>
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <span className="text-xs font-medium uppercase tracking-wider text-fg-subtle">{label}</span>
       <div>
-        <p className="text-2xl font-bold tracking-tight text-[#f5f7fa]">{value}</p>
-        {sub && <p className="mt-1 text-[11px] text-[#7a8591]">{sub}</p>}
+        <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+        {sub && <p className="mt-1 text-[11px] text-fg-subtle">{sub}</p>}
       </div>
     </div>
   );
@@ -204,7 +197,7 @@ function WindowSelector({
   onChange: (w: UsageWindow) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-[#23282e] bg-[#15191d] p-1">
+    <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-1">
       {WINDOWS.map((w) => (
         <button
           key={w.id}
@@ -213,8 +206,8 @@ function WindowSelector({
           className={cn(
             "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
             active === w.id
-              ? "bg-[#20252a] text-[#f5f7fa] shadow-sm"
-              : "text-[#7a8591] hover:text-[#a8b0ba]",
+              ? "bg-secondary text-foreground shadow-sm"
+              : "text-fg-subtle hover:text-muted-foreground",
           )}
         >
           {w.label}
@@ -229,8 +222,8 @@ function WindowSelector({
 function EmptyState({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center gap-2 py-10 text-center">
-      <BarChart3 className="h-8 w-8 text-[#3d4752]" />
-      <p className="text-sm text-[#7a8591]">{message}</p>
+      <BarChart3 className="h-8 w-8 text-fg-placeholder" />
+      <p className="text-sm text-fg-subtle">{message}</p>
     </div>
   );
 }
@@ -246,10 +239,10 @@ function ModelUsageTable({ rows }: { rows: ModelRow[] }) {
   if (sorted.length === 0) return <EmptyState message="No model usage recorded yet." />;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[#23282e]">
+    <div className="overflow-hidden rounded-xl border border-border">
       <table className="w-full border-collapse">
         <thead>
-          <tr className="border-b border-[#23282e] bg-[#15191d] text-[11px] font-semibold uppercase tracking-wider text-[#7a8591]">
+          <tr className="border-b border-border bg-muted text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
             <th className="px-4 py-2.5 text-left">Model</th>
             <th className="hidden px-4 py-2.5 text-right sm:table-cell">Sessions</th>
             <th className="whitespace-nowrap px-4 py-2.5 text-right">Input</th>
@@ -257,34 +250,34 @@ function ModelUsageTable({ rows }: { rows: ModelRow[] }) {
             <th className="whitespace-nowrap px-4 py-2.5 text-right">Est. Cost (Local)</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#23282e]">
+        <tbody className="divide-y divide-border">
           {sorted.map((row) => {
             const friendly = getFriendlyModelName(row.fullModel);
             const provider = getProviderDisplayName(row.provider);
             return (
               <tr
                 key={row.fullModel}
-                className="transition-colors hover:bg-[#15191d]"
+                className="transition-colors hover:bg-muted"
               >
                 <td className="min-w-0 px-4 py-3">
-                  <p className="truncate text-sm font-medium text-[#f5f7fa]">{friendly}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-[#7a8591]">{provider}</p>
+                  <p className="truncate text-sm font-medium text-foreground">{friendly}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-fg-subtle">{provider}</p>
                   <ProgressBar
                     value={row.totalTokens}
                     max={maxTokens}
                     className="mt-1.5 max-w-[200px]"
                   />
                 </td>
-                <td className="hidden px-4 py-3 text-right text-sm text-[#a8b0ba] sm:table-cell">
+                <td className="hidden px-4 py-3 text-right text-sm text-muted-foreground sm:table-cell">
                   {formatNumber(row.sessions)}
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-xs text-[#a8b0ba]">
+                <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
                   {formatCompact(row.inputTokens)}
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-xs text-[#a8b0ba]">
+                <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
                   {formatCompact(row.outputTokens)}
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-xs text-[#34d399]">
+                <td className="px-4 py-3 text-right font-mono text-xs text-success-fg">
                   {formatUsd(row.estimatedCostUsd)}
                 </td>
               </tr>
@@ -307,9 +300,9 @@ function AgentUsageTable({ rows }: { rows: AgentRow[] }) {
   if (sorted.length === 0) return <EmptyState message="No agent usage recorded yet." />;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[#23282e]">
+    <div className="overflow-hidden rounded-xl border border-border">
       {/* Header */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 border-b border-[#23282e] bg-[#15191d] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#7a8591]">
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 border-b border-border bg-muted px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
         <span>Agent</span>
         <span className="text-right">Sessions</span>
         <span className="text-right">Total Tokens</span>
@@ -317,25 +310,25 @@ function AgentUsageTable({ rows }: { rows: AgentRow[] }) {
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-[#23282e]">
+      <div className="divide-y divide-border">
         {sorted.map((row) => (
           <div
             key={row.agentId}
-            className="group grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-[#15191d]"
+            className="group grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-muted"
           >
             <div className="min-w-0">
-              <p className="truncate font-mono text-sm text-[#f5f7fa]">{row.agentId}</p>
+              <p className="truncate font-mono text-sm text-foreground">{row.agentId}</p>
               <ProgressBar
                 value={row.totalTokens}
                 max={maxTokens}
                 className="mt-1.5 max-w-[200px]"
               />
             </div>
-            <span className="text-right text-sm text-[#a8b0ba]">{formatNumber(row.sessions)}</span>
-            <span className="text-right font-mono text-xs text-[#a8b0ba]">
+            <span className="text-right text-sm text-muted-foreground">{formatNumber(row.sessions)}</span>
+            <span className="text-right font-mono text-xs text-muted-foreground">
               {formatCompact(row.totalTokens)}
             </span>
-            <span className="text-right font-mono text-xs text-[#34d399]">
+            <span className="text-right font-mono text-xs text-success-fg">
               {formatUsd(row.estimatedCostUsd)}
             </span>
           </div>
@@ -369,12 +362,12 @@ function ProviderBillingCard({
         : "Invoice-grade";
 
   const statusTone = !p.available
-    ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+    ? "border-warning-border bg-warning-bg text-warning-fg"
     : p.billingMode === "estimate_only"
-      ? "border-sky-500/30 bg-sky-500/10 text-sky-300"
+      ? "border-info-border bg-info-bg text-info-fg"
       : p.rows.length === 0
-        ? "border-violet-500/30 bg-violet-500/10 text-violet-300"
-        : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+        ? "border-border-strong bg-muted-foreground/10 text-fg-secondary"
+        : "border-success-border bg-success-bg text-success-fg";
 
   const guidance = !p.available
     ? p.reason || "Billing collector is not configured."
@@ -424,10 +417,10 @@ function ProviderBillingCard({
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-[#23282e] bg-[#15191d] p-4">
+    <div className="space-y-3 rounded-xl border border-border bg-card p-4">
       <div className="flex items-center gap-4">
       {/* Avatar */}
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#2c343d] bg-[#20252a] text-[#a8b0ba]">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground">
           <ProviderLogo provider={p.provider} name={displayName} />
         </div>
 
@@ -435,12 +428,12 @@ function ProviderBillingCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <FreshnessDot freshness={p.freshness} />
-            <span className="text-sm font-semibold text-[#f5f7fa]">{displayName}</span>
+            <span className="text-sm font-semibold text-foreground">{displayName}</span>
             <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", statusTone)}>
               {statusLabel}
             </span>
           </div>
-          <p className="mt-0.5 text-[11px] text-[#7a8591]">
+          <p className="mt-0.5 text-[11px] text-fg-subtle">
             Updated{" "}
             {p.latestBucketStartMs !== null ? formatAge(p.latestBucketStartMs) : "never"}
           </p>
@@ -449,18 +442,18 @@ function ProviderBillingCard({
         {/* Spend columns */}
         <div className="hidden gap-6 sm:flex">
           <div className="text-right">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-[#7a8591]">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
               Current Month
             </p>
-            <p className="mt-0.5 font-mono text-sm font-semibold text-[#f5f7fa]">
+            <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
               {formatUsd(p.currentMonthUsd)}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-[#7a8591]">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
               Last 30 Days
             </p>
-            <p className="mt-0.5 font-mono text-sm font-semibold text-[#f5f7fa]">
+            <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
               {formatUsd(p.totalUsd30d)}
             </p>
           </div>
@@ -468,18 +461,18 @@ function ProviderBillingCard({
 
         {/* Mobile spend */}
         <div className="flex flex-col items-end gap-0.5 sm:hidden">
-          <p className="font-mono text-sm font-semibold text-[#f5f7fa]">
+          <p className="font-mono text-sm font-semibold text-foreground">
             {formatUsd(p.currentMonthUsd)}
           </p>
-          <p className="text-[10px] text-[#7a8591]">this month</p>
+          <p className="text-[10px] text-fg-subtle">this month</p>
         </div>
       </div>
 
       {(guidance || (!p.available && p.requiredCredential) || p.docsUrl) && (
-        <div className="rounded-lg border border-[#23282e] bg-[#111417] px-3 py-2.5">
-          {guidance && <p className="text-xs text-[#a8b0ba]">{guidance}</p>}
+        <div className="rounded-lg border border-border bg-background px-3 py-2.5">
+          {guidance && <p className="text-xs text-muted-foreground">{guidance}</p>}
           {!p.available && p.requiredCredential && (
-            <p className="mt-1.5 text-xs text-amber-300">
+            <p className="mt-1.5 text-xs text-warning-fg">
               Add <code className="font-mono">{p.requiredCredential}</code> to unlock real provider billing.
             </p>
           )}
@@ -488,13 +481,13 @@ function ProviderBillingCard({
               href={p.docsUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-1.5 inline-flex items-center gap-1 text-xs text-[#34d399] hover:underline"
+              className="mt-1.5 inline-flex items-center gap-1 text-xs text-foreground hover:underline"
             >
               Provider billing docs
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
-          <p className="mt-1 text-[11px] text-[#7a8591]">
+          <p className="mt-1 text-[11px] text-fg-subtle">
             Billing mode: {p.billingMode === "invoice_api" ? "Invoice API" : "Estimate only"}
           </p>
 
@@ -506,7 +499,7 @@ function ProviderBillingCard({
                 onChange={(e) => setCredentialDraft(e.target.value)}
                 placeholder={`Enter ${p.requiredCredential}`}
                 disabled={saving}
-                className="w-full rounded-md border border-[#2c343d] bg-[#15191d] px-2.5 py-2 text-xs text-[#f5f7fa] placeholder:text-[#7a8591] focus:border-[#34d399]/40 focus:outline-none"
+                className="w-full rounded-md border border-border bg-muted px-2.5 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-success-border/40 focus:outline-none"
               />
               {secondaryCredentialKey && (
                 <input
@@ -515,7 +508,7 @@ function ProviderBillingCard({
                   onChange={(e) => setTeamIdDraft(e.target.value)}
                   placeholder={`Enter ${secondaryCredentialKey}`}
                   disabled={saving}
-                  className="w-full rounded-md border border-[#2c343d] bg-[#15191d] px-2.5 py-2 text-xs text-[#f5f7fa] placeholder:text-[#7a8591] focus:border-[#34d399]/40 focus:outline-none"
+                  className="w-full rounded-md border border-border bg-muted px-2.5 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-success-border/40 focus:outline-none"
                 />
               )}
               <div className="flex items-center justify-end">
@@ -525,13 +518,13 @@ function ProviderBillingCard({
                     void saveCredentials();
                   }}
                   disabled={saving}
-                  className="rounded-md bg-[#34d399] px-3 py-1.5 text-xs font-semibold text-[#0d1117] transition-colors hover:bg-[#2dbe8c] disabled:opacity-60"
+                  className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/88 disabled:opacity-60"
                 >
                   {saving ? "Saving..." : "Save credential"}
                 </button>
               </div>
-              {saveError && <p className="text-xs text-red-300">{saveError}</p>}
-              {saveOk && <p className="text-xs text-emerald-300">{saveOk}</p>}
+              {saveError && <p className="text-xs text-danger-fg">{saveError}</p>}
+              {saveOk && <p className="text-xs text-success-fg">{saveOk}</p>}
             </div>
           )}
         </div>
@@ -554,35 +547,35 @@ function EstimatedSpendTable({ rows }: { rows: SpendRow[] }) {
   const maxUsd = sorted[0]?.usd ?? 1;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[#23282e]">
+    <div className="overflow-hidden rounded-xl border border-border">
       {/* Header */}
-      <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-[#23282e] bg-[#15191d] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#7a8591]">
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-border bg-muted px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
         <span>Model</span>
         <span className="text-right">Coverage</span>
         <span className="text-right">Est. Spend</span>
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-[#23282e]">
+      <div className="divide-y divide-border">
         {sorted.map((row) => {
           const friendly = getFriendlyModelName(row.fullModel);
           return (
             <div
               key={row.fullModel}
-              className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-[#15191d]"
+              className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-muted"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm text-[#f5f7fa]">{friendly}</p>
+                <p className="truncate text-sm text-foreground">{friendly}</p>
                 <ProgressBar
                   value={row.usd ?? 0}
                   max={maxUsd}
                   className="mt-1.5 max-w-[200px]"
                 />
               </div>
-              <span className="text-right text-xs text-[#7a8591]">
+              <span className="text-right text-xs text-fg-subtle">
                 {row.coveragePct > 0 ? `${Math.round(row.coveragePct)}%` : "—"}
               </span>
-              <span className="text-right font-mono text-sm font-semibold text-[#34d399]">
+              <span className="text-right font-mono text-sm font-semibold text-success-fg">
                 {formatUsd(row.usd)}
               </span>
             </div>
@@ -607,41 +600,41 @@ function DiagnosticsPanel({
   if (total === 0) return null;
 
   return (
-    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5">
+    <div className="rounded-xl border border-warning-border bg-warning-bg">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"
       >
-        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
-        <span className="flex-1 text-sm font-medium text-amber-300">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-warning-fg" />
+        <span className="flex-1 text-sm font-medium text-warning-fg">
           {total} diagnostic{total !== 1 ? "s" : ""} detected
         </span>
         {open ? (
-          <ChevronUp className="h-4 w-4 text-amber-400" />
+          <ChevronUp className="h-4 w-4 text-warning-fg" />
         ) : (
-          <ChevronDown className="h-4 w-4 text-amber-400" />
+          <ChevronDown className="h-4 w-4 text-warning-fg" />
         )}
       </button>
 
       {open && (
-        <div className="space-y-2 border-t border-amber-500/10 px-4 pb-4 pt-3">
+        <div className="space-y-2 border-t border-warning-border px-4 pb-4 pt-3">
           {warnings.map((w, i) => (
             <div key={i} className="flex items-start gap-2">
-              <span className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-500">
+              <span className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-warning-fg">
                 warn
               </span>
-              <p className="text-xs text-[#a8b0ba]">{w}</p>
+              <p className="text-xs text-muted-foreground">{w}</p>
             </div>
           ))}
           {sourceErrors.map((e, i) => (
             <div key={i} className="flex items-start gap-2">
-              <span className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-red-500">
+              <span className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-danger-fg">
                 error
               </span>
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold text-[#d6dce3]">{e.source}</p>
-                <p className="text-xs text-[#a8b0ba]">{e.error}</p>
+                <p className="text-[11px] font-semibold text-fg-secondary">{e.source}</p>
+                <p className="text-xs text-muted-foreground">{e.error}</p>
               </div>
             </div>
           ))}
@@ -665,9 +658,9 @@ function RefreshButton({
       type="button"
       onClick={onClick}
       disabled={loading}
-      className="flex items-center gap-1.5 rounded-lg border border-[#23282e] bg-[#15191d] px-3 py-2 text-xs font-medium text-[#a8b0ba] transition-colors hover:border-[#3d4752] hover:text-[#f5f7fa] disabled:opacity-50"
+      className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground disabled:opacity-50"
     >
-      <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+      {loading ? <InlineSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
       Refresh
     </button>
   );
@@ -767,8 +760,6 @@ export function UsageView() {
                     ? `${formatCompact(totals.inputTokens)} in / ${formatCompact(totals.outputTokens)} out`
                     : undefined
                 }
-                icon={<Zap className="h-4 w-4" />}
-                accent="text-[#34d399]"
               />
               <StatCard
                 label={hasProviderInvoiceTotals ? "Current Month Cost" : "Estimated Cost"}
@@ -780,22 +771,16 @@ export function UsageView() {
                       ? `${Math.round(data.coverage.estimatedPricingCoveragePct)}% coverage`
                       : "No pricing data — subscription auth doesn't expose costs"
                 }
-                icon={<DollarSign className="h-4 w-4" />}
-                accent="text-emerald-400"
               />
               <StatCard
                 label="Sessions"
                 value={totals ? formatNumber(totals.sessions) : "—"}
                 sub={totals ? `${formatNumber(totals.agents)} agent${totals.agents !== 1 ? "s" : ""}` : undefined}
-                icon={<Activity className="h-4 w-4" />}
-                accent="text-sky-400"
               />
               <StatCard
                 label="Active Models"
                 value={totals ? formatNumber(totals.models) : "—"}
                 sub={byModel.length > 0 ? `Across ${new Set(byModel.map((m) => m.provider)).size} provider${new Set(byModel.map((m) => m.provider)).size !== 1 ? "s" : ""}` : undefined}
-                icon={<Cpu className="h-4 w-4" />}
-                accent="text-violet-400"
               />
             </div>
 
@@ -810,57 +795,57 @@ export function UsageView() {
                 </SubHeading>
                 <WindowSelector active={activeWindow} onChange={setActiveWindow} />
               </div>
-              <p className="text-xs text-[#a8b0ba]">
+              <p className="text-xs text-muted-foreground">
                 Window stats are local telemetry estimates and may differ from provider invoices.
               </p>
 
               {windowBucket && (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-xl border border-[#23282e] bg-[#15191d] p-3">
-                    <p className="text-[10px] font-medium uppercase tracking-wider text-[#7a8591]">
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
                       Sessions
                     </p>
-                    <p className="mt-1 text-lg font-bold text-[#f5f7fa]">
+                    <p className="mt-1 text-lg font-bold text-foreground">
                       {formatNumber(displayWindowSessions)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-[#23282e] bg-[#15191d] p-3">
-                    <p className="text-[10px] font-medium uppercase tracking-wider text-[#7a8591]">
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
                       Total Tokens
                     </p>
-                    <p className="mt-1 text-lg font-bold text-[#f5f7fa]">
+                    <p className="mt-1 text-lg font-bold text-foreground">
                       {formatCompact(displayWindowTotalTokens)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-[#23282e] bg-[#15191d] p-3">
-                    <p className="text-[10px] font-medium uppercase tracking-wider text-[#7a8591]">
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
                       Input Tokens
                     </p>
-                    <p className="mt-1 text-lg font-bold text-[#f5f7fa]">
+                    <p className="mt-1 text-lg font-bold text-foreground">
                       {formatCompact(displayWindowInputTokens)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-[#23282e] bg-[#15191d] p-3">
-                    <p className="text-[10px] font-medium uppercase tracking-wider text-[#7a8591]">
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
                       Output Tokens
                     </p>
-                    <p className="mt-1 text-lg font-bold text-[#f5f7fa]">
+                    <p className="mt-1 text-lg font-bold text-foreground">
                       {formatCompact(displayWindowOutputTokens)}
                     </p>
                   </div>
                   {windowSpend?.usd !== null && windowSpend !== undefined && (
-                    <div className="col-span-2 rounded-xl border border-[#23282e] bg-[#15191d] p-3 sm:col-span-4">
+                    <div className="col-span-2 rounded-xl border border-border bg-card p-3 sm:col-span-4">
                       <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-medium uppercase tracking-wider text-[#7a8591]">
+                        <p className="text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
                           Estimated Spend
                         </p>
                         {windowSpend.coveragePct > 0 && (
-                          <span className="rounded-full border border-[#23282e] bg-[#20252a] px-2 py-0.5 text-[10px] text-[#7a8591]">
+                          <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-fg-subtle">
                             {Math.round(windowSpend.coveragePct)}% coverage
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-lg font-bold text-[#34d399]">
+                      <p className="mt-1 text-lg font-bold text-success-fg">
                         {formatUsd(windowSpend.usd)}
                       </p>
                     </div>
@@ -868,7 +853,7 @@ export function UsageView() {
                 </div>
               )}
               {showingWindowFallback && (
-                <p className="text-xs text-[#a8b0ba]">
+                <p className="text-xs text-muted-foreground">
                   No recent activity in this time window yet. Showing overall totals instead.
                 </p>
               )}
@@ -882,7 +867,7 @@ export function UsageView() {
                   Token Usage by Model
                 </span>
               </SubHeading>
-              <p className="mb-2 text-xs text-[#a8b0ba]">
+              <p className="mb-2 text-xs text-muted-foreground">
                 Costs in this table are estimated from local usage, not invoice-grade billing.
               </p>
               <ModelUsageTable rows={byModel} />

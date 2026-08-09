@@ -44,8 +44,8 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card">
-        <div className="h-3.5 w-3.5" />
+      <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card">
+        <div className="h-4 w-4" />
       </div>
     );
   }
@@ -59,19 +59,19 @@ export function ThemeToggle() {
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-lg border transition-colors",
+          "flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary dark:hover:bg-secondary dark:hover:text-foreground",
           open
-            ? "border-stone-300 bg-stone-100 text-stone-900 dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#f5f7fa]"
-            : "border-stone-200 bg-white text-stone-500 hover:bg-stone-100 hover:text-stone-700 dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#a8b0ba] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]"
+            ? "border-border-strong bg-muted text-foreground dark:border-border dark:bg-card"
+            : ""
         )}
         aria-label={`Theme: ${currentTheme.label}`}
         title={`Theme: ${currentTheme.label}`}
       >
-        <CurrentIcon className="h-3.5 w-3.5" />
+        <CurrentIcon className="h-4 w-4" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-40 overflow-hidden rounded-xl border border-stone-200 bg-white py-1 shadow-xl dark:border-[#2c343d] dark:bg-[#171a1d]">
+        <div className="absolute right-0 top-full z-50 mt-2 w-40 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-xl">
           {THEMES.map((t) => {
             const Icon = t.icon;
             const isActive = theme === t.value;
@@ -86,14 +86,14 @@ export function ThemeToggle() {
                 className={cn(
                   "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
                   isActive
-                    ? "bg-stone-100 text-stone-900 dark:bg-[#20252a] dark:text-[#f5f7fa]"
-                    : "text-stone-500 hover:bg-stone-100 hover:text-stone-900 dark:text-[#a8b0ba] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]"
+                    ? "bg-muted text-foreground dark:bg-secondary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground dark:hover:bg-secondary"
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
                 <span className="font-medium">{t.label}</span>
                 {isActive && (
-                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-success" />
                 )}
               </button>
             );

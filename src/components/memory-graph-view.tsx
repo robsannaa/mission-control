@@ -38,7 +38,7 @@ import {
 import dagre from "dagre";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import { InlineSpinner, LoadingState } from "@/components/ui/loading-state";
+import { InlineSpinner, ScreenLoadingState } from "@/components/ui/loading-state";
 
 const DAGRE_NODE_WIDTH = 200;
 const DAGRE_NODE_HEIGHT = 72;
@@ -1417,10 +1417,10 @@ export function MemoryGraphView() {
       if (selected) opacity = 1;
 
       const ringTone = insight?.conflicts
-        ? "ring-rose-400/60"
+        ? "ring-danger-border"
         : insight?.lowProvenance
-          ? "ring-amber-300/60"
-          : "ring-cyan-300/40";
+          ? "ring-warning-border"
+          : "ring-info-border";
 
       const hasReasonableSavedPosition =
         Number.isFinite(node.x) &&
@@ -1484,17 +1484,17 @@ export function MemoryGraphView() {
                   {kindLabel(node.kind)}
                 </span>
                 {(insight?.conflicts ?? 0) > 0 && (
-                  <span className="rounded-md bg-rose-500/20 px-1.5 py-0.5 text-[10px] text-rose-700 dark:text-rose-200">
+                  <span className="rounded-md bg-danger-bg px-1.5 py-0.5 text-[10px] text-danger-fg">
                     {insight!.conflicts} conflict{(insight!.conflicts ?? 0) === 1 ? "" : "s"}
                   </span>
                 )}
                 {insight?.lowProvenance && (
-                  <span className="rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-200">
+                  <span className="rounded-md bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning-fg">
                     Unverified
                   </span>
                 )}
                 {pinned && (
-                  <span className="rounded-md bg-violet-500/25 px-1.5 py-0.5 text-[10px] text-violet-700 dark:text-violet-100">
+                  <span className="rounded-md bg-muted-foreground/25 px-1.5 py-0.5 text-[10px] text-muted-foreground dark:text-fg-secondary">
                     Pinned
                   </span>
                 )}
@@ -1768,7 +1768,7 @@ export function MemoryGraphView() {
   if (loading || !graph) {
     return (
       <div className="flex flex-1 flex-col">
-        <LoadingState label="Building memory graph..." />
+        <ScreenLoadingState label="Building memory graph..." />
       </div>
     );
   }
@@ -1800,7 +1800,7 @@ export function MemoryGraphView() {
               type="button"
               onClick={() => void loadGraph()}
               title="Refresh"
-              className="inline-flex items-center gap-1 rounded border border-foreground/10 bg-muted/40 px-1.5 py-1 text-xs text-foreground/80 hover:bg-muted"
+              className="inline-flex items-center gap-1 rounded border border-foreground/10 bg-muted/40 px-1.5 py-1 text-xs text-foreground hover:bg-muted"
             >
               <RefreshCw className="h-3 w-3" /> Refresh
             </button>
@@ -1809,7 +1809,7 @@ export function MemoryGraphView() {
               onClick={() => void rebuildFromMemory()}
               disabled={rebuilding || saving || publishing}
               title="Rebuild from memory"
-              className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-1 text-xs text-sky-700 hover:bg-sky-500/20 dark:text-sky-200 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded border border-info-border bg-info-bg px-1.5 py-1 text-xs text-info-fg hover:bg-info-bg disabled:opacity-50"
             >
               {rebuilding ? <span className="inline-flex items-center gap-0.5"><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" /><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" /><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" /></span> : <GitBranch className="h-3 w-3" />} Rebuild
             </button>
@@ -1818,7 +1818,7 @@ export function MemoryGraphView() {
               onClick={saveGraph}
               disabled={!dirty || saving}
               title="Save graph"
-              className="inline-flex items-center gap-1 rounded border border-violet-500/35 bg-violet-500/15 px-1.5 py-1 text-xs text-violet-700 hover:bg-violet-500/25 dark:text-violet-200 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded border border-border-strong bg-muted-foreground/15 px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted-foreground/25 dark:text-fg-secondary disabled:opacity-50"
             >
               {saving ? <span className="inline-flex items-center gap-0.5"><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" /><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" /><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" /></span> : <Save className="h-3 w-3" />} Save
             </button>
@@ -1827,7 +1827,7 @@ export function MemoryGraphView() {
               onClick={publishSnapshot}
               disabled={publishing}
               title="Publish snapshot to memory"
-              className="inline-flex items-center gap-1 rounded border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-1 text-xs text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-200 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded border border-success-border bg-success-bg px-1.5 py-1 text-xs text-success-fg hover:bg-success-bg disabled:opacity-50"
             >
               {publishing ? <span className="inline-flex items-center gap-0.5"><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" /><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" /><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" /></span> : <UploadCloud className="h-3 w-3" />} Publish
             </button>
@@ -1844,19 +1844,19 @@ export function MemoryGraphView() {
           {/* Search + layer controls */}
           <div className="space-y-1.5 p-2">
             <div className="flex items-center gap-1.5 rounded border border-foreground/10 bg-card px-2 py-1">
-              <Search className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+              <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="What matters now?"
-                className="w-full bg-transparent text-xs text-foreground/90 outline-none placeholder:text-muted-foreground/60"
+                className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-fg-subtle"
               />
             </div>
             <div className="flex items-center gap-1">
               <select
                 value={layer}
                 onChange={(e) => setLayer(e.target.value as LayerMode)}
-                className="flex-1 rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground/90"
+                className="flex-1 rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground"
               >
                 {LAYER_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1865,7 +1865,7 @@ export function MemoryGraphView() {
               <button
                 type="button"
                 onClick={resetFilters}
-                className="rounded border border-foreground/10 bg-card px-2 py-1 text-xs text-foreground/80 hover:bg-muted"
+                className="rounded border border-foreground/10 bg-card px-2 py-1 text-xs text-foreground hover:bg-muted"
               >
                 Reset
               </button>
@@ -1877,7 +1877,7 @@ export function MemoryGraphView() {
             <button
               type="button"
               onClick={() => setShowExtraction((prev) => !prev)}
-              className="flex w-full items-center justify-between rounded border border-foreground/10 bg-card px-2 py-1 text-xs text-foreground/80 hover:bg-muted"
+              className="flex w-full items-center justify-between rounded border border-foreground/10 bg-card px-2 py-1 text-xs text-foreground hover:bg-muted"
             >
               <span className="inline-flex items-center gap-1.5">
                 <SlidersHorizontal className="h-3 w-3" />
@@ -1895,11 +1895,11 @@ export function MemoryGraphView() {
             {showExtraction && extractionSettings ? (
               <div className="mt-2 space-y-2 rounded border border-foreground/10 bg-card/60 p-2">
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-foreground/90">Mode</p>
+                  <p className="text-xs font-medium text-foreground">Mode</p>
                   <select
                     value={extractionSettings.mode}
                     onChange={(e) => updateExtractionSettings({ mode: e.target.value as ExtractionSettingsPayload["mode"] })}
-                    className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground/90"
+                    className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground"
                   >
                     <option value="gateway">Gateway model (local endpoint)</option>
                     <option value="openai">OpenAI API (direct)</option>
@@ -1916,11 +1916,11 @@ export function MemoryGraphView() {
 
                 {extractionSettings.mode === "gateway" ? (
                   <div className="space-y-1">
-                    <p className="text-xs font-medium text-foreground/90">Model</p>
+                    <p className="text-xs font-medium text-foreground">Model</p>
                     <select
                       value={extractionSettings.model}
                       onChange={(e) => updateExtractionSettings({ model: e.target.value })}
-                      className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground/90"
+                      className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground"
                     >
                       <option value="">
                         Agent default{gatewayDefaultModel ? ` (${gatewayDefaultModel})` : ""}
@@ -1935,27 +1935,27 @@ export function MemoryGraphView() {
                 {extractionSettings.mode === "openai" ? (
                   <>
                     <div className="space-y-1">
-                      <p className="text-xs font-medium text-foreground/90">Model</p>
+                      <p className="text-xs font-medium text-foreground">Model</p>
                       <input
                         value={extractionSettings.model}
                         onChange={(e) => updateExtractionSettings({ model: e.target.value })}
                         placeholder="gpt-4o-mini"
-                        className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground/90 outline-none placeholder:text-muted-foreground/60"
+                        className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground outline-none placeholder:text-fg-subtle"
                       />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs font-medium text-foreground/90">API key</p>
+                      <p className="text-xs font-medium text-foreground">API key</p>
                       <input
                         value={extractionSettings.openaiApiKey}
                         onChange={(e) => updateExtractionSettings({ openaiApiKey: e.target.value })}
                         placeholder="sk-..."
-                        className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 font-mono text-xs text-foreground/90 outline-none placeholder:text-muted-foreground/60"
+                        className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 font-mono text-xs text-foreground outline-none placeholder:text-fg-subtle"
                       />
                       {legacyKeyDetected && !extractionSettings.openaiApiKey ? (
                         <button
                           type="button"
                           onClick={() => void importLegacyKey()}
-                          className="w-full rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-1 text-left text-[11px] leading-snug text-amber-700 hover:bg-amber-500/20 dark:text-amber-200"
+                          className="w-full rounded border border-warning-border bg-warning-bg px-1.5 py-1 text-left text-[11px] leading-snug text-warning-fg hover:bg-warning-bg"
                         >
                           A key was found in ~/.openclaw/.env. It is never used automatically — click to import it.
                         </button>
@@ -1968,7 +1968,7 @@ export function MemoryGraphView() {
                   type="button"
                   onClick={() => void saveExtractionSettings()}
                   disabled={extractionSaving}
-                  className="w-full rounded border border-violet-500/35 bg-violet-500/15 px-2 py-1 text-xs text-violet-700 hover:bg-violet-500/25 dark:text-violet-200 disabled:opacity-50"
+                  className="w-full rounded border border-border-strong bg-muted-foreground/15 px-2 py-1 text-xs text-muted-foreground hover:bg-muted-foreground/25 dark:text-fg-secondary disabled:opacity-50"
                 >
                   {extractionSaving ? "Saving..." : "Save extraction settings"}
                 </button>
@@ -1982,7 +1982,7 @@ export function MemoryGraphView() {
       {!sidebarCollapsed && (
         <div
           onMouseDown={handleResizeStart}
-          className="absolute top-0 z-20 h-full w-2 cursor-col-resize transition-colors hover:bg-violet-500/30 active:bg-violet-500/50"
+          className="absolute top-0 z-20 h-full w-2 cursor-col-resize transition-colors hover:bg-muted-foreground/30 active:bg-muted-foreground/50"
           style={{ left: sidebarWidth - 4 }}
           title="Drag to resize"
         />
@@ -2017,26 +2017,26 @@ export function MemoryGraphView() {
 
         <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col gap-2">
           {apiWarning ? (
-            <div className="inline-flex max-w-xl items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1.5 text-xs text-amber-800 shadow-sm backdrop-blur dark:text-amber-100">
+            <div className="inline-flex max-w-xl items-start gap-2 rounded-md border border-warning-border bg-warning-bg px-2.5 py-1.5 text-xs text-warning-fg shadow-sm backdrop-blur">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>{apiWarning}</span>
             </div>
           ) : null}
           {extractionInfo?.mode === "off" ? (
-            <div className="inline-flex items-center gap-2 rounded-md border border-foreground/15 bg-card/80 px-2.5 py-1 text-xs text-foreground/80 shadow-sm backdrop-blur">
+            <div className="inline-flex items-center gap-2 rounded-md border border-foreground/15 bg-card/80 px-2.5 py-1 text-xs text-foreground shadow-sm backdrop-blur">
               <EyeOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span>LLM extraction is off — showing link-based graph.</span>
             </div>
           ) : null}
-          <div className="inline-flex items-center gap-2 rounded-md border border-foreground/15 bg-card/80 px-2.5 py-1 text-xs text-foreground/90 shadow-sm backdrop-blur">
-            <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-300" />
+          <div className="inline-flex items-center gap-2 rounded-md border border-foreground/15 bg-card/80 px-2.5 py-1 text-xs text-foreground shadow-sm backdrop-blur">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-success-fg" />
             <span>
               Top {MAX_VISIBLE_NODES} nodes / {MAX_VISIBLE_EDGES} edges by expected usefulness.
             </span>
           </div>
           {visibleRelationTypes.length > 0 ? (
             <div className="rounded-md border border-foreground/15 bg-card/80 px-2.5 py-1.5 text-xs shadow-sm backdrop-blur">
-              <p className="mb-1.5 font-semibold text-foreground/90">Relations</p>
+              <p className="mb-1.5 font-semibold text-foreground">Relations</p>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {visibleRelationTypes.map((relation) => (
                   <span key={relation} className="inline-flex items-center gap-1.5">
@@ -2045,7 +2045,7 @@ export function MemoryGraphView() {
                       style={{ backgroundColor: relationToColor(relation, isDark) }}
                       aria-hidden
                     />
-                    <span className="text-foreground/80">{relationLabel(relation)}</span>
+                    <span className="text-foreground">{relationLabel(relation)}</span>
                   </span>
                 ))}
               </div>
@@ -2064,7 +2064,7 @@ export function MemoryGraphView() {
           <div className={cn("flex items-start", inspectorCollapsed ? "justify-center" : "justify-between")}>
             {!inspectorCollapsed ? (
               <div>
-                <p className="text-xs font-semibold text-foreground/90">Decision Inspector</p>
+                <p className="text-xs font-semibold text-foreground">Decision Inspector</p>
                 <p className="text-xs text-muted-foreground">
                   Layer {layer === "overview" ? "A" : layer === "topic" ? "B" : "C"} · {lens} lens ·
                   visible nodes {flowNodes.length}
@@ -2074,7 +2074,7 @@ export function MemoryGraphView() {
             <button
               type="button"
               onClick={() => setInspectorCollapsed((prev) => !prev)}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-foreground/10 bg-card text-muted-foreground transition-colors hover:text-foreground/80"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-foreground/10 bg-card text-muted-foreground transition-colors hover:text-foreground"
               title={inspectorCollapsed ? "Expand inspector" : "Collapse inspector"}
               aria-label={inspectorCollapsed ? "Expand inspector" : "Collapse inspector"}
             >
@@ -2089,7 +2089,7 @@ export function MemoryGraphView() {
 
         {inspectorCollapsed ? (
           <div className="flex min-h-0 flex-1 items-center justify-center p-1">
-            <span className="select-none text-xs tracking-wide text-muted-foreground/70 [writing-mode:vertical-rl]">
+            <span className="select-none text-xs tracking-wide text-muted-foreground [writing-mode:vertical-rl]">
               Inspector
             </span>
           </div>
@@ -2107,13 +2107,13 @@ export function MemoryGraphView() {
                   <span className="rounded bg-muted px-1.5 py-0.5">provenance {Math.round((nodeInsights.get(selectedNode.id)?.provenanceQuality || 0) * 100)}%</span>
                   <span className="rounded bg-muted px-1.5 py-0.5">retrieval {nodeInsights.get(selectedNode.id)?.retrievalInWindow || 0}</span>
                   {(overlayConflicts && (nodeInsights.get(selectedNode.id)?.conflicts || 0) > 0) ? (
-                    <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-rose-700 dark:text-rose-200">conflicts {nodeInsights.get(selectedNode.id)?.conflicts}</span>
+                    <span className="rounded bg-danger-bg px-1.5 py-0.5 text-danger-fg">conflicts {nodeInsights.get(selectedNode.id)?.conflicts}</span>
                   ) : null}
                   {(overlayStaleness && nodeInsights.get(selectedNode.id)?.stale) ? (
-                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-amber-700 dark:text-amber-200">stale</span>
+                    <span className="rounded bg-warning-bg px-1.5 py-0.5 text-warning-fg">stale</span>
                   ) : null}
                   {(overlayLowProvenance && nodeInsights.get(selectedNode.id)?.lowProvenance) ? (
-                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-amber-700 dark:text-amber-200">low provenance</span>
+                    <span className="rounded bg-warning-bg px-1.5 py-0.5 text-warning-fg">low provenance</span>
                   ) : null}
                 </div>
 
@@ -2123,7 +2123,7 @@ export function MemoryGraphView() {
                       value={editDraft}
                       onChange={(e) => setEditDraft(e.target.value)}
                       rows={4}
-                      className="w-full rounded-md border border-foreground/10 bg-background px-2 py-1.5 text-xs text-foreground/90 outline-none"
+                      className="w-full rounded-md border border-foreground/10 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
                     />
                     <div className="flex gap-1">
                       <button type="button" onClick={saveEdit} className="rounded bg-primary text-primary-foreground px-2 py-1 text-xs hover:bg-primary/90">Save edit</button>
@@ -2135,14 +2135,14 @@ export function MemoryGraphView() {
                 )}
 
                 <div className="grid grid-cols-2 gap-1 text-xs">
-                  <button type="button" onClick={handleConfirm} className="inline-flex items-center justify-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-200"><CheckCircle2 className="h-3 w-3" />confirm</button>
-                  <button type="button" onClick={startEditing} className="inline-flex items-center justify-center gap-1 rounded border border-foreground/10 bg-card px-2 py-1 text-foreground/80 hover:bg-muted">edit</button>
-                  <button type="button" onClick={handleDeprecate} className="inline-flex items-center justify-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-700 hover:bg-amber-500/20 dark:text-amber-200">deprecate</button>
+                  <button type="button" onClick={handleConfirm} className="inline-flex items-center justify-center gap-1 rounded border border-success-border bg-success-bg px-2 py-1 text-success-fg hover:bg-success-bg"><CheckCircle2 className="h-3 w-3" />confirm</button>
+                  <button type="button" onClick={startEditing} className="inline-flex items-center justify-center gap-1 rounded border border-foreground/10 bg-card px-2 py-1 text-foreground hover:bg-muted">edit</button>
+                  <button type="button" onClick={handleDeprecate} className="inline-flex items-center justify-center gap-1 rounded border border-warning-border bg-warning-bg px-2 py-1 text-warning-fg hover:bg-warning-bg">deprecate</button>
                   <button type="button" onClick={() => togglePin(selectedNode.id)} className="inline-flex items-center justify-center gap-1 rounded border border-border bg-card px-2 py-1 text-foreground hover:bg-muted">{pinnedIds.includes(selectedNode.id) ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}{pinnedIds.includes(selectedNode.id) ? "unpin" : "pin"}</button>
                 </div>
 
                 <div className="rounded border border-foreground/10 bg-background/30 p-2 text-xs text-muted-foreground">
-                  <p className="font-medium text-foreground/90">Provenance</p>
+                  <p className="font-medium text-foreground">Provenance</p>
                   {(nodeInsights.get(selectedNode.id)?.sources || []).length === 0 ? (
                     <p className="mt-1">No explicit provenance source.</p>
                   ) : (
@@ -2176,7 +2176,7 @@ export function MemoryGraphView() {
                           key={edge.id}
                           type="button"
                           onClick={() => setSelectedNodeId(otherId)}
-                          className="w-full rounded border border-foreground/10 bg-card px-2 py-1 text-left text-foreground/90 hover:bg-muted"
+                          className="w-full rounded border border-foreground/10 bg-card px-2 py-1 text-left text-foreground hover:bg-muted"
                         >
                           <p className="truncate">{other?.label || otherId}</p>
                           {edge.fact ? (
@@ -2201,13 +2201,13 @@ export function MemoryGraphView() {
                 </p>
 
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-foreground/90">Raw chunks</p>
+                  <p className="text-xs font-medium text-foreground">Raw chunks</p>
                   {forensics.docs.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No matching chunks for this focus.</p>
                   ) : (
                     forensics.docs.slice(0, 4).map((doc) => (
                       <div key={doc.id} className="rounded border border-foreground/10 bg-card px-2 py-1.5">
-                        <p className="truncate text-xs font-medium text-foreground/90">{doc.name}</p>
+                        <p className="truncate text-xs font-medium text-foreground">{doc.name}</p>
                         <p className="text-xs text-muted-foreground">{doc.path}</p>
                         <div className="mt-1 max-h-24 space-y-1 overflow-y-auto">
                           {doc.chunks.slice(0, 4).map((chunk) => (
@@ -2222,7 +2222,7 @@ export function MemoryGraphView() {
                 </div>
 
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-foreground/90">Provenance facts</p>
+                  <p className="text-xs font-medium text-foreground">Provenance facts</p>
                   <div className="max-h-28 space-y-1 overflow-y-auto">
                     {forensics.facts.slice(0, 12).map((fact) => (
                       <p key={`${fact.doc}:${fact.id}`} className="rounded border border-foreground/10 bg-background/40 px-1.5 py-1 text-xs text-muted-foreground">
@@ -2234,12 +2234,12 @@ export function MemoryGraphView() {
                 </div>
 
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-foreground/90">Diffs / contradictions</p>
+                  <p className="text-xs font-medium text-foreground">Diffs / contradictions</p>
                   {forensics.diffs.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No contradictions detected in current forensics scope.</p>
                   ) : (
                     forensics.diffs.slice(0, 6).map((diff) => (
-                      <div key={diff.canonical} className="rounded border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-700 dark:text-rose-100">
+                      <div key={diff.canonical} className="rounded border border-danger-border bg-danger-bg px-2 py-1 text-xs text-danger-fg">
                         {diff.statements.map((statement, idx) => (
                           <p key={`${diff.canonical}:${idx}`}>• {statement}</p>
                         ))}
@@ -2254,7 +2254,7 @@ export function MemoryGraphView() {
               <div className="space-y-2 rounded-lg border border-foreground/10 bg-card/45 p-3">
                 {overlayDupes ? (
                   <div>
-                    <p className="text-xs font-medium text-foreground/90">Duplication</p>
+                    <p className="text-xs font-medium text-foreground">Duplication</p>
                     <div className="mt-1 max-h-20 space-y-1 overflow-y-auto">
                       {diagnostics.duplicates.slice(0, 8).map((group) => (
                         <p key={group.labelKey} className="text-xs text-muted-foreground">
@@ -2268,7 +2268,7 @@ export function MemoryGraphView() {
 
                 {overlayMergeSuggestions ? (
                   <div>
-                    <p className="text-xs font-medium text-foreground/90">Merge suggestions</p>
+                    <p className="text-xs font-medium text-foreground">Merge suggestions</p>
                     <div className="mt-1 max-h-20 space-y-1 overflow-y-auto">
                       {diagnostics.mergeSuggestions.slice(0, 8).map((pair) => (
                         <p key={`${pair.a.id}:${pair.b.id}`} className="text-xs text-muted-foreground">
@@ -2283,7 +2283,7 @@ export function MemoryGraphView() {
             ) : null}
 
             <div className="rounded-lg border border-foreground/10 bg-card/40 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground/90">Current defaults</p>
+              <p className="font-medium text-foreground">Current defaults</p>
               <p>Focus + context: 1-hop full, 2-hop faint, 3-hop hidden unless expanded.</p>
               <p>Render caps: top {MAX_VISIBLE_NODES} nodes, top {MAX_VISIBLE_EDGES} edges in scope.</p>
               <p>Ranking signals: retrieval frequency, recency, conflict rate, provenance, task relevance, breadth.</p>
@@ -2297,8 +2297,8 @@ export function MemoryGraphView() {
           className={cn(
             "pointer-events-none absolute bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-lg border px-3 py-2 text-xs shadow-lg backdrop-blur-sm",
             notice.kind === "success"
-              ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-200"
-              : "border-red-500/30 bg-red-500/15 text-red-700 dark:text-red-200"
+              ? "border-success-border bg-success-bg text-success-fg"
+              : "border-danger-border bg-danger-bg text-danger-fg"
           )}
         >
           <span className="inline-flex items-center gap-1.5">
@@ -2309,7 +2309,7 @@ export function MemoryGraphView() {
       ) : null}
 
       {(saving || publishing) ? (
-        <div className="pointer-events-none absolute right-4 top-4 z-30 inline-flex items-center gap-1.5 rounded-md border border-foreground/15 bg-card/90 px-2 py-1 text-xs text-foreground/80">
+        <div className="pointer-events-none absolute right-4 top-4 z-30 inline-flex items-center gap-1.5 rounded-md border border-foreground/15 bg-card/90 px-2 py-1 text-xs text-foreground">
           <InlineSpinner size="sm" />
           {saving ? "Saving graph..." : "Publishing snapshot..."}
         </div>

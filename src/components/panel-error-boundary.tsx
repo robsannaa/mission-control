@@ -48,26 +48,26 @@ export class PanelErrorBoundary extends Component<Props, State> {
       const label = this.props.section ?? "This section";
       return (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10">
-            <AlertTriangle className="h-6 w-6 text-red-500" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-danger-bg">
+            <AlertTriangle className="h-6 w-6 text-danger-fg" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-stone-900 dark:text-[#f5f7fa]">
+            <h2 className="text-lg font-semibold text-foreground">
               Something went wrong
             </h2>
-            <p className="mt-1 text-sm text-stone-500 dark:text-[#a8b0ba]">
+            <p className="mt-1 text-sm text-muted-foreground">
               {label} encountered an unexpected error.
             </p>
           </div>
           {this.state.error && (
-            <pre className="max-h-32 max-w-md overflow-y-auto rounded-md bg-stone-100 px-4 py-2 text-left text-xs text-stone-600 dark:bg-[#1a1d21] dark:text-[#7a8591]">
+            <pre className="max-h-32 max-w-md overflow-y-auto rounded-md bg-muted px-4 py-2 text-left text-xs text-fg-secondary dark:text-fg-subtle">
               {this.state.error.message}
             </pre>
           )}
           <button
             type="button"
             onClick={this.handleRetry}
-            className="inline-flex items-center gap-2 rounded-md bg-stone-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 dark:bg-[#2a2f36] dark:hover:bg-[#353b44]"
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/88"
           >
             <RotateCcw className="h-4 w-4" />
             Retry

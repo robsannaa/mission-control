@@ -8,10 +8,10 @@ type LoadingStateProps = {
   size?: "sm" | "md" | "lg";
 };
 
-const dotSize: Record<NonNullable<LoadingStateProps["size"]>, string> = {
-  sm: "h-1 w-1",
-  md: "h-1.5 w-1.5",
-  lg: "h-2 w-2",
+const spinnerSize: Record<NonNullable<LoadingStateProps["size"]>, string> = {
+  sm: "size-3.5",
+  md: "size-5",
+  lg: "size-8",
 };
 
 export function InlineSpinner({
@@ -21,12 +21,18 @@ export function InlineSpinner({
   className?: string;
   size?: LoadingStateProps["size"];
 }) {
-  const dot = dotSize[size || "sm"];
+  const spinner = spinnerSize[size || "sm"];
   return (
-    <span className={cn("inline-flex items-center gap-1", className)}>
-      <span className={cn(dot, "animate-bounce rounded-full bg-current [animation-delay:0ms]")} />
-      <span className={cn(dot, "animate-bounce rounded-full bg-current [animation-delay:150ms]")} />
-      <span className={cn(dot, "animate-bounce rounded-full bg-current [animation-delay:300ms]")} />
+    <span
+      className={cn(
+        "inline-block animate-spin rounded-full border-2 border-muted border-t-foreground",
+        spinner,
+        className,
+      )}
+      role="status"
+      aria-label="Loading"
+    >
+      <span className="sr-only">Loading...</span>
     </span>
   );
 }
@@ -39,12 +45,26 @@ export function LoadingState({
   return (
     <div
       className={cn(
-        "flex flex-1 items-center justify-center gap-2.5 text-sm text-muted-foreground/70",
+        "flex flex-1 items-center justify-center gap-2.5 text-sm text-muted-foreground",
         className
       )}
     >
       <InlineSpinner size={size} />
       {label && <span>{label}</span>}
     </div>
+  );
+}
+
+export function ScreenLoadingState({
+  label,
+  className,
+  size = "md",
+}: LoadingStateProps) {
+  return (
+    <LoadingState
+      label={label}
+      size={size}
+      className={cn("fixed inset-0 z-50", className)}
+    />
   );
 }

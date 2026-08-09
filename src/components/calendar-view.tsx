@@ -132,13 +132,13 @@ function formatEventDayLabel(ts: number): string {
 function providerTone(provider: CalendarProvider): string {
   switch (provider) {
     case "google":
-      return "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+      return "border-info-border bg-info-bg text-info-fg";
     case "apple":
-      return "border-zinc-500/20 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300";
+      return "border-border-strong/20 bg-muted-foreground/10 text-fg-secondary dark:text-fg-subtle";
     case "zoho":
-      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+      return "border-success-border bg-success-bg text-success-fg";
     default:
-      return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+      return "border-warning-border bg-warning-bg text-warning-fg";
   }
 }
 
@@ -342,7 +342,7 @@ export function CalendarView() {
       />
       <SectionBody className="pb-8" innerClassName="space-y-6">
         {error ? (
-          <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          <div className="flex items-center gap-2 rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -377,21 +377,21 @@ export function CalendarView() {
           ].map((metric) => {
             const Icon = metric.icon;
             return (
-              <Card key={metric.label} className="gap-0 border-stone-200/70 bg-white/90 py-0 dark:border-[#23282e] dark:bg-[#14171b]">
+              <Card key={metric.label} className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
                 <CardContent className="flex items-center justify-between px-5 py-4">
                   <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500 dark:text-[#8d98a5]">
+                    <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                       {metric.label}
                     </p>
-                    <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-[#f5f7fa]">
+                    <p className="mt-2 text-3xl font-semibold text-foreground">
                       {metric.value}
                     </p>
-                    <p className="mt-1 text-xs text-stone-500 dark:text-[#8d98a5]">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {metric.hint}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3 dark:border-[#23282e] dark:bg-[#171b20]">
-                    <Icon className="h-5 w-5 text-stone-600 dark:text-[#c2c9d2]" />
+                  <div className="rounded-2xl border border-border bg-muted p-3">
+                    <Icon className="h-5 w-5 text-fg-secondary" />
                   </div>
                 </CardContent>
               </Card>
@@ -400,9 +400,9 @@ export function CalendarView() {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
-          <Card className="gap-0 border-stone-200/70 bg-white/90 py-0 dark:border-[#23282e] dark:bg-[#14171b]">
-            <CardHeader className="border-b border-stone-200/80 px-5 py-4 dark:border-[#23282e]">
-              <CardTitle className="text-base text-stone-900 dark:text-[#f5f7fa]">
+          <Card className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
+            <CardHeader className="border-b border-border/80 px-5 py-4 dark:border-border">
+              <CardTitle className="text-base text-foreground">
                 Provider control plane
               </CardTitle>
               <CardDescription>
@@ -415,12 +415,12 @@ export function CalendarView() {
                 return (
                   <div
                     key={connector.provider}
-                    className="rounded-2xl border border-stone-200/80 bg-stone-50/80 p-4 dark:border-[#23282e] dark:bg-[#171b20]"
+                    className="rounded-2xl border border-border/80 bg-muted/80 p-4 dark:border-border dark:bg-muted"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
+                          <p className="text-sm font-semibold text-foreground">
                             {connector.label}
                           </p>
                           <Badge
@@ -430,27 +430,27 @@ export function CalendarView() {
                             {connector.connectorImplemented ? "ready" : "planned"}
                           </Badge>
                           {connector.multiAccount ? (
-                            <Badge variant="outline" className="border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                            <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
                               multi-account
                             </Badge>
                           ) : null}
                         </div>
-                        <p className="mt-2 text-sm text-stone-600 dark:text-[#a8b0ba]">
+                        <p className="mt-2 text-sm text-fg-secondary dark:text-muted-foreground">
                           {connector.note}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {connector.detection.gogAvailable ? (
-                            <Badge variant="outline" className="border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                            <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
                               gog detected
                             </Badge>
                           ) : null}
                           {connector.detection.oauthConfigured ? (
-                            <Badge variant="outline" className="border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                            <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
                               OAuth app configured
                             </Badge>
                           ) : null}
                           {connector.detection.storedAuth ? (
-                            <Badge variant="outline" className="border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                            <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
                               stored auth found
                             </Badge>
                           ) : null}
@@ -482,9 +482,9 @@ export function CalendarView() {
                           ].map((toggle) => (
                             <label
                               key={toggle.key}
-                              className="flex items-center justify-between gap-4 rounded-xl border border-stone-200 bg-white px-3 py-2 dark:border-[#23282e] dark:bg-[#12161a]"
+                              className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card px-3 py-2 dark:bg-background"
                             >
-                              <span className="text-stone-700 dark:text-[#d7dde4]">{toggle.label}</span>
+                              <span className="text-fg-secondary">{toggle.label}</span>
                               <Switch
                                 checked={toggle.checked}
                                 onCheckedChange={(checked) =>
@@ -505,9 +505,9 @@ export function CalendarView() {
             </CardContent>
           </Card>
 
-          <Card className="gap-0 border-stone-200/70 bg-white/90 py-0 dark:border-[#23282e] dark:bg-[#14171b]">
-            <CardHeader className="border-b border-stone-200/80 px-5 py-4 dark:border-[#23282e]">
-              <CardTitle className="text-base text-stone-900 dark:text-[#f5f7fa]">
+          <Card className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
+            <CardHeader className="border-b border-border/80 px-5 py-4 dark:border-border">
+              <CardTitle className="text-base text-foreground">
                 Add account
               </CardTitle>
               <CardDescription>
@@ -516,11 +516,11 @@ export function CalendarView() {
             </CardHeader>
             <CardContent className="space-y-3 px-5 py-5">
               <label className="grid gap-1.5 text-sm">
-                <span className="text-stone-600 dark:text-[#a8b0ba]">Provider</span>
+                <span className="text-fg-secondary dark:text-muted-foreground">Provider</span>
                 <select
                   value={formProvider}
                   onChange={(event) => setFormProvider(event.target.value as ExternalCalendarProvider)}
-                  className="h-9 rounded-md border border-stone-300 bg-white px-3 text-sm text-stone-900 outline-none focus:ring-2 focus:ring-stone-300 dark:border-[#2b3139] dark:bg-[#12161a] dark:text-[#f5f7fa] dark:focus:ring-[#3d4652]"
+                  className="h-9 rounded-md border border-border-strong bg-card px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-border dark:border-border dark:bg-background dark:focus:ring-border-strong"
                 >
                   {PROVIDER_OPTIONS.map((provider) => (
                     <option key={provider} value={provider}>
@@ -530,11 +530,11 @@ export function CalendarView() {
                 </select>
               </label>
               <label className="grid gap-1.5 text-sm">
-                <span className="text-stone-600 dark:text-[#a8b0ba]">Connection</span>
+                <span className="text-fg-secondary dark:text-muted-foreground">Connection</span>
                 <select
                   value={formConnection}
                   onChange={(event) => setFormConnection(event.target.value as CalendarAccountConnection)}
-                  className="h-9 rounded-md border border-stone-300 bg-white px-3 text-sm text-stone-900 outline-none focus:ring-2 focus:ring-stone-300 dark:border-[#2b3139] dark:bg-[#12161a] dark:text-[#f5f7fa] dark:focus:ring-[#3d4652]"
+                  className="h-9 rounded-md border border-border-strong bg-card px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-border dark:border-border dark:bg-background dark:focus:ring-border-strong"
                 >
                   {(data?.connectors.find((connector) => connector.provider === formProvider)?.supportedConnections || [formConnection]).map((connection) => (
                     <option key={connection} value={connection}>
@@ -544,7 +544,7 @@ export function CalendarView() {
                 </select>
               </label>
               <label className="grid gap-1.5 text-sm">
-                <span className="text-stone-600 dark:text-[#a8b0ba]">Badge label</span>
+                <span className="text-fg-secondary dark:text-muted-foreground">Badge label</span>
                 <Input
                   value={formLabel}
                   onChange={(event) => setFormLabel(event.target.value)}
@@ -552,7 +552,7 @@ export function CalendarView() {
                 />
               </label>
               <label className="grid gap-1.5 text-sm">
-                <span className="text-stone-600 dark:text-[#a8b0ba]">Provider account id</span>
+                <span className="text-fg-secondary dark:text-muted-foreground">Provider account id</span>
                 <Input
                   value={formAccountId}
                   onChange={(event) => setFormAccountId(event.target.value)}
@@ -568,9 +568,9 @@ export function CalendarView() {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[1.1fr_1.2fr]">
-          <Card className="gap-0 border-stone-200/70 bg-white/90 py-0 dark:border-[#23282e] dark:bg-[#14171b]">
-            <CardHeader className="border-b border-stone-200/80 px-5 py-4 dark:border-[#23282e]">
-              <CardTitle className="text-base text-stone-900 dark:text-[#f5f7fa]">
+          <Card className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
+            <CardHeader className="border-b border-border/80 px-5 py-4 dark:border-border">
+              <CardTitle className="text-base text-foreground">
                 Sync accounts
               </CardTitle>
               <CardDescription>
@@ -579,41 +579,41 @@ export function CalendarView() {
             </CardHeader>
             <CardContent className="space-y-3 px-5 py-5">
               {(data?.store.accounts || []).length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-stone-300 px-4 py-8 text-center text-sm text-stone-500 dark:border-[#303843] dark:text-[#8d98a5]">
+                <div className="rounded-2xl border border-dashed border-border-strong px-4 py-8 text-center text-sm text-muted-foreground">
                   No calendar accounts configured yet.
                 </div>
               ) : (
                 data?.store.accounts.map((account) => (
                   <div
                     key={account.id}
-                    className="rounded-2xl border border-stone-200/80 bg-stone-50/80 p-4 dark:border-[#23282e] dark:bg-[#171b20]"
+                    className="rounded-2xl border border-border/80 bg-muted/80 p-4 dark:border-border dark:bg-muted"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
+                          <p className="text-sm font-semibold text-foreground">
                             {account.label}
                           </p>
                           <Badge variant="outline" className={cn("capitalize", providerTone(account.provider))}>
                             {account.provider}
                           </Badge>
-                          <Badge variant="outline" className="capitalize border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                          <Badge variant="outline" className="capitalize border-border-strong text-fg-secondary dark:text-muted-foreground">
                             {account.connection}
                           </Badge>
                           {account.readOnly ? (
-                            <Badge variant="outline" className="border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                            <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
                               read-only
                             </Badge>
                           ) : null}
                         </div>
-                        <p className="mt-1 text-sm text-stone-600 dark:text-[#a8b0ba]">
+                        <p className="mt-1 text-sm text-fg-secondary dark:text-muted-foreground">
                           {account.providerAccountId}
                         </p>
-                        <p className="mt-2 text-xs text-stone-500 dark:text-[#8d98a5]">
+                        <p className="mt-2 text-xs text-muted-foreground">
                           Last sync: {formatAgo(account.lastSyncedAt)}
                         </p>
                         {account.lastSyncError ? (
-                          <p className="mt-2 text-xs text-red-600 dark:text-red-300">
+                          <p className="mt-2 text-xs text-danger-fg">
                             {account.lastSyncError}
                           </p>
                         ) : null}
@@ -649,9 +649,9 @@ export function CalendarView() {
             </CardContent>
           </Card>
 
-          <Card className="gap-0 border-stone-200/70 bg-white/90 py-0 dark:border-[#23282e] dark:bg-[#14171b]">
-            <CardHeader className="border-b border-stone-200/80 px-5 py-4 dark:border-[#23282e]">
-              <CardTitle className="text-base text-stone-900 dark:text-[#f5f7fa]">
+          <Card className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
+            <CardHeader className="border-b border-border/80 px-5 py-4 dark:border-border">
+              <CardTitle className="text-base text-foreground">
                 Upcoming timeline
               </CardTitle>
               <CardDescription>
@@ -664,23 +664,23 @@ export function CalendarView() {
                   {Array.from({ length: 3 }).map((_, index) => (
                     <div
                       key={index}
-                      className="h-16 animate-pulse rounded-2xl bg-stone-100 dark:bg-[#171b20]"
+                      className="h-16 animate-pulse rounded-2xl bg-muted"
                     />
                   ))}
                 </div>
               ) : groupedEvents.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-stone-300 px-4 py-8 text-center text-sm text-stone-500 dark:border-[#303843] dark:text-[#8d98a5]">
+                <div className="rounded-2xl border border-dashed border-border-strong px-4 py-8 text-center text-sm text-muted-foreground">
                   No upcoming events in the local store yet. Add an account and sync it, or seed local events later.
                 </div>
               ) : (
                 groupedEvents.map((group) => (
                   <div key={group.key}>
                     <div className="mb-3 flex items-center gap-2">
-                      <div className="h-px flex-1 bg-stone-200 dark:bg-[#23282e]" />
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-[#8d98a5]">
+                      <div className="h-px flex-1 bg-secondary" />
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                         {group.label}
                       </p>
-                      <div className="h-px flex-1 bg-stone-200 dark:bg-[#23282e]" />
+                      <div className="h-px flex-1 bg-secondary" />
                     </div>
                     <div className="space-y-3">
                       {group.events.map((event) => {
@@ -688,41 +688,41 @@ export function CalendarView() {
                         return (
                           <div
                             key={event.id}
-                            className="rounded-2xl border border-stone-200/80 bg-stone-50/80 p-4 dark:border-[#23282e] dark:bg-[#171b20]"
+                            className="rounded-2xl border border-border/80 bg-muted/80 p-4 dark:border-border dark:bg-muted"
                           >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <p className="truncate text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
+                                  <p className="truncate text-sm font-semibold text-foreground">
                                     {event.title}
                                   </p>
                                   <Badge variant="outline" className={cn("capitalize", providerTone(event.provider))}>
                                     {event.provider}
                                   </Badge>
-                                  <Badge variant="outline" className="border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                                  <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
                                     {event.source === "imported" ? "imported" : "local"}
                                   </Badge>
                                   {account ? (
-                                    <Badge variant="outline" className="border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                                    <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
                                       {account.label}
                                     </Badge>
                                   ) : null}
                                   {event.readOnly ? (
-                                    <Badge variant="outline" className="border-stone-300 text-stone-600 dark:border-[#303843] dark:text-[#a8b0ba]">
+                                    <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
                                       read-only
                                     </Badge>
                                   ) : null}
                                 </div>
-                                <p className="mt-1 text-sm text-stone-600 dark:text-[#a8b0ba]">
+                                <p className="mt-1 text-sm text-fg-secondary dark:text-muted-foreground">
                                   {formatEventTime(event)} · {event.calendarName}
                                 </p>
                                 {event.location ? (
-                                  <p className="mt-1 text-xs text-stone-500 dark:text-[#8d98a5]">
+                                  <p className="mt-1 text-xs text-muted-foreground">
                                     {event.location}
                                   </p>
                                 ) : null}
                               </div>
-                              <div className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs text-stone-600 dark:border-[#2b3139] dark:bg-[#12161a] dark:text-[#a8b0ba]">
+                              <div className="rounded-full border border-border bg-card px-2.5 py-1 text-xs text-fg-secondary dark:bg-background dark:text-muted-foreground">
                                 {event.source === "imported" ? (
                                   <span className="inline-flex items-center gap-1">
                                     <Cloud className="h-3.5 w-3.5" />

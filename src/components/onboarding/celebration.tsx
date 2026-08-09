@@ -4,7 +4,14 @@ import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const CONFETTI_COLORS = ["#10b981", "#f59e0b", "#3b82f6", "#ec4899", "#8b5cf6"];
+// Confetti reads the chart ramp so it stays inside the palette.
+const CONFETTI_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
 
 /**
  * A small confetti burst + message shown when a step succeeds.
@@ -32,7 +39,7 @@ export function Celebration({
   return (
     <div
       className={cn(
-        "relative flex items-center gap-2.5 rounded-xl border border-emerald-200 dark:border-emerald-500/25 bg-emerald-50 dark:bg-emerald-500/10 px-3.5 py-3 animate-in fade-in zoom-in-95 duration-300",
+        "relative flex items-center gap-2.5 rounded-xl border border-success-border bg-success-bg px-3.5 py-3 animate-in fade-in zoom-in-95 duration-300",
         className,
       )}
       role="status"
@@ -43,11 +50,11 @@ export function Celebration({
           100% { transform: translate(var(--dx), var(--dy)) rotate(540deg) scale(0.4); opacity: 0; }
         }
       `}</style>
-      <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+      <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-success text-primary-foreground">
         <Check className="h-3.5 w-3.5" />
-        {burst && <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping" />}
+        {burst && <span className="absolute inset-0 rounded-full bg-success animate-ping" />}
       </span>
-      <p className="text-xs font-medium leading-relaxed text-emerald-700 dark:text-emerald-300">
+      <p className="text-xs font-medium leading-relaxed text-success-fg">
         {message}
       </p>
       {burst && (

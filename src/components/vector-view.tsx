@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
 
 type SourceCount = { source: string; files: number; chunks: number };
@@ -103,13 +103,13 @@ function formatBytes(b: number): string {
   if (b >= 1024) return (b / 1024).toFixed(0) + " KB";
   return b + " B";
 }
-function scoreColor(s: number) { return s >= 0.7 ? "text-emerald-400" : s >= 0.5 ? "text-amber-400" : s >= 0.3 ? "text-orange-400" : "text-red-400"; }
-function scoreBarColor(s: number) { return s >= 0.7 ? "bg-emerald-500" : s >= 0.5 ? "bg-amber-500" : s >= 0.3 ? "bg-orange-500" : "bg-red-500"; }
+function scoreColor(s: number) { return s >= 0.7 ? "text-success-fg" : s >= 0.5 ? "text-warning-fg" : s >= 0.3 ? "text-warning-fg" : "text-danger-fg"; }
+function scoreBarColor(s: number) { return s >= 0.7 ? "bg-success" : s >= 0.5 ? "bg-warning" : s >= 0.3 ? "bg-warning" : "bg-danger"; }
 
 function ToastBar({ toast, onDone }: { toast: Toast; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 3500); return () => clearTimeout(t); }, [onDone]);
   return (
-    <div className={cn("fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border px-4 py-2.5 text-sm font-medium shadow-xl backdrop-blur-sm", toast.type === "success" ? "border-emerald-500/30 bg-emerald-950/80 text-emerald-300" : "border-red-500/30 bg-red-950/80 text-red-300")}>
+    <div className={cn("fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border px-4 py-2.5 text-sm font-medium shadow-xl backdrop-blur-sm", toast.type === "success" ? "border-success-border bg-success-bg text-success-fg" : "border-danger-border bg-danger-bg text-danger-fg")}>
       <div className="flex items-center gap-2">{toast.type === "success" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}{toast.message}</div>
     </div>
   );
@@ -140,33 +140,33 @@ function ResultCard({ result, rank }: { result: SearchResult; rank: number }) {
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); }, []);
   return (
-    <div className="rounded-xl border border-stone-200 bg-white shadow-sm transition-colors hover:border-stone-300 dark:border-[#2c343d] dark:bg-[#171a1d]">
+    <div className="rounded-xl border border-border bg-card shadow-sm transition-colors hover:border-border-strong">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-xs font-bold text-stone-700 dark:bg-[#20252a] dark:text-[#d6dce3]">#{rank}</div>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-bold text-fg-secondary dark:bg-secondary">#{rank}</div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <FileText className="h-3.5 w-3.5 shrink-0 text-sky-400" />
-            <span className="truncate text-sm font-medium text-foreground/90">{result.path}</span>
+            <FileText className="h-3.5 w-3.5 shrink-0 text-info-fg" />
+            <span className="truncate text-sm font-medium text-foreground">{result.path}</span>
             <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">L{result.startLine}-{result.endLine}</span>
-            <span className="shrink-0 rounded border border-sky-500/20 bg-sky-500/10 px-1.5 py-0.5 text-xs text-sky-400">{result.source}</span>
+            <span className="shrink-0 rounded border border-info-border bg-info-bg px-1.5 py-0.5 text-xs text-info-fg">{result.source}</span>
           </div>
         </div>
         <ScoreBar score={result.score} />
         <div className="flex items-center gap-1">
-          <button onClick={() => { navigator.clipboard.writeText(result.snippet); setCopied(true); if (copyTimerRef.current) clearTimeout(copyTimerRef.current); copyTimerRef.current = setTimeout(() => setCopied(false), 1500); }} className="rounded-lg p-1.5 text-muted-foreground/60 transition-colors hover:bg-stone-100 hover:text-stone-900 dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]" title="Copy" aria-label="Copy snippet">
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+          <button onClick={() => { navigator.clipboard.writeText(result.snippet); setCopied(true); if (copyTimerRef.current) clearTimeout(copyTimerRef.current); copyTimerRef.current = setTimeout(() => setCopied(false), 1500); }} className="rounded-lg p-1.5 text-fg-subtle transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-secondary" title="Copy" aria-label="Copy snippet">
+            {copied ? <Check className="h-3.5 w-3.5 text-success-fg" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
-          <button onClick={() => setExpanded(!expanded)} className="rounded-lg p-1.5 text-muted-foreground/60 transition-colors hover:bg-stone-100 hover:text-stone-900 dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]">
+          <button onClick={() => setExpanded(!expanded)} className="rounded-lg p-1.5 text-fg-subtle transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-secondary">
             {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>
-      {!expanded && <div className="border-t border-stone-200 px-4 py-2 dark:border-[#2c343d]"><p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{result.snippet.replace(/\n+/g, " ").substring(0, 200)}</p></div>}
+      {!expanded && <div className="border-t border-border px-4 py-2"><p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{result.snippet.replace(/\n+/g, " ").substring(0, 200)}</p></div>}
       {expanded && (
-        <div className="border-t border-stone-200 px-4 py-3 dark:border-[#2c343d]">
-          <div className="flex items-center gap-2 mb-2"><Hash className="h-3 w-3 text-muted-foreground/60" /><span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">Vector Match - Chunk Content</span></div>
+        <div className="border-t border-border px-4 py-3">
+          <div className="flex items-center gap-2 mb-2"><Hash className="h-3 w-3 text-fg-subtle" /><span className="text-xs font-medium uppercase tracking-wider text-fg-subtle">Vector Match - Chunk Content</span></div>
           <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs leading-5 text-muted-foreground whitespace-pre-wrap break-words">{result.snippet}</pre>
-          <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground/60">
+          <div className="mt-2 flex items-center gap-4 text-xs text-fg-subtle">
             <span>Lines {result.startLine}-{result.endLine}</span><span>{result.snippet.length} chars</span><span>~{Math.ceil(result.snippet.split(/\s+/).length)} tokens (est.)</span>
           </div>
         </div>
@@ -177,9 +177,9 @@ function ResultCard({ result, rank }: { result: SearchResult; rank: number }) {
 
 function MiniStat({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-2 dark:border-[#2c343d] dark:bg-[#15191d]">
-      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/60 mb-0.5"><Icon className="h-3 w-3" />{label}</div>
-      <p className="text-xs font-mono text-foreground/70 truncate" title={value}>{value}</p>
+    <div className="rounded-lg border border-border bg-muted px-2.5 py-2">
+      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-fg-subtle mb-0.5"><Icon className="h-3 w-3" />{label}</div>
+      <p className="text-xs font-mono text-fg-secondary truncate" title={value}>{value}</p>
     </div>
   );
 }
@@ -200,39 +200,39 @@ function AgentIndexCard({
   const [expanded, setExpanded] = useState(false);
   const st = agent.status; const vec = st.vector;
   return (
-    <div className={cn("rounded-xl border transition-all shadow-sm", agent.scan.issues.length > 0 ? "border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10" : "border-stone-200 bg-white dark:border-[#2c343d] dark:bg-[#171a1d]")}>
+    <div className={cn("rounded-xl border transition-all shadow-sm", agent.scan.issues.length > 0 ? "border-warning-border bg-warning-bg" : "border-border bg-card")}>
       <div className="flex items-center gap-3 px-4 py-3.5">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-sm dark:bg-[#20252a]">{agent.agentId === "main" ? "\u{1F99E}" : "\u{1F480}"}</div>
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-sm dark:bg-secondary">{agent.agentId === "main" ? "\u{1F99E}" : "\u{1F480}"}</div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-foreground/90 capitalize">{agent.agentId}</span>
-            {st.dirty && <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-amber-300">Dirty</span>}
-            {vec.available && <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-emerald-300">Vector</span>}
-            {st.fts.available && <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-sky-300">FTS</span>}
+            <span className="text-xs font-semibold text-foreground capitalize">{agent.agentId}</span>
+            {st.dirty && <span className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-warning-fg">Dirty</span>}
+            {vec.available && <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-success-fg">Vector</span>}
+            {st.fts.available && <span className="rounded-full bg-info-bg px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-info-fg">FTS</span>}
           </div>
           <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
             <span>{st.files} files</span><span>{st.chunks} chunks</span>{vec.dims && <span>{vec.dims}d vectors</span>}<span>{formatBytes(agent.dbSizeBytes)}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => onReindex(agent.agentId, false)} disabled={reindexing || deleting} className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 dark:border-[#2c343d] dark:bg-[#20252a] dark:text-[#d6dce3] dark:hover:bg-[#232a31]">
+          <button onClick={() => onReindex(agent.agentId, false)} disabled={reindexing || deleting} className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs font-medium text-fg-secondary hover:bg-muted disabled:opacity-50 dark:bg-secondary dark:hover:bg-secondary">
             {reindexing ? <Dots /> : <RefreshCw className="h-3 w-3" />}Reindex
           </button>
           <button
             onClick={() => onDelete(agent.agentId)}
             disabled={reindexing || deleting}
-            className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-500/10 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg border border-danger-border bg-danger-bg px-3 py-1.5 text-xs font-medium text-danger-fg hover:bg-danger-bg disabled:opacity-50"
           >
             {deleting ? <Dots /> : <Trash2 className="h-3 w-3" />}
             Delete
           </button>
-          <button onClick={() => setExpanded(!expanded)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-stone-100 hover:text-stone-900 dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]">
+          <button onClick={() => setExpanded(!expanded)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground dark:hover:bg-secondary">
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
         </div>
       </div>
       {expanded && (
-        <div className="border-t border-stone-200 px-4 py-3 space-y-3 dark:border-[#2c343d]">
+        <div className="border-t border-border px-4 py-3 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <MiniStat icon={Layers} label="Backend" value={st.backend} />
             <MiniStat icon={Cpu} label="Provider" value={st.provider} />
@@ -241,28 +241,28 @@ function AgentIndexCard({
           </div>
           {st.sourceCounts.length > 0 && (
             <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60 mb-1.5">Sources</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-fg-subtle mb-1.5">Sources</p>
               <div className="space-y-1">{st.sourceCounts.map((sc) => (
-                <div key={sc.source} className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 dark:border-[#2c343d] dark:bg-[#15191d]">
-                  <div className="flex items-center gap-2"><CircleDot className="h-3 w-3 text-emerald-600 dark:text-emerald-300" /><span className="text-xs text-foreground/70">{sc.source}</span></div>
+                <div key={sc.source} className="flex items-center justify-between rounded-lg border border-border bg-muted px-3 py-2">
+                  <div className="flex items-center gap-2"><CircleDot className="h-3 w-3 text-success-fg" /><span className="text-xs text-fg-secondary">{sc.source}</span></div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground"><span>{sc.files} files</span><span>{sc.chunks} chunks</span></div>
                 </div>
               ))}</div>
             </div>
           )}
           <div className="flex items-center gap-4 text-xs">
-            <span className="text-muted-foreground/60">Cache: <span className={st.cache.enabled ? "text-emerald-400" : "text-muted-foreground/60"}>{st.cache.enabled ? st.cache.entries + " entries" : "disabled"}</span></span>
-            <span className="text-muted-foreground/60">FTS: <span className={st.fts.available ? "text-emerald-400" : "text-red-400"}>{st.fts.available ? "available" : "unavailable"}</span></span>
-            <span className="text-muted-foreground/60">Vector: <span className={vec.available ? "text-emerald-400" : "text-red-400"}>{vec.available ? "available" : "unavailable"}</span></span>
+            <span className="text-fg-subtle">Cache: <span className={st.cache.enabled ? "text-success-fg" : "text-fg-subtle"}>{st.cache.enabled ? st.cache.entries + " entries" : "disabled"}</span></span>
+            <span className="text-fg-subtle">FTS: <span className={st.fts.available ? "text-success-fg" : "text-danger-fg"}>{st.fts.available ? "available" : "unavailable"}</span></span>
+            <span className="text-fg-subtle">Vector: <span className={vec.available ? "text-success-fg" : "text-danger-fg"}>{vec.available ? "available" : "unavailable"}</span></span>
           </div>
-          <div className="rounded-lg bg-muted/50 px-3 py-2"><p className="text-xs text-muted-foreground/60 mb-0.5">Database Path</p><code className="text-xs text-muted-foreground break-all">{st.dbPath}</code></div>
+          <div className="rounded-lg bg-muted/50 px-3 py-2"><p className="text-xs text-fg-subtle mb-0.5">Database Path</p><code className="text-xs text-muted-foreground break-all">{st.dbPath}</code></div>
           {agent.scan.issues.length > 0 && (
-            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 space-y-1">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-amber-300"><AlertTriangle className="h-3 w-3" />Issues</p>
-              {agent.scan.issues.map((issue, i) => <p key={i} className="text-xs text-amber-400/80 pl-5">{issue}</p>)}
+            <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 space-y-1">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-warning-fg"><AlertTriangle className="h-3 w-3" />Issues</p>
+              {agent.scan.issues.map((issue, i) => <p key={i} className="text-xs text-warning-fg pl-5">{issue}</p>)}
             </div>
           )}
-          <button onClick={() => onReindex(agent.agentId, true)} disabled={reindexing || deleting} className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50">
+          <button onClick={() => onReindex(agent.agentId, true)} disabled={reindexing || deleting} className="flex items-center gap-1.5 rounded-lg border border-danger-border bg-danger-bg px-3 py-1.5 text-xs text-danger-fg hover:bg-danger-bg disabled:opacity-50">
             <RotateCcw className="h-3 w-3" />Force Full Reindex
           </button>
         </div>
@@ -279,12 +279,12 @@ function ProviderIcon({ icon, isAuth }: { icon: string; isAuth: boolean }) {
   }
   if (icon === "circle-blue") {
     return (
-      <span className={cn("flex h-3 w-3 rounded-full shrink-0", isAuth ? "bg-blue-400" : "bg-foreground/20")} />
+      <span className={cn("flex h-3 w-3 rounded-full shrink-0", isAuth ? "bg-info" : "bg-foreground/20")} />
     );
   }
   // default green circle
   return (
-    <span className={cn("flex h-3 w-3 rounded-full shrink-0", isAuth ? "bg-emerald-400" : "bg-foreground/20")} />
+    <span className={cn("flex h-3 w-3 rounded-full shrink-0", isAuth ? "bg-success" : "bg-foreground/20")} />
   );
 }
 
@@ -326,8 +326,8 @@ function ProviderCards({
             className={cn(
               "rounded-xl border p-4 transition-all",
               isActive
-                ? "border-emerald-500/40 bg-emerald-500/5 dark:bg-emerald-500/8"
-                : "border-stone-200 bg-white dark:border-[#2c343d] dark:bg-[#171a1d]"
+                ? "border-success-border bg-success-bg"
+                : "border-border bg-card"
             )}
           >
             <div className="flex items-start gap-3">
@@ -336,11 +336,11 @@ function ProviderCards({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                  <span className={cn("text-sm font-semibold", isActive ? "text-emerald-700 dark:text-emerald-300" : "text-foreground/90")}>
+                  <span className={cn("text-sm font-semibold", isActive ? "text-success-fg" : "text-foreground")}>
                     {card.label}
                   </span>
                   {isActive && (
-                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-400">
+                    <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs font-semibold text-success-fg">
                       Active
                     </span>
                   )}
@@ -350,7 +350,7 @@ function ProviderCards({
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground/70 font-mono">{card.sublabel}</p>
+                <p className="text-xs text-muted-foreground font-mono">{card.sublabel}</p>
                 <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
 
                 {/* Inline Google key input */}
@@ -362,7 +362,7 @@ function ProviderCards({
                       onChange={(e) => setGoogleKey(e.target.value)}
                       placeholder="Paste Gemini API key..."
                       aria-label="Gemini API key"
-                      className="flex-1 rounded-lg border border-stone-200 bg-stone-50 px-3 py-1.5 font-mono text-xs text-stone-900 outline-none focus:border-emerald-500/30 dark:border-[#2c343d] dark:bg-[#15191d] dark:text-[#f5f7fa]"
+                      className="flex-1 rounded-lg border border-border bg-muted px-3 py-1.5 font-mono text-xs text-foreground outline-none focus:border-success-border"
                     />
                     <button
                       type="button"
@@ -393,10 +393,10 @@ function ProviderCards({
                   className={cn(
                     "shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50",
                     isActive
-                      ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 cursor-default"
+                      ? "border border-success-border bg-success-bg text-success-fg cursor-default"
                       : isAuth
                         ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                        : "border border-stone-200 bg-stone-50 text-stone-400 dark:border-[#2c343d] dark:bg-[#20252a] cursor-not-allowed"
+                        : "border border-border bg-muted text-fg-subtle dark:bg-secondary cursor-not-allowed"
                   )}
                 >
                   {isThisBusy ? (
@@ -441,19 +441,19 @@ function CurrentStatusCard({
   const label = card?.label ?? provider;
 
   return (
-    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 dark:bg-emerald-500/8">
+    <div className="rounded-xl border border-success-border bg-success-bg p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <div className="mt-0.5">
-            <span className="flex h-3 w-3 rounded-full bg-emerald-400 shrink-0" />
+            <span className="flex h-3 w-3 rounded-full bg-success shrink-0" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Vector Memory Active</span>
+              <span className="text-sm font-semibold text-success-fg">Vector Memory Active</span>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground/80">{label}</span>
-              <span className="font-mono text-muted-foreground/70">{model}</span>
+              <span className="font-medium text-foreground">{label}</span>
+              <span className="font-mono text-muted-foreground">{model}</span>
               {dims && <span>{dims}d vectors</span>}
               <span>{totalFiles} file{totalFiles !== 1 ? "s" : ""} indexed</span>
             </div>
@@ -464,7 +464,7 @@ function CurrentStatusCard({
             type="button"
             onClick={onReindex}
             disabled={reindexing || disabling}
-            className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 dark:border-[#2c343d] dark:bg-[#20252a] dark:text-[#d6dce3] dark:hover:bg-[#232a31]"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs font-medium text-fg-secondary hover:bg-muted disabled:opacity-50 dark:bg-secondary dark:hover:bg-secondary"
           >
             {reindexing ? <><Dots />Reindexing...</> : <><RefreshCw className="h-3 w-3" />Reindex</>}
           </button>
@@ -472,7 +472,7 @@ function CurrentStatusCard({
             type="button"
             onClick={onDisable}
             disabled={disabling || reindexing}
-            className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-500/10 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg border border-danger-border bg-danger-bg px-3 py-1.5 text-xs font-medium text-danger-fg hover:bg-danger-bg disabled:opacity-50"
           >
             {disabling ? <><Dots />Disabling...</> : <><X className="h-3 w-3" />Disable</>}
           </button>
@@ -486,10 +486,10 @@ function CurrentStatusCard({
 
 function OverviewStat({ icon: Icon, value, label, sub, color }: { icon: React.ComponentType<{ className?: string }>; value: string; label: string; sub?: string; color: string }) {
   return (
-    <div className="rounded-xl border border-stone-200 bg-white p-3 shadow-sm dark:border-[#2c343d] dark:bg-[#171a1d]">
+    <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
       <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1"><Icon className={cn("h-3.5 w-3.5", color)} />{label}</div>
-      <p className="text-xs font-semibold text-foreground/90">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground/60 mt-0.5 truncate">{sub}</p>}
+      <p className="text-xs font-semibold text-foreground">{value}</p>
+      {sub && <p className="text-xs text-fg-subtle mt-0.5 truncate">{sub}</p>}
     </div>
   );
 }
@@ -798,7 +798,7 @@ export function VectorView() {
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading vector memory..." size="lg" />
+        <ScreenLoadingState label="Loading vector memory..." size="lg" />
       </SectionLayout>
     );
   }
@@ -808,7 +808,7 @@ export function VectorView() {
       <SectionHeader
         title={
           <span className="flex items-center gap-2">
-            <Database className="h-5 w-5 text-stone-700 dark:text-[#d6dce3]" />
+            <Database className="h-5 w-5 text-fg-secondary" />
             Vector Memory
           </span>
         }
@@ -818,7 +818,7 @@ export function VectorView() {
             <ApiWarningBadge warning={apiWarning} degraded={apiDegraded} />
             <button
               onClick={() => { setLoading(true); fetchStatus(); }}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/10 hover:text-foreground/70"
+              className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/10 hover:text-fg-secondary"
             >
               <RefreshCw className="h-4 w-4" />
             </button>
@@ -844,7 +844,7 @@ export function VectorView() {
         {/* Section 2: Choose Provider */}
         <div>
           <div className="mb-3">
-            <h2 className="text-sm font-semibold text-foreground/90">
+            <h2 className="text-sm font-semibold text-foreground">
               {isConfigured ? "Change Provider" : "Choose a Provider"}
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -856,18 +856,18 @@ export function VectorView() {
 
           {/* OpenAI key prompt (if not authenticated, show before the cards) */}
           {!authProviders.includes("openai") && (
-            <div className="mb-3 rounded-xl border border-stone-200 bg-white p-3.5 shadow-sm dark:border-[#2c343d] dark:bg-[#171a1d]">
-              <p className="flex items-center gap-2 text-xs font-medium text-foreground/80">
-                <KeyRound className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" />
+            <div className="mb-3 rounded-xl border border-border bg-card p-3.5 shadow-sm">
+              <p className="flex items-center gap-2 text-xs font-medium text-foreground">
+                <KeyRound className="h-3.5 w-3.5 shrink-0 text-success-fg" />
                 Add OpenAI key to unlock the best quality embeddings
               </p>
-              <p className="mt-1 text-xs text-muted-foreground/70">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Get a key at{" "}
                 <a
                   href="https://platform.openai.com/api-keys"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-emerald-700 underline hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
+                  className="inline-flex items-center gap-1 text-foreground underline hover:text-foreground"
                 >
                   platform.openai.com
                   <ExternalLink className="h-2.5 w-2.5" />
@@ -892,32 +892,32 @@ export function VectorView() {
         {/* Stats overview (only when configured and have data) */}
         {isConfigured && agents.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <OverviewStat icon={Layers} value={String(totalChunks)} label="Total Chunks" color="text-stone-700 dark:text-stone-300" />
-            <OverviewStat icon={FileText} value={String(totalFiles)} label="Indexed Files" color="text-sky-400" />
-            <OverviewStat icon={HardDrive} value={formatBytes(totalDb)} label="DB Size" color="text-emerald-400" />
-            <OverviewStat icon={Activity} value={`${agents.length - dirtyNamespaces}/${agents.length}`} label="Index Health" sub={dirtyNamespaces > 0 ? `${dirtyNamespaces} namespace${dirtyNamespaces > 1 ? "s" : ""} need reindex` : "All namespaces clean"} color={dirtyNamespaces > 0 ? "text-amber-400" : "text-emerald-400"} />
-            <OverviewStat icon={Hash} value={`${vectorReadyNamespaces}/${agents.length}`} label="Vector Ready" sub={`FTS ${ftsReadyNamespaces}/${agents.length}`} color="text-emerald-400" />
+            <OverviewStat icon={Layers} value={String(totalChunks)} label="Total Chunks" color="text-fg-secondary dark:text-fg-subtle" />
+            <OverviewStat icon={FileText} value={String(totalFiles)} label="Indexed Files" color="text-info-fg" />
+            <OverviewStat icon={HardDrive} value={formatBytes(totalDb)} label="DB Size" color="text-success-fg" />
+            <OverviewStat icon={Activity} value={`${agents.length - dirtyNamespaces}/${agents.length}`} label="Index Health" sub={dirtyNamespaces > 0 ? `${dirtyNamespaces} namespace${dirtyNamespaces > 1 ? "s" : ""} need reindex` : "All namespaces clean"} color={dirtyNamespaces > 0 ? "text-warning-fg" : "text-success-fg"} />
+            <OverviewStat icon={Hash} value={`${vectorReadyNamespaces}/${agents.length}`} label="Vector Ready" sub={`FTS ${ftsReadyNamespaces}/${agents.length}`} color="text-success-fg" />
           </div>
         )}
 
         {/* Search console (only when configured) */}
         {isConfigured && (
           <>
-            <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm dark:border-[#2c343d] dark:bg-[#171a1d] space-y-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90"><Search className="h-4 w-4 text-stone-700 dark:text-[#d6dce3]" />Query Console</div>
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Search className="h-4 w-4 text-fg-secondary" />Query Console</div>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-                <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doSearch(query); }} placeholder="Semantic search across your vector memory..." aria-label="Semantic search query" className="w-full rounded-lg border border-stone-200 bg-stone-50 py-2.5 pl-10 pr-4 text-sm text-stone-900 placeholder-stone-400 outline-none focus:border-emerald-500/30 dark:border-[#2c343d] dark:bg-[#15191d] dark:text-[#f5f7fa] dark:placeholder:text-[#7a8591]" />
-                {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5"><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:0ms]" /><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:150ms]" /><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:300ms]" /></span>}
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
+                <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doSearch(query); }} placeholder="Semantic search across your vector memory..." aria-label="Semantic search query" className="w-full rounded-lg border border-border bg-muted py-2.5 pl-10 pr-4 text-sm text-foreground placeholder-fg-placeholder outline-none focus:border-success-border dark:placeholder:text-fg-subtle" />
+                {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5"><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-success [animation-delay:0ms]" /><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-success [animation-delay:150ms]" /><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-success [animation-delay:300ms]" /></span>}
               </div>
               <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-1.5"><Filter className="h-3 w-3 text-muted-foreground/60" /><span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">Filters</span></div>
-                <select value={searchAgent} onChange={(e) => setSearchAgent(e.target.value)} aria-label="Filter by namespace" className="rounded-md border border-foreground/10 bg-muted px-2.5 py-1.5 text-xs text-foreground/70 outline-none"><option value="">All namespaces</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentId}</option>)}</select>
-                <div className="flex items-center gap-1.5"><span className="text-xs text-muted-foreground/60">Top-K:</span><select value={maxResults} onChange={(e) => setMaxResults(e.target.value)} aria-label="Top-K results" className="rounded-md border border-foreground/10 bg-muted px-2 py-1.5 text-xs text-foreground/70 outline-none">{["3", "5", "10", "20", "50"].map((v) => <option key={v} value={v}>{v}</option>)}</select></div>
-                <div className="flex items-center gap-1.5"><span className="text-xs text-muted-foreground/60">Min score:</span><input type="number" step="0.05" min="0" max="1" value={minScore} onChange={(e) => setMinScore(e.target.value)} placeholder="0.0" aria-label="Minimum score threshold" className="w-16 rounded-md border border-foreground/10 bg-muted px-2 py-1.5 text-xs text-foreground/70 outline-none" /></div>
-                <div className="flex items-center gap-1.5"><ArrowUpDown className="h-3 w-3 text-muted-foreground/60" /><select value={sortBy} onChange={(e) => setSortBy(e.target.value as "score" | "path")} aria-label="Sort results by" className="rounded-md border border-foreground/10 bg-muted px-2 py-1.5 text-xs text-foreground/70 outline-none"><option value="score">By score</option><option value="path">By path</option></select></div>
+                <div className="flex items-center gap-1.5"><Filter className="h-3 w-3 text-fg-subtle" /><span className="text-xs font-medium uppercase tracking-wider text-fg-subtle">Filters</span></div>
+                <select value={searchAgent} onChange={(e) => setSearchAgent(e.target.value)} aria-label="Filter by namespace" className="rounded-md border border-foreground/10 bg-muted px-2.5 py-1.5 text-xs text-fg-secondary outline-none"><option value="">All namespaces</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentId}</option>)}</select>
+                <div className="flex items-center gap-1.5"><span className="text-xs text-fg-subtle">Top-K:</span><select value={maxResults} onChange={(e) => setMaxResults(e.target.value)} aria-label="Top-K results" className="rounded-md border border-foreground/10 bg-muted px-2 py-1.5 text-xs text-fg-secondary outline-none">{["3", "5", "10", "20", "50"].map((v) => <option key={v} value={v}>{v}</option>)}</select></div>
+                <div className="flex items-center gap-1.5"><span className="text-xs text-fg-subtle">Min score:</span><input type="number" step="0.05" min="0" max="1" value={minScore} onChange={(e) => setMinScore(e.target.value)} placeholder="0.0" aria-label="Minimum score threshold" className="w-16 rounded-md border border-foreground/10 bg-muted px-2 py-1.5 text-xs text-fg-secondary outline-none" /></div>
+                <div className="flex items-center gap-1.5"><ArrowUpDown className="h-3 w-3 text-fg-subtle" /><select value={sortBy} onChange={(e) => setSortBy(e.target.value as "score" | "path")} aria-label="Sort results by" className="rounded-md border border-foreground/10 bg-muted px-2 py-1.5 text-xs text-fg-secondary outline-none"><option value="score">By score</option><option value="path">By path</option></select></div>
               </div>
-              {lastQuery && <div className="flex items-center gap-3 text-xs text-muted-foreground"><span>{results.length} result{results.length !== 1 ? "s" : ""} for <span className="font-medium text-emerald-700 dark:text-emerald-300">{"\u201C"}{lastQuery}{"\u201D"}</span></span><span className="text-muted-foreground/40">&middot;</span><span>{searchTime}ms</span>{results.length > 0 && <><span className="text-muted-foreground/40">&middot;</span><span>top: <span className={cn("font-mono", scoreColor(results[0].score))}>{results[0].score.toFixed(4)}</span></span></>}</div>}
+              {lastQuery && <div className="flex items-center gap-3 text-xs text-muted-foreground"><span>{results.length} result{results.length !== 1 ? "s" : ""} for <span className="font-medium text-success-fg">{"\u201C"}{lastQuery}{"\u201D"}</span></span><span className="text-fg-subtle">&middot;</span><span>{searchTime}ms</span>{results.length > 0 && <><span className="text-fg-subtle">&middot;</span><span>top: <span className={cn("font-mono", scoreColor(results[0].score))}>{results[0].score.toFixed(4)}</span></span></>}</div>}
             </div>
 
             {sorted.length > 0 && (
@@ -928,34 +928,34 @@ export function VectorView() {
             )}
 
             {searchError && !searching && (
-              <div className="rounded-xl border border-dashed border-red-500/20 bg-red-500/5 p-8 text-center">
-                <AlertTriangle className="mx-auto h-8 w-8 text-red-400/60 mb-3" />
-                <p className="text-sm text-red-400">{searchError}</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">Check that the gateway is running and memory is indexed.</p>
+              <div className="rounded-xl border border-dashed border-danger-border bg-danger-bg p-8 text-center">
+                <AlertTriangle className="mx-auto h-8 w-8 text-danger-fg mb-3" />
+                <p className="text-sm text-danger-fg">{searchError}</p>
+                <p className="text-xs text-fg-subtle mt-1">Check that the gateway is running and memory is indexed.</p>
               </div>
             )}
 
             {lastQuery && results.length === 0 && !searching && !searchError && (
               <div className="rounded-xl border border-dashed border-foreground/10 bg-muted/50 p-8 text-center">
-                <Search className="mx-auto h-8 w-8 text-muted-foreground/40 mb-3" />
-                <p className="text-sm text-muted-foreground">No results for <span className="text-emerald-700 dark:text-emerald-300">{"\u201C"}{lastQuery}{"\u201D"}</span></p>
-                <p className="text-xs text-muted-foreground/60 mt-1">Try different keywords or lower the minimum score.</p>
+                <Search className="mx-auto h-8 w-8 text-fg-subtle mb-3" />
+                <p className="text-sm text-muted-foreground">No results for <span className="text-success-fg">{"\u201C"}{lastQuery}{"\u201D"}</span></p>
+                <p className="text-xs text-fg-subtle mt-1">Try different keywords or lower the minimum score.</p>
               </div>
             )}
 
             <div>
-              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold text-foreground/90"><Database className="h-4 w-4 text-stone-700 dark:text-[#d6dce3]" />Namespaces<span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">{agents.length}</span></h2>
+              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold text-foreground"><Database className="h-4 w-4 text-fg-secondary" />Namespaces<span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">{agents.length}</span></h2>
               <div className="space-y-2">{agents.map((a) => <AgentIndexCard key={a.agentId} agent={a} onReindex={handleReindex} onDelete={handleDeleteNamespace} reindexing={reindexingAgents.has(a.agentId)} deleting={deletingNamespace === a.agentId} />)}</div>
             </div>
 
             <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
-                    <FileText className="h-4 w-4 text-stone-700 dark:text-[#d6dce3]" />
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <FileText className="h-4 w-4 text-fg-secondary" />
                     Document indexing
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground/70">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Select which documents to include in the vector index.
                   </p>
                 </div>
@@ -970,7 +970,7 @@ export function VectorView() {
                         )
                       );
                     }}
-                    className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 dark:border-[#2c343d] dark:bg-[#20252a] dark:text-[#d6dce3] dark:hover:bg-[#232a31]"
+                    className="rounded-lg border border-border bg-muted px-3 py-2 text-xs font-medium text-fg-secondary hover:bg-muted disabled:opacity-50 dark:bg-secondary dark:hover:bg-secondary"
                   >
                     Select all
                   </button>
@@ -980,7 +980,7 @@ export function VectorView() {
                     onClick={() => {
                       setVectorDocs((prev) => prev.map((doc) => ({ ...doc, selected: false })));
                     }}
-                    className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-500/15 disabled:opacity-50"
+                    className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs font-medium text-danger-fg hover:bg-danger-bg disabled:opacity-50"
                   >
                     Clear all
                   </button>
@@ -1001,23 +1001,23 @@ export function VectorView() {
                   onChange={(e) => setDocFilter(e.target.value)}
                   placeholder="Filter docs..."
                   aria-label="Filter indexable docs"
-                  className="min-w-56 flex-1 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-900 outline-none focus:border-emerald-500/30 dark:border-[#2c343d] dark:bg-[#15191d] dark:text-[#f5f7fa]"
+                  className="min-w-56 flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground outline-none focus:border-success-border"
                 />
-                <span className="text-xs text-muted-foreground/70">
+                <span className="text-xs text-muted-foreground">
                   {selectedDocPaths.length} selected / {vectorDocs.length} total
                 </span>
               </div>
 
-              <div className="max-h-64 overflow-auto rounded-lg border border-stone-200 bg-white dark:border-[#2c343d] dark:bg-[#171a1d]">
+              <div className="max-h-64 overflow-auto rounded-lg border border-border bg-card">
                 {docsLoading ? (
-                  <div className="px-3 py-3 text-xs text-muted-foreground/70">Loading documents...</div>
+                  <div className="px-3 py-3 text-xs text-muted-foreground">Loading documents...</div>
                 ) : filteredDocs.length === 0 ? (
-                  <div className="px-3 py-3 text-xs text-muted-foreground/70">No indexable documents found.</div>
+                  <div className="px-3 py-3 text-xs text-muted-foreground">No indexable documents found.</div>
                 ) : (
                   filteredDocs.map((doc) => (
                     <label
                       key={doc.path}
-                      className="flex cursor-pointer items-center justify-between gap-3 border-b border-stone-200 px-3 py-2 last:border-b-0 hover:bg-stone-50 dark:border-[#2c343d] dark:hover:bg-[#20252a]"
+                      className="flex cursor-pointer items-center justify-between gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted dark:hover:bg-secondary"
                     >
                       <div className="min-w-0 flex items-center gap-2">
                         <input
@@ -1033,13 +1033,13 @@ export function VectorView() {
                           }}
                           className="rounded border-foreground/20"
                         />
-                        <span className="truncate font-mono text-xs text-foreground/80" title={doc.path}>
+                        <span className="truncate font-mono text-xs text-foreground" title={doc.path}>
                           {doc.path}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         {doc.source === "custom" && (
-                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                          <span className="rounded bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning-fg">
                             Custom
                           </span>
                         )}
@@ -1054,7 +1054,7 @@ export function VectorView() {
                                 )
                               );
                             }}
-                            className="rounded border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] font-medium text-red-500 hover:bg-red-500/15"
+                            className="rounded border border-danger-border bg-danger-bg px-2 py-1 text-[10px] font-medium text-danger-fg hover:bg-danger-bg"
                           >
                             Remove
                           </button>
@@ -1087,7 +1087,7 @@ function OpenAiKeyInline({ onSave }: { onSave: (key: string) => Promise<boolean>
         onChange={(e) => setKey(e.target.value)}
         placeholder="sk-..."
         aria-label="OpenAI API key"
-        className="flex-1 rounded-lg border border-stone-200 bg-stone-50 px-3 py-1.5 font-mono text-xs text-stone-900 outline-none focus:border-emerald-500/30 dark:border-[#2c343d] dark:bg-[#15191d] dark:text-[#f5f7fa]"
+        className="flex-1 rounded-lg border border-border bg-muted px-3 py-1.5 font-mono text-xs text-foreground outline-none focus:border-success-border"
       />
       <button
         type="button"

@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { InlineSpinner, LoadingState } from "@/components/ui/loading-state";
+import { InlineSpinner, ScreenLoadingState } from "@/components/ui/loading-state";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
@@ -244,24 +244,24 @@ function formatDateTime(ts: number | null): string {
 function statusTone(status: AccountRecord["status"]): string {
   switch (status) {
     case "connected":
-      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+      return "border-success-border bg-success-bg text-success-fg";
     case "limited-access":
-      return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+      return "border-warning-border bg-warning-bg text-warning-fg";
     case "pending":
-      return "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+      return "border-info-border bg-info-bg text-info-fg";
     default:
-      return "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300";
+      return "border-danger-border bg-danger-bg text-danger-fg";
   }
 }
 
 function serviceStatusTone(status: "ready" | "unverified" | "error") {
   switch (status) {
     case "ready":
-      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+      return "border-success-border bg-success-bg text-success-fg";
     case "error":
-      return "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300";
+      return "border-danger-border bg-danger-bg text-danger-fg";
     default:
-      return "border-stone-300 bg-stone-100 text-stone-600 dark:border-[#30363d] dark:bg-[#171b1f] dark:text-[#a8b0ba]";
+      return "border-border-strong bg-muted text-fg-secondary dark:border-border dark:text-muted-foreground";
   }
 }
 
@@ -628,7 +628,7 @@ export function IntegrationsView() {
   );
 
   if (loading && !data) {
-    return <LoadingState label="Loading Google integrations..." />;
+    return <ScreenLoadingState label="Loading Google integrations..." />;
   }
 
   return (
@@ -678,32 +678,32 @@ export function IntegrationsView() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
-                  <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">1. Choose access level</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-stone-600 dark:text-[#a8b0ba]">
+                <div className="rounded-xl border border-border/80 p-4 dark:border-border">
+                  <p className="font-medium text-foreground">1. Choose access level</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-fg-secondary dark:text-muted-foreground">
                     <li><strong>Read Only</strong>: read inbox and calendar, but no sending or updates.</li>
                     <li><strong>Read + Draft</strong>: read plus draft replies for approval.</li>
                     <li><strong>Read + Write</strong>: read and perform the write actions you allow.</li>
                   </ul>
                 </div>
-                <div className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
-                  <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">2. Connect Google</p>
-                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-stone-600 dark:text-[#a8b0ba]">
+                <div className="rounded-xl border border-border/80 p-4 dark:border-border">
+                  <p className="font-medium text-foreground">2. Connect Google</p>
+                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-fg-secondary dark:text-muted-foreground">
                     <li>Enter your email and click <strong>Start Browser-Safe Connect</strong>.</li>
                     <li>Complete Google sign-in in the new tab.</li>
                     <li>Copy the complete final redirect URL.</li>
                     <li>Paste it into <strong>Finish Connection</strong> and submit.</li>
                   </ol>
                 </div>
-                <div className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
-                  <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">3. Pick an agent</p>
-                  <p className="mt-2 text-sm text-stone-600 dark:text-[#a8b0ba]">
+                <div className="rounded-xl border border-border/80 p-4 dark:border-border">
+                  <p className="font-medium text-foreground">3. Pick an agent</p>
+                  <p className="mt-2 text-sm text-fg-secondary dark:text-muted-foreground">
                     Each capability can be set to <strong>Denied</strong>, <strong>Requires Approval</strong>, or <strong>Allowed</strong> for the selected agent.
                   </p>
                 </div>
-                <div className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
-                  <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">4. Recover if something breaks</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-stone-600 dark:text-[#a8b0ba]">
+                <div className="rounded-xl border border-border/80 p-4 dark:border-border">
+                  <p className="font-medium text-foreground">4. Recover if something breaks</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-fg-secondary dark:text-muted-foreground">
                     <li>Use <strong>Check Access</strong> if Gmail or Calendar stops working.</li>
                     <li>Use <strong>Reconnect</strong> if the account needs reauthorization.</li>
                     <li>Use <strong>Configure Gmail Watch</strong> after filling in the project and webhook details.</li>
@@ -713,9 +713,9 @@ export function IntegrationsView() {
             </Card>
           ) : null}
           {error ? (
-            <Card className="border-rose-500/30 bg-rose-500/5">
+            <Card className="border-danger-border bg-danger-bg">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-rose-700 dark:text-rose-300">
+                <CardTitle className="flex items-center gap-2 text-danger-fg">
                   <AlertCircle className="h-5 w-5" />
                   Something needs attention
                 </CardTitle>
@@ -724,9 +724,9 @@ export function IntegrationsView() {
             </Card>
           ) : null}
           {notice ? (
-            <Card className="border-blue-500/30 bg-blue-500/5">
+            <Card className="border-info-border bg-info-bg">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                <CardTitle className="flex items-center gap-2 text-info-fg">
                   <ShieldCheck className="h-5 w-5" />
                   Update
                 </CardTitle>
@@ -745,19 +745,19 @@ export function IntegrationsView() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
-                  <div className="flex items-center justify-between rounded-lg border border-stone-200/80 px-3 py-2 dark:border-[#23282e]">
+                  <div className="flex items-center justify-between rounded-lg border border-border/80 px-3 py-2 dark:border-border">
                     <span>gog runtime</span>
                     <Badge className={cn("border", data?.runtime.gog.available ? statusTone("connected") : statusTone("error"))}>
                       {data?.runtime.gog.available ? "Available" : "Unavailable"}
                     </Badge>
                   </div>
-                  <div className="flex items-center justify-between rounded-lg border border-stone-200/80 px-3 py-2 dark:border-[#23282e]">
+                  <div className="flex items-center justify-between rounded-lg border border-border/80 px-3 py-2 dark:border-border">
                     <span>OAuth client</span>
                     <Badge className={cn("border", data?.runtime.auth.credentialsExists ? statusTone("connected") : serviceStatusTone("unverified"))}>
                       {data?.runtime.auth.credentialsExists ? "Configured" : "Using gog default client"}
                     </Badge>
                   </div>
-                  <div className="rounded-lg border border-stone-200/80 px-3 py-2 dark:border-[#23282e]">
+                  <div className="rounded-lg border border-border/80 px-3 py-2 dark:border-border">
                     <div className="flex items-center justify-between">
                       <span>Stored Google accounts</span>
                       <span className="text-sm font-medium">{data?.runtime.storedAccounts.length || 0}</span>
@@ -767,16 +767,16 @@ export function IntegrationsView() {
                         {data!.runtime.storedAccounts.map((acct) => (
                           <div
                             key={acct.email}
-                            className="flex items-center gap-2 rounded px-2 py-1 text-xs text-stone-600 dark:bg-[#101214] dark:text-[#a8b0ba]"
+                            className="flex items-center gap-2 rounded px-2 py-1 text-xs text-fg-secondary dark:bg-background dark:text-muted-foreground"
                           >
                             <Mail className="h-3 w-3 shrink-0 opacity-60" />
                             <span className="truncate">{acct.email}</span>
                             {acct.source === "keychain-fallback" ? (
-                              <Badge variant="outline" className="ml-auto shrink-0 border-amber-500/30 px-1 py-0 text-[10px] text-amber-600 dark:text-amber-400">
+                              <Badge variant="outline" className="ml-auto shrink-0 border-warning-border px-1 py-0 text-[10px] text-warning-fg">
                                 needs re-auth
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="ml-auto shrink-0 border-emerald-500/30 px-1 py-0 text-[10px] text-emerald-600 dark:text-emerald-400">
+                              <Badge variant="outline" className="ml-auto shrink-0 border-success-border px-1 py-0 text-[10px] text-success-fg">
                                 ready
                               </Badge>
                             )}
@@ -785,12 +785,12 @@ export function IntegrationsView() {
                       </div>
                     )}
                     {data?.runtime.storedAccounts.every((a) => a.source === "keychain-fallback") && (data?.runtime.storedAccounts.length ?? 0) > 0 && (
-                      <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+                      <p className="mt-2 text-[11px] text-warning-fg">
                         Tokens found in macOS Keychain but not recognized by gog. Use Connect Google below to re-authorize.
                       </p>
                     )}
                   </div>
-                  <p className="text-xs text-stone-500 dark:text-[#a8b0ba]">
+                  <p className="text-xs text-muted-foreground">
                     Keyring backend: {data?.runtime.auth.keyringBackend || "unknown"} · source:{" "}
                     {data?.runtime.auth.keyringSource || "unknown"}
                   </p>
@@ -806,7 +806,7 @@ export function IntegrationsView() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500 dark:text-[#7a8591]">
+                    <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground dark:text-fg-subtle">
                       Google account email
                     </label>
                     <Input
@@ -816,11 +816,11 @@ export function IntegrationsView() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500 dark:text-[#7a8591]">
+                    <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground dark:text-fg-subtle">
                       Connection access
                     </label>
                     <select
-                      className="flex h-10 w-full rounded-md border border-stone-200 bg-white px-3 text-sm dark:border-[#30363d] dark:bg-[#0f1318]"
+                      className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm dark:bg-background"
                       value={connectAccessLevel}
                       onChange={(event) => setConnectAccessLevel(event.target.value as AccountRecord["accessLevel"])}
                     >
@@ -830,7 +830,7 @@ export function IntegrationsView() {
                       <option value="custom">Custom</option>
                     </select>
                   </div>
-                  <div className="rounded-lg border border-stone-200/80 bg-stone-50 p-3 text-sm text-stone-600 dark:border-[#23282e] dark:bg-[#111418] dark:text-[#a8b0ba]">
+                  <div className="rounded-lg border border-border/80 bg-muted p-3 text-sm text-fg-secondary dark:border-border dark:bg-background dark:text-muted-foreground">
                     {connectAccessLevel === "read-only" && "The assistant can look things up, but cannot send or change anything."}
                     {connectAccessLevel === "read-draft" && "The assistant can read and prepare drafts, but you keep control before anything is sent."}
                     {connectAccessLevel === "read-write" && "The assistant can read and take approved actions like replying or creating events."}
@@ -865,21 +865,21 @@ export function IntegrationsView() {
                     </Button>
                   </div>
                   {data?.runtime.storedAccounts.length ? (
-                    <div className="rounded-xl border border-stone-200/80 p-3 dark:border-[#23282e]">
-                      <p className="text-sm font-medium text-stone-900 dark:text-[#f5f7fa]">
+                    <div className="rounded-xl border border-border/80 p-3 dark:border-border">
+                      <p className="text-sm font-medium text-foreground">
                         Detected existing Google accounts
                       </p>
                       <div className="mt-3 space-y-2">
                         {data.runtime.storedAccounts.map((account) => (
                           <div
                             key={account.email}
-                            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200/80 px-3 py-2 dark:border-[#23282e]"
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 px-3 py-2 dark:border-border"
                           >
                             <div>
-                              <p className="text-sm font-medium text-stone-900 dark:text-[#f5f7fa]">
+                              <p className="text-sm font-medium text-foreground">
                                 {account.email}
                               </p>
-                              <p className="text-xs text-stone-500 dark:text-[#7a8591]">
+                              <p className="text-xs text-muted-foreground dark:text-fg-subtle">
                                 {account.source === "keychain-fallback"
                                   ? "Found in macOS Keychain but needs re-authorization through gog."
                                   : "Available in gog. Import it to manage permissions here."}
@@ -909,9 +909,9 @@ export function IntegrationsView() {
                       </div>
                     </div>
                   ) : null}
-                  <div className="rounded-lg border border-dashed border-stone-300 p-3 text-sm dark:border-[#30363d]">
-                    <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">For non-technical users</p>
-                    <ol className="mt-2 list-decimal space-y-1 pl-5 text-stone-600 dark:text-[#a8b0ba]">
+                  <div className="rounded-lg border border-dashed border-border-strong p-3 text-sm dark:border-border">
+                    <p className="font-medium text-foreground">For non-technical users</p>
+                    <ol className="mt-2 list-decimal space-y-1 pl-5 text-fg-secondary dark:text-muted-foreground">
                       <li>Click <strong>Start Browser-Safe Connect</strong>.</li>
                       <li>Sign in to Google in the new tab.</li>
                       <li>After Google redirects you, copy the full final browser URL.</li>
@@ -930,7 +930,7 @@ export function IntegrationsView() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {(data?.store.accounts || []).length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-600 dark:border-[#30363d] dark:text-[#a8b0ba]">
+                    <div className="rounded-lg border border-dashed border-border-strong p-4 text-sm text-fg-secondary dark:border-border dark:text-muted-foreground">
                       No Google accounts connected yet.
                     </div>
                   ) : null}
@@ -942,14 +942,14 @@ export function IntegrationsView() {
                       className={cn(
                         "w-full rounded-xl border px-4 py-3 text-left transition-colors",
                         selectedAccountId === account.id
-                          ? "border-blue-500/50 bg-blue-500/5"
-                          : "border-stone-200/80 hover:border-stone-300 dark:border-[#23282e] dark:hover:border-[#30363d]",
+                          ? "border-info-border bg-info-bg"
+                          : "border-border/80 hover:border-border-strong dark:border-border dark:hover:border-border",
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">{account.label}</p>
-                          <p className="text-sm text-stone-500 dark:text-[#a8b0ba]">{account.email}</p>
+                          <p className="font-medium text-foreground">{account.label}</p>
+                          <p className="text-sm text-muted-foreground">{account.email}</p>
                         </div>
                         <Badge className={cn("border", statusTone(account.status))}>
                           {account.status}
@@ -965,7 +965,7 @@ export function IntegrationsView() {
                           Watch {account.watch.status}
                         </Badge>
                       </div>
-                      <div className="mt-3 flex items-center justify-between text-xs text-stone-500 dark:text-[#7a8591]">
+                      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground dark:text-fg-subtle">
                         <span>Last checked {formatAgo(account.lastCheckedAt)}</span>
                         <span>Manage Access</span>
                       </div>
@@ -988,9 +988,9 @@ export function IntegrationsView() {
               ) : (
                 <>
                   {selectedAccount.pendingAuthUrl ? (
-                    <Card className="border-blue-500/30 bg-blue-500/5">
+                    <Card className="border-info-border bg-info-bg">
                       <CardHeader>
-                        <CardTitle className="text-blue-700 dark:text-blue-300">
+                        <CardTitle className="text-info-fg">
                           Waiting for Google sign-in
                         </CardTitle>
                         <CardDescription>
@@ -1004,26 +1004,26 @@ export function IntegrationsView() {
                             href={selectedAccount.pendingAuthUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-500/20 dark:text-blue-300"
+                            className="inline-flex items-center gap-2 rounded-lg border border-info-border bg-info-bg px-4 py-2 text-sm font-medium text-info-fg transition-colors hover:bg-info-bg"
                           >
                             Open Google Sign-In <ExternalLink className="h-4 w-4" />
                           </a>
-                          <div className="flex items-center gap-2 text-xs text-stone-500 dark:text-[#8d98a5]">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <RefreshCw className="h-3 w-3 animate-spin" />
                             Waiting for callback...
                           </div>
                         </div>
 
                         <details className="group text-sm">
-                          <summary className="cursor-pointer text-xs font-medium text-stone-500 hover:text-stone-700 dark:text-[#8d98a5] dark:hover:text-[#c7d0d9]">
+                          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-fg-secondary">
                             Accessing remotely? Use manual mode instead
                           </summary>
-                          <div className="mt-3 space-y-3 rounded-lg border border-stone-200/80 p-3 dark:border-[#23282e]">
-                            <p className="text-xs text-stone-600 dark:text-[#a8b0ba]">
+                          <div className="mt-3 space-y-3 rounded-lg border border-border/80 p-3 dark:border-border">
+                            <p className="text-xs text-fg-secondary dark:text-muted-foreground">
                               If you are accessing this machine remotely (SSH, VNC, etc.), the automatic
                               callback won&apos;t work from your local browser. Instead:
                             </p>
-                            <ol className="list-decimal space-y-1 pl-5 text-xs text-stone-600 dark:text-[#a8b0ba]">
+                            <ol className="list-decimal space-y-1 pl-5 text-xs text-fg-secondary dark:text-muted-foreground">
                               <li>Open the sign-in link above and log in with Google.</li>
                               <li>
                                 You&apos;ll see <strong>&quot;This site can&apos;t be reached&quot;</strong> — that&apos;s normal.
@@ -1062,7 +1062,7 @@ export function IntegrationsView() {
                       <Button
                         type="button"
                         variant="ghost"
-                        className="justify-start px-0 text-stone-600 hover:bg-transparent hover:text-stone-900 dark:text-[#a8b0ba] dark:hover:text-[#f5f7fa]"
+                        className="justify-start px-0 text-fg-secondary hover:bg-transparent hover:text-foreground dark:text-muted-foreground"
                         onClick={() => setSelectedAccountId("")}
                       >
                         Back
@@ -1078,7 +1078,7 @@ export function IntegrationsView() {
                         <Button
                           type="button"
                           variant="outline"
-                          className="border-rose-500/20 bg-rose-500/5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-300"
+                          className="border-danger-border bg-danger-bg text-danger-fg hover:bg-danger-bg"
                           onClick={() =>
                             void runAction("disconnect-account", { accountId: selectedAccount.id })
                           }
@@ -1088,24 +1088,24 @@ export function IntegrationsView() {
                       </div>
                     </div>
 
-                    <Card className="border-dashed border-stone-300/80 dark:border-[#30363d]">
+                    <Card className="border-dashed border-border-strong/80 dark:border-border">
                       <CardContent className="space-y-6 p-5">
                         <section className="space-y-2">
-                          <p className="text-[10px] uppercase tracking-widest text-stone-400 dark:text-[#7a8591]">
+                          <p className="text-[10px] uppercase tracking-widest text-fg-subtle">
                             Agent Identity
                           </p>
-                          <h2 className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
+                          <h2 className="text-sm font-semibold text-foreground">
                             {selectedAgent?.name || "Selected Agent"}
                           </h2>
-                          <p className="text-xs text-stone-500 dark:text-[#8d98a5]">
+                          <p className="text-xs text-muted-foreground">
                             Manage tool access, scopes, and approval policies for this agent.
                           </p>
                           <div className="max-w-xs pt-1">
-                            <label className="text-[10px] uppercase tracking-widest text-stone-400 dark:text-[#7a8591]">
+                            <label className="text-[10px] uppercase tracking-widest text-fg-subtle">
                               Acting agent
                             </label>
                             <select
-                              className="mt-1 flex h-8 w-full rounded-lg border border-stone-200 bg-white px-2 text-xs dark:border-[#30363d] dark:bg-[#0f1318] dark:text-[#c7d0d9]"
+                              className="mt-1 flex h-8 w-full rounded-lg border border-border bg-card px-2 text-xs dark:bg-background dark:text-fg-secondary"
                               value={selectedAgentId}
                               onChange={(event) => void syncAgentSelection(event.target.value)}
                             >
@@ -1125,30 +1125,30 @@ export function IntegrationsView() {
                             return (
                               <div
                                 key={service.service}
-                                className="rounded-xl border border-stone-200/80 bg-white p-4 dark:border-[#2c343d] dark:bg-[#171a1d]"
+                                className="rounded-xl border border-border/80 bg-card p-4 dark:border-border"
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                   <div className="flex items-center gap-3">
-                                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 dark:border-[#30363d] dark:bg-[#111418]">
-                                      <ServiceIcon className="h-4 w-4 text-stone-600 dark:text-[#c7d0d9]" />
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-muted dark:bg-background">
+                                      <ServiceIcon className="h-4 w-4 text-fg-secondary" />
                                     </div>
                                     <div>
                                       <div className="flex items-center gap-2">
-                                        <h3 className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
+                                        <h3 className="text-sm font-semibold text-foreground">
                                           {service.label}
                                         </h3>
                                         <Badge className={cn("border text-[10px]", serviceStatusTone(service.serviceState.apiStatus))}>
                                           {service.serviceState.apiStatus}
                                         </Badge>
                                       </div>
-                                      <p className="text-xs text-stone-500 dark:text-[#8d98a5]">
+                                      <p className="text-xs text-muted-foreground">
                                         {service.description}
                                       </p>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {service.serviceState.lastError && (
-                                      <span className="text-xs text-red-500 dark:text-red-400">API error</span>
+                                      <span className="text-xs text-danger-fg">API error</span>
                                     )}
                                     <Button
                                       type="button"
@@ -1173,8 +1173,8 @@ export function IntegrationsView() {
                                     className={cn(
                                       "rounded-lg border px-3 py-1 text-xs font-medium transition-colors",
                                       service.readEnabled && !service.writeEnabled
-                                        ? "border-stone-900 bg-stone-900 text-white dark:border-white dark:bg-white dark:text-black"
-                                        : "border-stone-300 bg-white text-stone-700 hover:bg-stone-50 dark:border-[#30363d] dark:bg-transparent dark:text-[#c7d0d9] dark:hover:bg-[#111418]",
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-border-strong bg-card text-fg-secondary hover:bg-muted dark:border-border dark:bg-transparent dark:hover:bg-background",
                                     )}
                                   >
                                     Read
@@ -1186,8 +1186,8 @@ export function IntegrationsView() {
                                     className={cn(
                                       "rounded-lg border px-3 py-1 text-xs font-medium transition-colors",
                                       service.writeEnabled
-                                        ? "border-stone-900 bg-stone-900 text-white dark:border-white dark:bg-white dark:text-black"
-                                        : "border-stone-300 bg-white text-stone-700 hover:bg-stone-50 dark:border-[#30363d] dark:bg-transparent dark:text-[#c7d0d9] dark:hover:bg-[#111418]",
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-border-strong bg-card text-fg-secondary hover:bg-muted dark:border-border dark:bg-transparent dark:hover:bg-background",
                                     )}
                                   >
                                     Write
@@ -1195,35 +1195,35 @@ export function IntegrationsView() {
                                 </div>
 
                                 <div className="mt-4 space-y-2">
-                                  <p className="text-[10px] uppercase tracking-widest text-stone-400 dark:text-[#7a8591]">
+                                  <p className="text-[10px] uppercase tracking-widest text-fg-subtle">
                                     Access Scopes
                                   </p>
                                   {service.capabilities.map((capability) => (
                                     <div
                                       key={capability.key}
-                                      className="flex items-center justify-between gap-3 rounded-lg border border-stone-200/80 px-3 py-2 dark:border-[#23282e] dark:bg-[#111418]"
+                                      className="flex items-center justify-between gap-3 rounded-lg border border-border/80 px-3 py-2 dark:border-border dark:bg-background"
                                     >
                                       <div className="flex items-center gap-2.5 overflow-hidden">
                                         {(() => {
                                           const Icon = capabilityIcon(capability.key);
-                                          return <Icon className="h-3.5 w-3.5 shrink-0 text-stone-500 dark:text-[#8d98a5]" />;
+                                          return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
                                         })()}
                                         <div className="min-w-0">
                                           <div className="flex items-center gap-1.5">
-                                            <span className="truncate text-xs font-medium text-stone-800 dark:text-[#f5f7fa]">
+                                            <span className="truncate text-xs font-medium text-foreground">
                                               {capability.label}
                                             </span>
                                             {!capability.enabled && (
                                               <Badge variant="outline" className="text-[10px] px-1 py-0">Blocked</Badge>
                                             )}
                                           </div>
-                                          <p className="truncate text-[11px] text-stone-500 dark:text-[#8d98a5]">
+                                          <p className="truncate text-[11px] text-muted-foreground">
                                             {capability.description}
                                           </p>
                                         </div>
                                       </div>
                                       <select
-                                        className="h-7 shrink-0 rounded-md border border-stone-200 bg-white px-2 text-xs dark:border-[#30363d] dark:bg-[#0f1318] dark:text-[#c7d0d9]"
+                                        className="h-7 shrink-0 rounded-md border border-border bg-card px-2 text-xs dark:bg-background dark:text-fg-secondary"
                                         value={capability.policy || "allow"}
                                         onChange={(event) => void handlePolicyChange(capability.key, event.target.value)}
                                       >
@@ -1243,30 +1243,30 @@ export function IntegrationsView() {
 
                         <section id="incoming-events" className="space-y-4 pt-2">
                           <div className="flex items-center justify-between gap-3">
-                            <p className="text-[10px] uppercase tracking-widest text-stone-400 dark:text-[#7a8591]">
+                            <p className="text-[10px] uppercase tracking-widest text-fg-subtle">
                               Incoming Events
                             </p>
-                            <span className="text-xs text-stone-500 dark:text-[#7a8591]">
+                            <span className="text-xs text-muted-foreground dark:text-fg-subtle">
                               Configure
                             </span>
                           </div>
-                          <div className="rounded-xl border border-stone-200/80 bg-white p-4 dark:border-[#2c343d] dark:bg-[#171a1d]">
+                          <div className="rounded-xl border border-border/80 bg-card p-4 dark:border-border">
                             <div className="flex items-center justify-between gap-3">
                               <div className="flex items-center gap-3">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 dark:border-[#30363d] dark:bg-[#111418]">
-                                  <Inbox className="h-4 w-4 text-stone-600 dark:text-[#c7d0d9]" />
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-muted dark:bg-background">
+                                  <Inbox className="h-4 w-4 text-fg-secondary" />
                                 </div>
                                 <div>
-                                  <p className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
+                                  <p className="text-sm font-semibold text-foreground">
                                     Gmail Watch
                                   </p>
-                                  <p className="text-xs text-stone-500 dark:text-[#8d98a5]">
+                                  <p className="text-xs text-muted-foreground">
                                     {selectedAccount.watch.enabled ? "Watching for new mail" : "Not watching"}
                                   </p>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Badge className={cn("border text-[10px]", selectedAccount.watch.enabled ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-stone-300 dark:border-[#30363d]")}>
+                                <Badge className={cn("border text-[10px]", selectedAccount.watch.enabled ? "border-success-border bg-success-bg text-success-fg" : "border-border-strong dark:border-border")}>
                                   {selectedAccount.watch.enabled ? "Active" : "Inactive"}
                                 </Badge>
                                 <Switch
@@ -1308,7 +1308,7 @@ export function IntegrationsView() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="border-rose-500/20 bg-rose-500/5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-300"
+                            className="border-danger-border bg-danger-bg text-danger-fg hover:bg-danger-bg"
                             onClick={() =>
                               void runAction("disconnect-account", { accountId: selectedAccount.id })
                             }
@@ -1355,19 +1355,19 @@ export function IntegrationsView() {
                         {selectedAccount.diagnostics.checks.map((check) => (
                           <div
                             key={check.key}
-                            className="flex items-start gap-3 rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]"
+                            className="flex items-start gap-3 rounded-xl border border-border/80 p-4 dark:border-border"
                           >
                             {check.ok ? (
-                              <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-500" />
+                              <CheckCircle2 className="mt-0.5 h-5 w-5 text-success-fg" />
                             ) : (
-                              <AlertCircle className="mt-0.5 h-5 w-5 text-rose-500" />
+                              <AlertCircle className="mt-0.5 h-5 w-5 text-danger-fg" />
                             )}
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">{check.label}</p>
+                                <p className="font-medium text-foreground">{check.label}</p>
                                 <Badge variant="outline">{check.ok ? "OK" : "Needs attention"}</Badge>
                               </div>
-                              <p className="mt-1 text-sm text-stone-600 dark:text-[#a8b0ba]">{check.detail}</p>
+                              <p className="mt-1 text-sm text-fg-secondary dark:text-muted-foreground">{check.detail}</p>
                             </div>
                             {check.fixAction ? (
                               <Button
@@ -1411,7 +1411,7 @@ export function IntegrationsView() {
                         <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
                           <div className="space-y-2">
                             {threads.length === 0 ? (
-                              <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-500 dark:border-[#30363d] dark:text-[#a8b0ba]">
+                              <div className="rounded-lg border border-dashed border-border-strong p-4 text-sm text-muted-foreground dark:border-border">
                                 No thread results yet.
                               </div>
                             ) : null}
@@ -1420,47 +1420,47 @@ export function IntegrationsView() {
                                 key={thread.id}
                                 type="button"
                                 onClick={() => void handleThreadOpen(thread.id)}
-                                className="w-full rounded-lg border border-stone-200/80 p-3 text-left hover:border-stone-300 dark:border-[#23282e] dark:hover:border-[#30363d]"
+                                className="w-full rounded-lg border border-border/80 p-3 text-left hover:border-border-strong dark:border-border dark:hover:border-border"
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
-                                    <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">{thread.subject}</p>
-                                    <p className="text-xs text-stone-500 dark:text-[#7a8591]">{thread.from}</p>
+                                    <p className="font-medium text-foreground">{thread.subject}</p>
+                                    <p className="text-xs text-muted-foreground dark:text-fg-subtle">{thread.from}</p>
                                   </div>
                                   {threadBusy === thread.id ? <InlineSpinner className="h-4 w-4" /> : null}
                                 </div>
-                                <p className="mt-2 line-clamp-2 text-sm text-stone-600 dark:text-[#a8b0ba]">
+                                <p className="mt-2 line-clamp-2 text-sm text-fg-secondary dark:text-muted-foreground">
                                   {thread.snippet}
                                 </p>
                               </button>
                             ))}
                           </div>
-                          <div className="space-y-4 rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
+                          <div className="space-y-4 rounded-xl border border-border/80 p-4 dark:border-border">
                             {threadDetails ? (
                               <>
                                 <div>
-                                  <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">{threadDetails.subject}</p>
-                                  <p className="text-sm text-stone-500 dark:text-[#a8b0ba]">{threadDetails.snippet}</p>
+                                  <p className="font-medium text-foreground">{threadDetails.subject}</p>
+                                  <p className="text-sm text-muted-foreground">{threadDetails.snippet}</p>
                                 </div>
                                 <div className="max-h-72 space-y-3 overflow-auto pr-1">
                                   {threadDetails.messages.map((message) => (
-                                    <div key={message.id} className="rounded-lg border border-stone-200/80 p-3 dark:border-[#23282e]">
+                                    <div key={message.id} className="rounded-lg border border-border/80 p-3 dark:border-border">
                                       <div className="flex flex-wrap items-center gap-2">
-                                        <span className="font-medium text-stone-900 dark:text-[#f5f7fa]">{message.from || "Unknown sender"}</span>
-                                        <span className="text-xs text-stone-500 dark:text-[#7a8591]">{message.date || ""}</span>
+                                        <span className="font-medium text-foreground">{message.from || "Unknown sender"}</span>
+                                        <span className="text-xs text-muted-foreground dark:text-fg-subtle">{message.date || ""}</span>
                                       </div>
-                                      <p className="mt-2 whitespace-pre-wrap text-sm text-stone-600 dark:text-[#a8b0ba]">
+                                      <p className="mt-2 whitespace-pre-wrap text-sm text-fg-secondary dark:text-muted-foreground">
                                         {message.bodyText || message.snippet || "(No readable body returned.)"}
                                       </p>
                                     </div>
                                   ))}
                                 </div>
                                 <div className="space-y-2">
-                                  <label className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500 dark:text-[#7a8591]">
+                                  <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground dark:text-fg-subtle">
                                     Reply body
                                   </label>
                                   <textarea
-                                    className="min-h-28 w-full rounded-md border border-stone-200 bg-white px-3 py-2 text-sm dark:border-[#30363d] dark:bg-[#0f1318]"
+                                    className="min-h-28 w-full rounded-md border border-border bg-card px-3 py-2 text-sm dark:bg-background"
                                     value={replyBody}
                                     onChange={(event) => setReplyBody(event.target.value)}
                                     placeholder="Write the reply you want this agent to send."
@@ -1513,16 +1513,16 @@ export function IntegrationsView() {
                                 </div>
                               </>
                             ) : (
-                              <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-500 dark:border-[#30363d] dark:text-[#a8b0ba]">
+                              <div className="rounded-lg border border-dashed border-border-strong p-4 text-sm text-muted-foreground dark:border-border">
                                 Select a thread to inspect it and reply.
                               </div>
                             )}
                           </div>
                         </div>
-                        <div className="space-y-3 rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
+                        <div className="space-y-3 rounded-xl border border-border/80 p-4 dark:border-border">
                           <div>
-                            <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">New email</p>
-                            <p className="text-sm text-stone-500 dark:text-[#a8b0ba]">
+                            <p className="font-medium text-foreground">New email</p>
+                            <p className="text-sm text-muted-foreground">
                               This uses the same per-agent permission flow as replies.
                             </p>
                           </div>
@@ -1531,7 +1531,7 @@ export function IntegrationsView() {
                             <Input value={composeSubject} onChange={(event) => setComposeSubject(event.target.value)} placeholder="Subject" />
                           </div>
                           <textarea
-                            className="min-h-28 w-full rounded-md border border-stone-200 bg-white px-3 py-2 text-sm dark:border-[#30363d] dark:bg-[#0f1318]"
+                            className="min-h-28 w-full rounded-md border border-border bg-card px-3 py-2 text-sm dark:bg-background"
                             value={composeBody}
                             onChange={(event) => setComposeBody(event.target.value)}
                             placeholder="Write the email body."
@@ -1573,7 +1573,7 @@ export function IntegrationsView() {
                         </Button>
                         <div className="space-y-2">
                           {calendarEvents.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-500 dark:border-[#30363d] dark:text-[#a8b0ba]">
+                            <div className="rounded-lg border border-dashed border-border-strong p-4 text-sm text-muted-foreground dark:border-border">
                               No calendar results loaded yet.
                             </div>
                           ) : null}
@@ -1589,12 +1589,12 @@ export function IntegrationsView() {
                                 setCalendarLocation(event.location || "");
                                 setCalendarDescription(event.notes || "");
                               }}
-                              className="w-full rounded-lg border border-stone-200/80 p-3 text-left hover:border-stone-300 dark:border-[#23282e] dark:hover:border-[#30363d]"
+                              className="w-full rounded-lg border border-border/80 p-3 text-left hover:border-border-strong dark:border-border dark:hover:border-border"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">{event.title}</p>
-                                  <p className="text-sm text-stone-500 dark:text-[#a8b0ba]">
+                                  <p className="font-medium text-foreground">{event.title}</p>
+                                  <p className="text-sm text-muted-foreground">
                                     {formatDateTime(event.startMs)} → {formatDateTime(event.endMs)}
                                   </p>
                                 </div>
@@ -1603,10 +1603,10 @@ export function IntegrationsView() {
                             </button>
                           ))}
                         </div>
-                        <div className="space-y-3 rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
+                        <div className="space-y-3 rounded-xl border border-border/80 p-4 dark:border-border">
                           <div>
-                            <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">Create or update event</p>
-                            <p className="text-sm text-stone-500 dark:text-[#a8b0ba]">
+                            <p className="font-medium text-foreground">Create or update event</p>
+                            <p className="text-sm text-muted-foreground">
                               Leave Event ID empty to create a new event. Fill it from the list above to update an existing one.
                             </p>
                           </div>
@@ -1618,7 +1618,7 @@ export function IntegrationsView() {
                             <Input value={calendarLocation} onChange={(event) => setCalendarLocation(event.target.value)} placeholder="Location" />
                           </div>
                           <textarea
-                            className="min-h-24 w-full rounded-md border border-stone-200 bg-white px-3 py-2 text-sm dark:border-[#30363d] dark:bg-[#0f1318]"
+                            className="min-h-24 w-full rounded-md border border-border bg-card px-3 py-2 text-sm dark:bg-background"
                             value={calendarDescription}
                             onChange={(event) => setCalendarDescription(event.target.value)}
                             placeholder="Description"
@@ -1658,10 +1658,10 @@ export function IntegrationsView() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <div className="flex items-center justify-between rounded-xl border border-stone-200/80 px-4 py-3 dark:border-[#23282e]">
+                        <div className="flex items-center justify-between rounded-xl border border-border/80 px-4 py-3 dark:border-border">
                           <div>
-                            <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">Enable Gmail watch</p>
-                            <p className="text-sm text-stone-500 dark:text-[#a8b0ba]">
+                            <p className="font-medium text-foreground">Enable Gmail watch</p>
+                            <p className="text-sm text-muted-foreground">
                               Gateway-owned watcher for inbox events and renewals.
                             </p>
                           </div>
@@ -1680,9 +1680,9 @@ export function IntegrationsView() {
                         </div>
                         <div className="grid gap-3 md:grid-cols-2">
                           <div className="space-y-2">
-                            <label className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500 dark:text-[#7a8591]">Target agent</label>
+                            <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground dark:text-fg-subtle">Target agent</label>
                             <select
-                              className="flex h-10 w-full rounded-md border border-stone-200 bg-white px-3 text-sm dark:border-[#30363d] dark:bg-[#0f1318]"
+                              className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm dark:bg-background"
                               value={selectedAccount.watch.targetAgentId || selectedAgentId}
                               onChange={(event) =>
                                 void runAction("set-watch-config", {
@@ -1702,7 +1702,7 @@ export function IntegrationsView() {
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500 dark:text-[#7a8591]">Google Cloud project ID</label>
+                            <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground dark:text-fg-subtle">Google Cloud project ID</label>
                             <Input
                               value={selectedAccount.watch.projectId}
                               onChange={(event) =>
@@ -1776,7 +1776,7 @@ export function IntegrationsView() {
                           <Badge className={cn("border", serviceStatusTone(selectedAccount.watch.status === "error" ? "error" : selectedAccount.watch.status === "configured" || selectedAccount.watch.status === "watching" ? "ready" : "unverified"))}>
                             {selectedAccount.watch.status}
                           </Badge>
-                          <span className="text-sm text-stone-500 dark:text-[#a8b0ba]">
+                          <span className="text-sm text-muted-foreground">
                             Last configured {formatAgo(selectedAccount.watch.lastConfiguredAt)}
                           </span>
                           <Button
@@ -1799,20 +1799,20 @@ export function IntegrationsView() {
                       </CardHeader>
                       <CardContent className="space-y-3">
                         {pendingApprovals.length === 0 ? (
-                          <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-500 dark:border-[#30363d] dark:text-[#a8b0ba]">
+                          <div className="rounded-lg border border-dashed border-border-strong p-4 text-sm text-muted-foreground dark:border-border">
                             No approvals are waiting right now.
                           </div>
                         ) : null}
                         {pendingApprovals.map((approval) => (
-                          <div key={approval.id} className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
+                          <div key={approval.id} className="rounded-xl border border-border/80 p-4 dark:border-border">
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">{approval.summary}</p>
-                                <p className="text-sm text-stone-500 dark:text-[#a8b0ba]">
+                                <p className="font-medium text-foreground">{approval.summary}</p>
+                                <p className="text-sm text-muted-foreground">
                                   {approval.actionLabel} · requested {formatAgo(approval.createdAt)}
                                 </p>
                               </div>
-                              <Badge className="border border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                              <Badge className="border border-warning-border bg-warning-bg text-warning-fg">
                                 pending
                               </Badge>
                             </div>
@@ -1849,16 +1849,16 @@ export function IntegrationsView() {
                       </CardHeader>
                       <CardContent className="space-y-3">
                         {(data?.store.audit || []).slice(0, 12).map((entry) => (
-                          <div key={entry.id} className="rounded-lg border border-stone-200/80 px-3 py-2 dark:border-[#23282e]">
+                          <div key={entry.id} className="rounded-lg border border-border/80 px-3 py-2 dark:border-border">
                             <div className="flex items-center justify-between gap-3">
-                              <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">{entry.summary}</p>
+                              <p className="font-medium text-foreground">{entry.summary}</p>
                               <Badge variant="outline">{entry.status}</Badge>
                             </div>
-                            <p className="mt-1 text-xs text-stone-500 dark:text-[#7a8591]">
+                            <p className="mt-1 text-xs text-muted-foreground dark:text-fg-subtle">
                               {entry.action} · {formatDateTime(entry.createdAt)}
                             </p>
                             {entry.detail ? (
-                              <p className="mt-1 text-sm text-stone-600 dark:text-[#a8b0ba]">{entry.detail}</p>
+                              <p className="mt-1 text-sm text-fg-secondary dark:text-muted-foreground">{entry.detail}</p>
                             ) : null}
                           </div>
                         ))}
@@ -1873,45 +1873,45 @@ export function IntegrationsView() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4 text-sm">
-                        <div className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
+                        <div className="rounded-xl border border-border/80 p-4 dark:border-border">
                           <div className="flex items-start gap-3">
-                            <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-500" />
+                            <CheckCircle2 className="mt-0.5 h-5 w-5 text-success-fg" />
                             <div>
-                              <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">What “Read Only” means</p>
-                              <p className="mt-1 text-stone-600 dark:text-[#a8b0ba]">
+                              <p className="font-medium text-foreground">What “Read Only” means</p>
+                              <p className="mt-1 text-fg-secondary dark:text-muted-foreground">
                                 The assistant can look up emails and calendar information, but it cannot send, reply, or change anything.
                               </p>
                             </div>
                           </div>
                         </div>
-                        <div className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
+                        <div className="rounded-xl border border-border/80 p-4 dark:border-border">
                           <div className="flex items-start gap-3">
-                            <ShieldAlert className="mt-0.5 h-5 w-5 text-amber-500" />
+                            <ShieldAlert className="mt-0.5 h-5 w-5 text-warning-fg" />
                             <div>
-                              <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">If sending or replying fails</p>
-                              <p className="mt-1 text-stone-600 dark:text-[#a8b0ba]">
+                              <p className="font-medium text-foreground">If sending or replying fails</p>
+                              <p className="mt-1 text-fg-secondary dark:text-muted-foreground">
                                 Check the connection access level first. If the account is still Read Only, sending is blocked even before the agent policy is checked.
                               </p>
                             </div>
                           </div>
                         </div>
-                        <div className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
+                        <div className="rounded-xl border border-border/80 p-4 dark:border-border">
                           <div className="flex items-start gap-3">
-                            <AlertCircle className="mt-0.5 h-5 w-5 text-rose-500" />
+                            <AlertCircle className="mt-0.5 h-5 w-5 text-danger-fg" />
                             <div>
-                              <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">If connection finish fails</p>
-                              <p className="mt-1 text-stone-600 dark:text-[#a8b0ba]">
+                              <p className="font-medium text-foreground">If connection finish fails</p>
+                              <p className="mt-1 text-fg-secondary dark:text-muted-foreground">
                                 Paste the complete final Google redirect URL, not just the code fragment. Then run “Check Access” after finishing.
                               </p>
                             </div>
                           </div>
                         </div>
-                        <div className="rounded-xl border border-stone-200/80 p-4 dark:border-[#23282e]">
+                        <div className="rounded-xl border border-border/80 p-4 dark:border-border">
                           <div className="flex items-start gap-3">
-                            <MailCheck className="mt-0.5 h-5 w-5 text-blue-500" />
+                            <MailCheck className="mt-0.5 h-5 w-5 text-info-fg" />
                             <div>
-                              <p className="font-medium text-stone-900 dark:text-[#f5f7fa]">If Gmail watch setup fails</p>
-                              <p className="mt-1 text-stone-600 dark:text-[#a8b0ba]">
+                              <p className="font-medium text-foreground">If Gmail watch setup fails</p>
+                              <p className="mt-1 text-fg-secondary dark:text-muted-foreground">
                                 The most common issue is a missing Google Cloud project ID or missing webhook information. Save the watch fields first, then click Configure Gmail Watch again.
                               </p>
                             </div>

@@ -11,18 +11,18 @@ export function GatewayOfflineBanner() {
   const isOffline = status === "offline";
 
   return (
-    <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs dark:border-amber-900/40 dark:bg-amber-950/30">
+    <div className="shrink-0 border-b border-warning-border bg-warning-bg px-6 py-2 text-xs">
       <div className="flex items-center gap-2">
-        <WifiOff className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-        <span className="text-amber-800 dark:text-amber-200">
+        <WifiOff className="h-3.5 w-3.5 shrink-0 text-warning-fg" />
+        <span className="text-warning-fg">
           {restarting
             ? "Applying changes — reconnecting your channels now…"
             : isOffline
             ? "Gateway is unreachable — data may be stale. Retrying automatically\u2026"
             : "Gateway is degraded — some features may be unavailable. Retrying automatically\u2026"}
         </span>
-        <span className="ml-auto flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+        <span className="ml-auto flex items-center gap-1 text-xs text-warning-fg">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warning" />
           {restarting ? "Reconnecting" : "Retrying"}
         </span>
       </div>

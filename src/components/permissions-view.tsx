@@ -370,7 +370,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
       <SectionHeader
         title={
           <span className="flex items-center gap-2 text-sm">
-            <Shield className="h-4 w-4 text-cyan-300" />
+            <Shield className="h-4 w-4 text-info-fg" />
             Permission Control
           </span>
         }
@@ -385,12 +385,12 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
               href="https://docs.openclaw.ai/tools/exec#exec-approvals-companion-app-node-host"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-cyan-400 hover:underline"
+              className="text-foreground hover:underline"
             >
               docs.openclaw.ai/tools/exec
             </a>
             {" · "}
-            <code className="text-muted-foreground/80">approvals get</code> + <code className="text-muted-foreground/80">sandbox explain</code>
+            <code className="text-muted-foreground">approvals get</code> + <code className="text-muted-foreground">sandbox explain</code>
           </>
         }
         actions={
@@ -400,7 +400,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
               type="button"
               onClick={() => void load()}
               disabled={loading || mutating}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/80 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80 disabled:opacity-60"
             >
               {(loading || mutating) ? (
                 <span className="inline-flex items-center gap-0.5">
@@ -488,56 +488,56 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
         {!initialLoading && (
           <>
         {error && (
-          <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-200">
+          <div className="rounded-xl border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
             {error}
           </div>
         )}
         {notice && (
-          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
+          <div className="rounded-xl border border-success-border bg-success-bg px-3 py-2 text-xs text-success-fg">
             {notice}
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-xl border border-foreground/10 bg-card/70 p-3">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground/75">Sandbox Mode</p>
-            <p className="mt-1 text-sm font-semibold text-foreground/90">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Sandbox Mode</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">
               {snapshot?.capabilities.sandboxMode || "—"}
             </p>
-            <p className="text-xs text-muted-foreground/60">
+            <p className="text-xs text-fg-subtle">
               workspace: {snapshot?.capabilities.workspaceAccess || "unknown"}
             </p>
           </div>
           <div className="rounded-xl border border-foreground/10 bg-card/70 p-3">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground/75">Elevated Exec</p>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Elevated Exec</p>
             <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold">
               {elevatedEnabled ? (
                 <>
-                  <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-300" /> <span className="text-amber-700 dark:text-amber-200">Enabled</span>
+                  <ShieldAlert className="h-4 w-4 text-warning-fg" /> <span className="text-warning-fg">Enabled</span>
                 </>
               ) : (
                 <>
-                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-300" /> <span className="text-emerald-700 dark:text-emerald-200">Disabled</span>
+                  <ShieldCheck className="h-4 w-4 text-success-fg" /> <span className="text-success-fg">Disabled</span>
                 </>
               )}
             </p>
-            <p className="text-xs text-muted-foreground/60">
+            <p className="text-xs text-fg-subtle">
               controls privileged exec escalation
             </p>
           </div>
-          <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3">
-            <p className="text-xs uppercase tracking-wider text-red-700/90 dark:text-red-200/80">Tool Policy Mode</p>
-            <p className="mt-1 text-sm font-semibold text-red-700 dark:text-red-200">
+          <div className="rounded-xl border border-danger-border bg-danger-bg p-3">
+            <p className="text-xs uppercase tracking-wider text-danger-fg">Tool Policy Mode</p>
+            <p className="mt-1 text-sm font-semibold text-danger-fg">
               {snapshot?.capabilities.toolPolicyMode || "—"}
             </p>
-            <p className="text-xs text-red-700/75 dark:text-red-100/70">from sandbox explain</p>
+            <p className="text-xs text-danger-fg">from sandbox explain</p>
           </div>
-          <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
-            <p className="text-xs uppercase tracking-wider text-blue-700/90 dark:text-blue-200/80">Policy Scopes</p>
-            <p className="mt-1 text-sm font-semibold text-blue-700 dark:text-blue-100">
+          <div className="rounded-xl border border-info-border bg-info-bg p-3">
+            <p className="text-xs uppercase tracking-wider text-info-fg">Policy Scopes</p>
+            <p className="mt-1 text-sm font-semibold text-info-fg">
               {snapshot?.capabilities.policyScopeCount ?? 0}
             </p>
-            <p className="text-xs text-blue-700/75 dark:text-blue-100/70">
+            <p className="text-xs text-info-fg">
               defaults + agent overrides
             </p>
           </div>
@@ -550,7 +550,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                 <Activity className="h-3.5 w-3.5" />
                 Capability Matrix
               </h2>
-              <span className="text-xs text-muted-foreground/60">
+              <span className="text-xs text-fg-subtle">
                 sandboxed: {snapshot?.capabilities.sessionIsSandboxed ? "yes" : "no"}
               </span>
             </div>
@@ -561,25 +561,25 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   className={cn(
                     "rounded-xl border px-3 py-2",
                     flag.allowed
-                      ? "border-emerald-500/20 bg-emerald-500/5"
-                      : "border-zinc-500/20 bg-zinc-500/5"
+                      ? "border-success-border bg-success-bg"
+                      : "border-border-strong/20 bg-muted-foreground/5"
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-medium text-foreground/90">{flag.label}</p>
+                    <p className="text-xs font-medium text-foreground">{flag.label}</p>
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium",
                         flag.allowed
-                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-200"
-                          : "bg-zinc-500/20 text-zinc-700 dark:text-zinc-300"
+                          ? "bg-success-bg text-success-fg"
+                          : "bg-muted-foreground/20 text-fg-secondary dark:text-fg-subtle"
                       )}
                     >
                       {flag.allowed ? <CheckCircle2 className="h-3 w-3" /> : <CircleX className="h-3 w-3" />}
                       {flag.allowed ? "allowed" : "blocked"}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground/75">{flag.reason}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{flag.reason}</p>
                 </div>
               ))}
             </div>
@@ -590,19 +590,19 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
               <Sparkles className="h-3.5 w-3.5" />
               Permission actions
             </h2>
-            <p className="mb-3 text-xs text-muted-foreground/75">
+            <p className="mb-3 text-xs text-muted-foreground">
               Set the scope below, then grant or revoke. Changes apply immediately.
             </p>
 
             <div className="rounded-xl border border-foreground/10 bg-background/40 p-2.5">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground/60">Agent scope</p>
-              <p className="mt-0.5 text-xs text-muted-foreground/75">
-                Choose whose allowlist you view and edit. <strong className="text-foreground/80">*</strong> = defaults (all agents).
+              <p className="text-xs uppercase tracking-wide text-fg-subtle">Agent scope</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Choose whose allowlist you view and edit. <strong className="text-foreground">*</strong> = defaults (all agents).
               </p>
               <select
                 value={selectedAgent}
                 onChange={(e) => setSelectedAgent(e.target.value)}
-                className="mt-2 w-full rounded-md border border-foreground/10 bg-card px-2 py-1.5 text-xs text-foreground/90 outline-none"
+                className="mt-2 w-full rounded-md border border-foreground/10 bg-card px-2 py-1.5 text-xs text-foreground outline-none"
               >
                 <option value="*">* (all agents)</option>
                 {agents.map((a) => (
@@ -614,8 +614,8 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
             </div>
 
             <div className="mt-2 rounded-xl border border-foreground/10 bg-background/40 p-2.5">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground/60">Elevated Execution</p>
-              <p className="mt-1 text-xs text-muted-foreground/75">
+              <p className="text-xs uppercase tracking-wide text-fg-subtle">Elevated Execution</p>
+              <p className="mt-1 text-xs text-muted-foreground">
                 Controls whether escalated exec approvals can be used.
               </p>
               <div className="mt-2 flex gap-2">
@@ -623,7 +623,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   type="button"
                   onClick={() => setElevated(true)}
                   disabled={mutating || elevatedEnabled}
-                  className="inline-flex items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-200 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-md border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-fg disabled:opacity-50"
                 >
                   {pendingAction === "elevated-enable" ? (
                     <span className="inline-flex items-center gap-0.5">
@@ -638,7 +638,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   type="button"
                   onClick={() => setElevated(false)}
                   disabled={mutating || !elevatedEnabled}
-                  className="inline-flex items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-200 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-md border border-success-border bg-success-bg px-2 py-1 text-xs text-success-fg disabled:opacity-50"
                 >
                   {pendingAction === "elevated-disable" ? (
                     <span className="inline-flex items-center gap-0.5">
@@ -653,8 +653,8 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
             </div>
 
             <div className="mt-2 rounded-xl border border-foreground/10 bg-background/40 p-2.5">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground/60">Grant command pattern</p>
-              <p className="mt-0.5 text-xs text-muted-foreground/75">
+              <p className="text-xs uppercase tracking-wide text-fg-subtle">Grant command pattern</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Adds to the scope selected above ({selectedAgent === "*" ? "all agents" : selectedAgent}).
               </p>
               <div className="mt-2 flex gap-2">
@@ -662,7 +662,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   value={pattern}
                   onChange={(e) => setPattern(e.target.value)}
                   placeholder='e.g. **/pkill or /usr/bin/git'
-                  className="min-w-0 flex-1 rounded-md border border-foreground/10 bg-card px-2 py-1.5 text-xs text-foreground/90 outline-none"
+                  className="min-w-0 flex-1 rounded-md border border-foreground/10 bg-card px-2 py-1.5 text-xs text-foreground outline-none"
                 />
                 <button
                   type="button"
@@ -683,7 +683,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
             </div>
 
             <div className="mt-2 rounded-xl border border-foreground/10 bg-background/40 p-2.5">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground/60">
+              <p className="text-xs uppercase tracking-wide text-fg-subtle">
                 Exec Approval Policy
               </p>
               <div className="mt-1.5 space-y-1.5">
@@ -692,30 +692,30 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                     key={`${scope.scope}:${scope.agentId || "*"}`}
                     className="rounded-md border border-foreground/10 bg-card/60 px-2 py-1.5 text-xs"
                   >
-                    <p className="font-medium text-foreground/90">
+                    <p className="font-medium text-foreground">
                       {scope.scope === "defaults" ? "defaults" : `agent:${scope.agentId}`}
                     </p>
-                    <p className="text-muted-foreground/75">
+                    <p className="text-muted-foreground">
                       security: {scope.security || "default"} • ask: {scope.ask || "default"} • askFallback:{" "}
                       {scope.askFallback || "default"}
                     </p>
-                    <p className="text-muted-foreground/75">
+                    <p className="text-muted-foreground">
                       autoAllowSkills: {String(scope.autoAllowSkills ?? false)} • allowlist: {scope.allowlistCount}
                     </p>
                   </div>
                 ))}
                 {(snapshot?.execPolicies || []).length === 0 && (
-                  <p className="text-xs text-muted-foreground/75">No explicit approval policy scopes found.</p>
+                  <p className="text-xs text-muted-foreground">No explicit approval policy scopes found.</p>
                 )}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground/75">Edit defaults (applies to all agents unless overridden per-agent):</p>
+              <p className="mt-2 text-xs text-muted-foreground">Edit defaults (applies to all agents unless overridden per-agent):</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-1.5 text-xs">
-                  <span className="text-muted-foreground/75">security</span>
+                  <span className="text-muted-foreground">security</span>
                   <select
                     value={editSecurity}
                     onChange={(e) => setEditSecurity(e.target.value)}
-                    className="rounded border border-foreground/15 bg-card px-2 py-1 text-xs text-foreground/90"
+                    className="rounded border border-foreground/15 bg-card px-2 py-1 text-xs text-foreground"
                   >
                     <option value="deny">deny</option>
                     <option value="allowlist">allowlist</option>
@@ -723,11 +723,11 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   </select>
                 </label>
                 <label className="flex items-center gap-1.5 text-xs">
-                  <span className="text-muted-foreground/75">ask</span>
+                  <span className="text-muted-foreground">ask</span>
                   <select
                     value={editAsk}
                     onChange={(e) => setEditAsk(e.target.value)}
-                    className="rounded border border-foreground/15 bg-card px-2 py-1 text-xs text-foreground/90"
+                    className="rounded border border-foreground/15 bg-card px-2 py-1 text-xs text-foreground"
                   >
                     <option value="off">off</option>
                     <option value="on-miss">on-miss</option>
@@ -735,11 +735,11 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   </select>
                 </label>
                 <label className="flex items-center gap-1.5 text-xs">
-                  <span className="text-muted-foreground/75">askFallback</span>
+                  <span className="text-muted-foreground">askFallback</span>
                   <select
                     value={editAskFallback}
                     onChange={(e) => setEditAskFallback(e.target.value)}
-                    className="rounded border border-foreground/15 bg-card px-2 py-1 text-xs text-foreground/90"
+                    className="rounded border border-foreground/15 bg-card px-2 py-1 text-xs text-foreground"
                   >
                     <option value="deny">deny</option>
                     <option value="allowlist">allowlist</option>
@@ -750,7 +750,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   type="button"
                   onClick={saveApprovalsDefaults}
                   disabled={mutating}
-                  className="inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/15 px-2 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-200 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded border border-info-border bg-info-bg px-2 py-1 text-xs font-medium text-info-fg disabled:opacity-50"
                 >
                   {pendingAction === "defaults" ? (
                     <span className="inline-flex items-center gap-0.5">
@@ -771,7 +771,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
             <AlertTriangle className="h-3.5 w-3.5" />
             Quick command presets
           </h2>
-          <p className="mb-2 text-xs text-muted-foreground/75">
+          <p className="mb-2 text-xs text-muted-foreground">
             One-click Grant adds to the scope above. Revoke removes it from every scope where it exists (shown when granted).
           </p>
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -785,8 +785,8 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                 <div key={item.pattern} className="rounded-xl border border-foreground/10 bg-background/40 px-3 py-2">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-xs font-medium text-foreground/90">{item.label}</p>
-                      <p className="text-xs text-muted-foreground/75">{item.pattern}</p>
+                      <p className="text-xs font-medium text-foreground">{item.label}</p>
+                      <p className="text-xs text-muted-foreground">{item.pattern}</p>
                     </div>
                     <button
                       type="button"
@@ -795,8 +795,8 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                       className={cn(
                         "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium",
                         active
-                          ? "border-red-500/30 bg-red-500/15 text-red-700 dark:text-red-200"
-                          : "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-200"
+                          ? "border-danger-border bg-danger-bg text-danger-fg"
+                          : "border-success-border bg-success-bg text-success-fg"
                       )}
                     >
                       {pendingAction === `quick:${item.pattern}` ? (
@@ -810,11 +810,11 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                     </button>
                   </div>
                   {active && grantedScopes.length > 0 && (
-                    <p className="mt-1 text-xs text-muted-foreground/75">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Granted for: {grantedScopes.map((s) => (s === "*" ? "all agents" : s)).join(", ")}
                     </p>
                   )}
-                  <p className={cn("text-xs text-muted-foreground/75", active && grantedScopes.length > 0 && "mt-0.5")}>
+                  <p className={cn("text-xs text-muted-foreground", active && grantedScopes.length > 0 && "mt-0.5")}>
                     {item.why}
                   </p>
                 </div>
@@ -829,13 +829,13 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
               <TerminalSquare className="h-3.5 w-3.5" />
               Exec allowlist
             </h2>
-            <p className="mb-2 text-xs text-muted-foreground/75">
-              Patterns allowed for <code>exec</code> when <code>security=allowlist</code>. Each row is one entry; <strong className="text-foreground/75">Revoke</strong> removes that entry from the scope shown (agent: …).
+            <p className="mb-2 text-xs text-muted-foreground">
+              Patterns allowed for <code>exec</code> when <code>security=allowlist</code>. Each row is one entry; <strong className="text-foreground">Revoke</strong> removes that entry from the scope shown (agent: …).
             </p>
             {loading && !snapshot ? (
-              <div className="py-10 text-center text-xs text-muted-foreground/75">Loading permissions…</div>
+              <div className="py-10 text-center text-xs text-muted-foreground">Loading permissions…</div>
             ) : scopedAllowlist.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-foreground/10 px-3 py-8 text-center text-xs text-muted-foreground/75">
+              <div className="rounded-xl border border-dashed border-foreground/10 px-3 py-8 text-center text-xs text-muted-foreground">
                 No allowlist entries for this scope.
               </div>
             ) : (
@@ -847,12 +847,12 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-mono text-xs text-foreground/90">{entry.pattern}</p>
-                        <p className="text-xs text-muted-foreground/75">
+                        <p className="truncate font-mono text-xs text-foreground">{entry.pattern}</p>
+                        <p className="text-xs text-muted-foreground">
                           agent: {entry.agentId} • last used: {formatAgo(entry.lastUsedAt)}
                         </p>
                         {(entry.lastUsedCommand || entry.lastResolvedPath) && (
-                          <p className="truncate text-xs text-muted-foreground/75">
+                          <p className="truncate text-xs text-muted-foreground">
                             {entry.lastUsedCommand ? `cmd: ${entry.lastUsedCommand}` : ""}
                             {entry.lastUsedCommand && entry.lastResolvedPath ? " • " : ""}
                             {entry.lastResolvedPath ? `path: ${entry.lastResolvedPath}` : ""}
@@ -863,7 +863,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                         type="button"
                         onClick={() => handleRevokePattern(entry.pattern, entry.agentId)}
                         disabled={mutating}
-                        className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/15 px-2 py-1 text-xs font-medium text-red-700 dark:text-red-200 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-md border border-danger-border bg-danger-bg px-2 py-1 text-xs font-medium text-danger-fg disabled:opacity-50"
                       >
                         {pendingAction === `revoke:${entry.pattern}` ? (
                           <span className="inline-flex items-center gap-0.5">
@@ -885,42 +885,42 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Tool Policy
             </h2>
-            <p className="mb-2 text-xs text-muted-foreground/75">
+            <p className="mb-2 text-xs text-muted-foreground">
               Mode: <code>{snapshot?.capabilities.toolPolicyMode || "unknown"}</code>
             </p>
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2.5">
-              <p className="text-xs uppercase tracking-wide text-emerald-700/90 dark:text-emerald-200/90">Configured Allow</p>
+            <div className="rounded-xl border border-success-border bg-success-bg p-2.5">
+              <p className="text-xs uppercase tracking-wide text-success-fg">Configured Allow</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {(snapshot?.capabilities.allowedToolsConfigured || []).map((tool) => (
                   <span
                     key={`allow-${tool}`}
-                    className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-700 dark:text-emerald-100"
+                    className="rounded-md border border-success-border bg-success-bg px-1.5 py-0.5 text-xs text-success-fg"
                   >
                     {tool}
                   </span>
                 ))}
                 {(snapshot?.capabilities.allowedToolsConfigured || []).length === 0 && (
-                  <span className="text-xs text-emerald-700/80 dark:text-emerald-100/75">none (open mode)</span>
+                  <span className="text-xs text-success-fg">none (open mode)</span>
                 )}
               </div>
             </div>
-            <div className="mt-2 rounded-xl border border-zinc-500/20 bg-zinc-500/5 p-2.5">
-              <p className="text-xs uppercase tracking-wide text-zinc-700/90 dark:text-zinc-300/90">Configured Deny</p>
+            <div className="mt-2 rounded-xl border border-border-strong/20 bg-muted-foreground/5 p-2.5">
+              <p className="text-xs uppercase tracking-wide text-fg-secondary dark:text-fg-subtle">Configured Deny</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {(snapshot?.capabilities.deniedToolsConfigured || []).map((tool) => (
                   <span
                     key={`deny-${tool}`}
-                    className="rounded-md border border-zinc-500/25 bg-zinc-500/12 px-1.5 py-0.5 text-xs text-zinc-700 dark:text-zinc-200"
+                    className="rounded-md border border-border-strong/25 bg-muted-foreground/12 px-1.5 py-0.5 text-xs text-fg-secondary dark:text-foreground"
                   >
                     {tool}
                   </span>
                 ))}
                 {(snapshot?.capabilities.deniedToolsConfigured || []).length === 0 && (
-                  <span className="text-xs text-zinc-700/80 dark:text-zinc-200/75">none</span>
+                  <span className="text-xs text-fg-secondary dark:text-foreground">none</span>
                 )}
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground/75">
+            <p className="mt-2 text-xs text-muted-foreground">
               Approvals file: <code>{snapshot?.approvals.path || "unknown"}</code>
             </p>
           </section>
@@ -936,7 +936,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
               type="button"
               onClick={() => void loadDevices()}
               disabled={devicesLoading || deviceMutating}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted/80 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80 disabled:opacity-60"
             >
               {(devicesLoading || deviceMutating) ? (
                 <span className="inline-flex items-center gap-0.5">
@@ -951,13 +951,13 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
             </button>
           </div>
 
-          <p className="mb-3 text-xs text-muted-foreground/75">
+          <p className="mb-3 text-xs text-muted-foreground">
             Pairing and device tokens control which clients can access your gateway.
           </p>
 
           <div className="grid gap-3 lg:grid-cols-2">
-            <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-2.5">
-              <h3 className="mb-2 flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-200">
+            <div className="rounded-xl border border-warning-border bg-warning-bg p-2.5">
+              <h3 className="mb-2 flex items-center gap-1 text-xs font-semibold text-warning-fg">
                 <UserCheck className="h-3.5 w-3.5" />
                 Pending Requests ({pendingDevices.length})
               </h3>
@@ -967,7 +967,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   <Skeleton className="h-12 w-full rounded-lg" />
                 </div>
               ) : pendingDevices.length === 0 ? (
-                <p className="text-xs text-muted-foreground/75">No pending pairing requests.</p>
+                <p className="text-xs text-muted-foreground">No pending pairing requests.</p>
               ) : (
                 <div className="space-y-2">
                   {pendingDevices.map((request) => (
@@ -977,21 +977,21 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground/90">
+                          <p className="truncate font-medium text-foreground">
                             {request.displayName || request.platform || request.deviceId}
                           </p>
-                          <p className="text-xs text-muted-foreground/75">
+                          <p className="text-xs text-muted-foreground">
                             {request.clientMode || "unknown"} • role {request.requestedRole || "node"}
                           </p>
                         </div>
-                        <Smartphone className="h-3.5 w-3.5 shrink-0 text-muted-foreground/75" />
+                        <Smartphone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       </div>
                       <div className="mt-2 flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => approveDevice(request.requestId || request.deviceId)}
                           disabled={deviceMutating}
-                          className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-200 disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md border border-success-border bg-success-bg px-2 py-1 text-xs font-medium text-success-fg disabled:opacity-50"
                         >
                           <UserCheck className="h-3 w-3" />
                           Approve
@@ -1000,7 +1000,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                           type="button"
                           onClick={() => rejectDevice(request.requestId || request.deviceId)}
                           disabled={deviceMutating}
-                          className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/15 px-2 py-1 text-xs font-medium text-red-700 dark:text-red-200 disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md border border-danger-border bg-danger-bg px-2 py-1 text-xs font-medium text-danger-fg disabled:opacity-50"
                         >
                           <UserX className="h-3 w-3" />
                           Reject
@@ -1013,7 +1013,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
             </div>
 
             <div className="rounded-xl border border-foreground/10 bg-background/40 p-2.5">
-              <h3 className="mb-2 text-xs font-semibold text-foreground/90">
+              <h3 className="mb-2 text-xs font-semibold text-foreground">
                 Paired Devices ({pairedDevices.length})
               </h3>
               {devicesLoading ? (
@@ -1023,7 +1023,7 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                   <Skeleton className="h-12 w-full rounded-lg" />
                 </div>
               ) : pairedDevices.length === 0 ? (
-                <p className="text-xs text-muted-foreground/75">No paired devices.</p>
+                <p className="text-xs text-muted-foreground">No paired devices.</p>
               ) : (
                 <div className="max-h-64 space-y-2 overflow-y-auto pr-0.5">
                   {pairedDevices.map((device) => (
@@ -1031,10 +1031,10 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                       key={device.deviceId}
                       className="rounded-lg border border-foreground/10 bg-card/70 px-3 py-2 text-xs"
                     >
-                      <p className="truncate font-medium text-foreground/90">
+                      <p className="truncate font-medium text-foreground">
                         {device.displayName || device.platform || device.deviceId}
                       </p>
-                      <p className="text-xs text-muted-foreground/75">
+                      <p className="text-xs text-muted-foreground">
                         {device.clientMode || "unknown"} • {device.clientId || "client"}
                       </p>
                       <div className="mt-1 flex flex-wrap gap-1.5">
@@ -1044,14 +1044,14 @@ export function PermissionsView({ embedded = false }: { embedded?: boolean } = {
                             type="button"
                             onClick={() => revokeDeviceRole(device.deviceId, role)}
                             disabled={deviceMutating}
-                            className="rounded-md border border-red-500/25 bg-red-500/10 px-1.5 py-0.5 text-xs text-red-700 transition-colors hover:bg-red-500/20 dark:text-red-200 disabled:opacity-50"
+                            className="rounded-md border border-danger-border bg-danger-bg px-1.5 py-0.5 text-xs text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-50"
                             title={`Revoke ${role} token`}
                           >
                             revoke:{role}
                           </button>
                         ))}
                         {(device.roles || []).length === 0 && (
-                          <span className="text-xs text-muted-foreground/75">No roles reported.</span>
+                          <span className="text-xs text-muted-foreground">No roles reported.</span>
                         )}
                       </div>
                     </div>

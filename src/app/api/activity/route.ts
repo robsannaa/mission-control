@@ -76,7 +76,30 @@ async function tailLines(path: string, n: number): Promise<string[]> {
 
 // ── Aggregation helpers ──────────────────────────────────────────────────────
 
-function cronEntryToEvent(entry: CronRunEntry): ActivityEvent | null {
+/**
+ * Job id → human name. A run row only carries the job's uuid, and a feed of
+ * uuids is unreadable: "versami-mail-sweep — finished" is the whole point.
+ */
+async function fetchCronJobNames(): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  try {
+    const data = await gatewayCall<{
+      jobs?: Array<{ id?: string; name?: string; displayName?: string }>;
+    }>("cron.list", {}, 8000);
+    for (const job of data.jobs ?? []) {
+      const label = job.displayName?.trim() || job.name?.trim();
+      if (job.id && label) names.set(job.id, label);
+    }
+  } catch {
+    // Names are a nicety — fall back to ids rather than failing the feed.
+  }
+  return names;
+}
+
+function cronEntryToEvent(
+  entry: CronRunEntry,
+  jobNames?: Map<string, string>,
+): ActivityEvent | null {
   // Require a valid numeric timestamp and a jobId to proceed.
   if (!entry.ts || typeof entry.ts !== "number" || !entry.jobId) {
     return null;
@@ -91,7 +114,7 @@ function cronEntryToEvent(entry: CronRunEntry): ActivityEvent | null {
     id: `cron-${entry.jobId}-${entry.ts}`,
     type: "cron",
     timestamp: entry.ts,
-    title: `Cron: ${entry.jobId} — ${entry.action}`,
+    title: `${jobNames?.get(entry.jobId) ?? entry.jobId} — ${entry.action}`,
     detail: entry.error || entry.summary || undefined,
     status: isError ? "error" : "ok",
     source: entry.jobId,
@@ -114,9 +137,10 @@ async function aggregateCronEvents(): Promise<{
       10000,
     );
     const entries = Array.isArray(data.entries) ? data.entries : [];
+    const jobNames = await fetchCronJobNames();
     return {
       events: entries
-        .map(cronEntryToEvent)
+        .map((e) => cronEntryToEvent(e, jobNames))
         .filter((e): e is ActivityEvent => e !== null),
       pairingRequired: false,
     };

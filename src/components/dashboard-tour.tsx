@@ -273,7 +273,7 @@ export function DashboardTour() {
       <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-[1px]" />
       {focusRect && (
         <div
-          className="pointer-events-none fixed z-[121] rounded-xl border-2 border-emerald-300/95 shadow-[0_0_0_2px_rgba(16,185,129,0.35),0_0_30px_rgba(16,185,129,0.28)]"
+          className="pointer-events-none fixed z-[121] rounded-xl border-2 border-success-border shadow-[0_0_0_2px_rgba(16,185,129,0.35),0_0_30px_rgba(16,185,129,0.28)]"
           style={{
             left: `${focusRect.left}px`,
             top: `${focusRect.top}px`,
@@ -284,25 +284,25 @@ export function DashboardTour() {
       )}
 
       <div
-        className="fixed z-[122] rounded-2xl border border-stone-200/80 bg-white p-5 text-stone-900 shadow-2xl dark:border-[#2e353d] dark:bg-[#13171c] dark:text-[#f5f7fa]"
+        className="fixed z-[122] rounded-2xl border border-border/80 bg-card p-5 text-foreground shadow-2xl dark:border-border dark:bg-background"
         style={panelStyle}
         role="dialog"
         aria-modal="true"
         aria-label="Mission Control tour"
       >
         <div className="mb-3 flex items-center gap-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-success-bg text-success-fg">
             {isLast ? <Check className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
           </span>
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500 dark:text-[#8b96a5]">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Tour step {stepIndex + 1} of {TOUR_STEPS.length}
             </p>
             <h3 className="text-base font-semibold leading-tight">{step.title}</h3>
           </div>
         </div>
 
-        <p className="text-sm leading-relaxed text-stone-600 dark:text-[#c1c9d3]">{step.description}</p>
+        <p className="text-sm leading-relaxed text-fg-secondary">{step.description}</p>
 
         <div className="mt-4 flex items-center gap-1.5">
           {TOUR_STEPS.map((tourStep, index) => (
@@ -310,8 +310,8 @@ export function DashboardTour() {
               key={tourStep.id}
               className={
                 index <= stepIndex
-                  ? "h-1.5 w-6 rounded-full bg-emerald-500"
-                  : "h-1.5 w-6 rounded-full bg-stone-200 dark:bg-[#2c343d]"
+                  ? "h-1.5 w-6 rounded-full bg-success"
+                  : "h-1.5 w-6 rounded-full bg-secondary"
               }
             />
           ))}
@@ -321,7 +321,7 @@ export function DashboardTour() {
           <button
             type="button"
             onClick={markDoneAndClose}
-            className="rounded-lg px-3 py-2 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 dark:text-[#9aa6b5] dark:hover:bg-[#1d232a] dark:hover:text-[#f5f7fa]"
+            className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-secondary"
           >
             Skip tour
           </button>
@@ -331,7 +331,7 @@ export function DashboardTour() {
               type="button"
               onClick={() => setStepIndex((current) => Math.max(0, current - 1))}
               disabled={stepIndex === 0}
-              className="inline-flex items-center gap-1 rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#2e353d] dark:text-[#c1c9d3] dark:hover:bg-[#1d232a]"
+              className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-secondary"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Back
@@ -346,7 +346,7 @@ export function DashboardTour() {
                 }
                 setStepIndex((current) => Math.min(TOUR_STEPS.length - 1, current + 1));
               }}
-              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-500"
+              className="inline-flex items-center gap-1 rounded-full bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/88"
             >
               {isLast ? "Finish" : "Next"}
               {!isLast && <ChevronRight className="h-3.5 w-3.5" />}

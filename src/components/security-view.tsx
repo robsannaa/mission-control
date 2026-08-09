@@ -190,15 +190,15 @@ function severityLabel(severity: SecuritySeverity): string {
 }
 
 function severityBorder(severity: SecuritySeverity): string {
-  if (severity === "critical") return "border-l-red-500";
-  if (severity === "warn") return "border-l-amber-500";
-  return "border-l-blue-500";
+  if (severity === "critical") return "border-l-danger";
+  if (severity === "warn") return "border-l-warning";
+  return "border-l-info";
 }
 
 function severityBadge(severity: SecuritySeverity): string {
-  if (severity === "critical") return "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-200";
-  if (severity === "warn") return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200";
-  return "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-200";
+  if (severity === "critical") return "border-danger-border bg-danger-bg text-danger-fg";
+  if (severity === "warn") return "border-warning-border bg-warning-bg text-warning-fg";
+  return "border-info-border bg-info-bg text-info-fg";
 }
 
 function computeGrade(summary: { critical: number; warn: number; info: number }): string {
@@ -210,10 +210,10 @@ function computeGrade(summary: { critical: number; warn: number; info: number })
 }
 
 function gradeColor(grade: string): string {
-  if (grade === "A") return "text-emerald-600 dark:text-emerald-400";
-  if (grade === "B") return "text-blue-600 dark:text-blue-400";
-  if (grade === "C") return "text-amber-600 dark:text-amber-400";
-  return "text-red-600 dark:text-red-400";
+  if (grade === "A") return "text-success-fg";
+  if (grade === "B") return "text-info-fg";
+  if (grade === "C") return "text-warning-fg";
+  return "text-danger-fg";
 }
 
 /** Deep-get a dotted path from a nested object */
@@ -241,10 +241,10 @@ function Dots() {
 
 function MetricTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="glass-subtle rounded-lg px-4 py-3.5">
-      <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">{label}</p>
-      <p className="mt-1.5 text-xl font-semibold leading-none tabular-nums text-foreground">{value}</p>
-      {sub && <p className="mt-1.5 text-xs text-muted-foreground/60">{sub}</p>}
+    <div className="rounded-xl border border-border bg-card px-5 py-4">
+      <p className="eyebrow">{label}</p>
+      <p className="mt-2 text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">{value}</p>
+      {sub && <p className="mt-2 text-xs text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -259,10 +259,10 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="glass rounded-lg p-4 md:p-5">
-      <div className="mb-4">
-        <h2 className="text-xs font-sans font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
-        {subtitle && <p className="mt-0.5 text-xs text-muted-foreground/60">{subtitle}</p>}
+    <section className="rounded-xl border border-border bg-card p-5 md:p-6">
+      <div className="mb-5">
+        <h2 className="eyebrow">{title}</h2>
+        {subtitle && <p className="mt-1.5 text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {children}
     </section>
@@ -287,10 +287,10 @@ function OptionCard({
   disabled?: boolean;
 }) {
   const borderMap = {
-    default: selected ? "border-foreground/20" : "border-foreground/10",
-    red: selected ? "border-red-500/40 bg-red-500/5" : "border-foreground/10",
-    amber: selected ? "border-amber-500/40 bg-amber-500/5" : "border-foreground/10",
-    emerald: selected ? "border-emerald-500/40 bg-emerald-500/5" : "border-foreground/10",
+    default: selected ? "border-border-strong bg-muted" : "border-border",
+    red: selected ? "border-danger-border bg-danger-bg" : "border-border",
+    amber: selected ? "border-warning-border bg-warning-bg" : "border-border",
+    emerald: selected ? "border-success-border bg-success-bg" : "border-border",
   };
   return (
     <button
@@ -298,16 +298,15 @@ function OptionCard({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "glass-glow rounded-lg p-3 text-left transition-colors disabled:opacity-50",
+        "rounded-xl border bg-card p-4 text-left transition-colors hover:border-border-strong hover:bg-muted disabled:opacity-45",
         borderMap[color],
-        selected && color === "default" && "ring-1 ring-foreground/10",
       )}
     >
       <div className="flex items-center gap-2">
         {icon}
-        <p className="text-xs font-medium text-foreground/90">{label}</p>
+        <p className="text-sm font-medium text-foreground">{label}</p>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground/60">{description}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
     </button>
   );
 }
@@ -713,7 +712,7 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                 void loadConfig();
               }}
               disabled={loading || mutating}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 disabled:opacity-60 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-100"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors hover:border-border-strong hover:bg-accent disabled:opacity-45"
             >
               {loading || mutating ? <Dots /> : <RefreshCw className="h-3.5 w-3.5" />}
               Refresh
@@ -722,19 +721,19 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
         }
       />
 
-      <SectionBody width="content" padding="regular" innerClassName="space-y-4">
-        {/* ── Tab picker ────────────────────────── */}
-        <div className="inline-flex rounded-lg border border-border bg-muted p-1">
+      <SectionBody width="content" padding="regular" innerClassName="space-y-5">
+        {/* ── Tab picker — ElevenLabs pill segmented control ─── */}
+        <div className="inline-flex rounded-full border border-border bg-muted p-1">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-200",
+                "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
                 activeTab === tab.id
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "border border-border bg-card text-foreground shadow-xs"
+                  : "border border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
               {tab.label}
@@ -744,20 +743,17 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
 
         {/* ── Notices ───────────────────────────── */}
         {error && (
-          <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-xs text-red-700 dark:text-red-200">
+          <div className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-fg">
             {error}
           </div>
         )}
         {notice && (
           <div
             className={cn(
-              "rounded-lg border px-4 py-2.5 text-xs",
-              noticeTone === "success" &&
-                "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200",
-              noticeTone === "error" &&
-                "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-200",
-              noticeTone === "info" &&
-                "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-200",
+              "rounded-xl border px-4 py-3 text-sm",
+              noticeTone === "success" && "border-success-border bg-success-bg text-success-fg",
+              noticeTone === "error" && "border-danger-border bg-danger-bg text-danger-fg",
+              noticeTone === "info" && "border-info-border bg-info-bg text-info-fg",
             )}
           >
             {notice}
@@ -769,25 +765,25 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
           <>
             {initialLoading ? (
               <>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={`skel-stat-${i}`} className="glass-subtle rounded-lg px-4 py-3.5">
+                    <div key={`skel-stat-${i}`} className="rounded-xl border border-border bg-card px-5 py-4">
                       <Skeleton className="h-3 w-24" />
                       <Skeleton className="mt-2 h-6 w-20" />
                       <Skeleton className="mt-2 h-3 w-32" />
                     </div>
                   ))}
                 </div>
-                <div className="glass rounded-lg p-4">
+                <div className="rounded-xl border border-border bg-card p-5">
                   <Skeleton className="h-4 w-40" />
-                  <Skeleton className="mt-3 h-8 w-full rounded-lg" />
-                  <Skeleton className="mt-2 h-8 w-full rounded-lg" />
+                  <Skeleton className="mt-4 h-9 w-full rounded-lg" />
+                  <Skeleton className="mt-2 h-9 w-full rounded-lg" />
                 </div>
               </>
             ) : (
               <>
                 {/* Metric tiles */}
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   <MetricTile
                     label="Overall Grade"
                     value={lastAudit ? grade : "—"}
@@ -812,16 +808,16 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
 
                 {/* Score shield */}
                 {lastAudit && (
-                  <div className="glass rounded-lg p-4 md:p-5">
-                    <div className="flex items-center gap-4">
-                      <div className={cn("flex h-16 w-16 items-center justify-center rounded-xl border-2", grade === "A" ? "border-emerald-500/40 bg-emerald-500/10" : grade === "B" ? "border-blue-500/40 bg-blue-500/10" : grade === "C" ? "border-amber-500/40 bg-amber-500/10" : "border-red-500/40 bg-red-500/10")}>
-                        <span className={cn("text-3xl font-bold", gradeColor(grade))}>{grade}</span>
+                  <div className="rounded-xl border border-border bg-card p-5 md:p-6">
+                    <div className="flex items-center gap-5">
+                      <div className={cn("flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border", grade === "A" ? "border-success-border bg-success-bg" : grade === "B" ? "border-info-border bg-info-bg" : grade === "C" ? "border-warning-border bg-warning-bg" : "border-danger-border bg-danger-bg")}>
+                        <span className={cn("text-3xl font-semibold tracking-[-0.02em]", gradeColor(grade))}>{grade}</span>
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-foreground/90">
+                        <p className="text-base font-semibold tracking-[-0.01em] text-foreground">
                           {grade === "A" ? "Excellent" : grade === "B" ? "Good" : grade === "C" ? "Fair" : "Needs Work"}
                         </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground/70">
+                        <p className="mt-1 text-sm text-muted-foreground">
                           {findings.length} finding{findings.length !== 1 ? "s" : ""} from {lastAudit.mode} scan · {formatTime(lastAudit.ts, timeFormat)}
                         </p>
                       </div>
@@ -836,7 +832,7 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                       type="button"
                       onClick={() => void runAudit("quick")}
                       disabled={busy}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-200 disabled:opacity-50"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/88 disabled:opacity-45"
                     >
                       {pendingAction === "audit-quick" ? <Dots /> : <ShieldCheck className="h-3.5 w-3.5" />}
                       Quick Audit
@@ -845,7 +841,7 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                       type="button"
                       onClick={() => void runAudit("deep")}
                       disabled={busy}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/15 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-200 disabled:opacity-50"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors hover:border-border-strong hover:bg-accent disabled:opacity-45"
                     >
                       {pendingAction === "audit-deep" ? <Dots /> : <CircleHelp className="h-3.5 w-3.5" />}
                       Deep Audit
@@ -854,7 +850,7 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                       type="button"
                       onClick={() => { setShowFixConfirm((p) => !p); setFixAcknowledge(false); }}
                       disabled={busy}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-200 disabled:opacity-50"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full border border-warning-border bg-warning-bg px-4 text-sm font-medium text-warning-fg transition-colors hover:bg-warning-bg/70 disabled:opacity-45"
                     >
                       <Wrench className="h-3.5 w-3.5" />
                       Apply Safe Fixes
@@ -862,13 +858,13 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                   </div>
 
                   {/* Auto-scan prefs */}
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground/75">
+                  <div className="mt-4 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground">
                     <label className="inline-flex items-center gap-1.5">
                       <input
                         type="checkbox"
                         checked={prefs.autoScan}
                         onChange={(e) => setPrefs((p) => ({ ...p, autoScan: e.target.checked }))}
-                        className="h-3.5 w-3.5 rounded border border-foreground/20 bg-card"
+                        className="h-4 w-4 rounded-sm border border-border-strong bg-card accent-primary"
                       />
                       Auto-run when stale
                     </label>
@@ -877,7 +873,7 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                       value={prefs.defaultMode}
                       onChange={(e) => setPrefs((p) => ({ ...p, defaultMode: e.target.value === "deep" ? "deep" : "quick" }))}
                       aria-label="Default scan mode"
-                      className="rounded border border-foreground/15 bg-card px-2 py-1 text-xs text-foreground/90"
+                      className="h-8 rounded-lg border border-border bg-card px-2.5 text-sm text-foreground"
                     >
                       <option value="quick">quick</option>
                       <option value="deep">deep</option>
@@ -886,30 +882,30 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
 
                   {/* Fix confirmation */}
                   {showFixConfirm && (
-                    <div className="mt-3 glass-subtle rounded-lg p-3 text-xs">
-                      <p className="font-medium text-amber-700 dark:text-amber-200">Before applying fixes</p>
-                      <p className="mt-1 text-muted-foreground/80">
+                    <div className="mt-4 rounded-xl border border-border bg-muted p-4 text-sm">
+                      <p className="font-medium text-warning-fg">Before applying fixes</p>
+                      <p className="mt-1.5 leading-relaxed text-muted-foreground">
                         This applies OpenClaw&apos;s built-in safe remediations: permission hardening and security defaults.
                       </p>
-                      <p className="mt-2 font-medium text-foreground/90">What it fixes:</p>
-                      <p className="text-muted-foreground/75">groupPolicy hardening, sensitive logging defaults, and sensitive-file permissions.</p>
-                      <p className="mt-1 font-medium text-foreground/90">What it does not do:</p>
-                      <p className="text-muted-foreground/75">It does not rotate secrets, disable tools, or rewrite plugins/skills.</p>
-                      <label className="mt-2 inline-flex items-center gap-1.5 text-foreground/85">
+                      <p className="mt-3 font-medium text-foreground">What it fixes:</p>
+                      <p className="mt-0.5 leading-relaxed text-muted-foreground">groupPolicy hardening, sensitive logging defaults, and sensitive-file permissions.</p>
+                      <p className="mt-2 font-medium text-foreground">What it does not do:</p>
+                      <p className="mt-0.5 leading-relaxed text-muted-foreground">It does not rotate secrets, disable tools, or rewrite plugins/skills.</p>
+                      <label className="mt-3 inline-flex items-center gap-2 text-fg-secondary">
                         <input
                           type="checkbox"
                           checked={fixAcknowledge}
                           onChange={(e) => setFixAcknowledge(e.target.checked)}
-                          className="h-3.5 w-3.5 rounded border border-foreground/20 bg-card"
+                          className="h-4 w-4 rounded-sm border border-border-strong bg-card accent-primary"
                         />
                         I understand this updates local OpenClaw security settings.
                       </label>
-                      <div className="mt-2">
+                      <div className="mt-3">
                         <button
                           type="button"
                           onClick={() => void runFix()}
                           disabled={busy || !fixAcknowledge}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-200 disabled:opacity-50"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-warning-border bg-warning-bg px-3.5 text-xs font-medium text-warning-fg transition-colors hover:bg-warning-bg/70 disabled:opacity-45"
                         >
                           {pendingAction === "fix" ? <Dots /> : <Wrench className="h-3.5 w-3.5" />}
                           Confirm and apply safe fixes
@@ -922,25 +918,25 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                 {/* Findings list */}
                 <Panel title={`Findings (${findings.length})`}>
                   {findings.length === 0 ? (
-                    <div className="glass-subtle rounded-lg px-4 py-8 text-center text-xs text-emerald-700 dark:text-emerald-200">
+                    <div className="rounded-xl border border-border bg-muted px-4 py-10 text-center text-sm text-muted-foreground">
                       {lastAudit ? "No findings in the latest audit." : "Run an audit to see security findings."}
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {findings.map((f) => (
-                        <div key={f.checkId} className={cn("glass-subtle rounded-lg border-l-2 px-3 py-2", severityBorder(f.severity))}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-xs font-medium text-foreground/90">{f.title}</p>
-                              <p className="text-[11px] text-muted-foreground/70">{f.checkId}</p>
+                        <div key={f.checkId} className={cn("rounded-xl border border-border border-l-2 bg-muted px-4 py-3.5", severityBorder(f.severity))}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground">{f.title}</p>
+                              <p className="mt-0.5 font-mono text-xs text-fg-subtle">{f.checkId}</p>
                             </div>
-                            <span className={cn("rounded-md border px-1.5 py-0.5 text-[11px] font-medium", severityBadge(f.severity))}>
+                            <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium", severityBadge(f.severity))}>
                               {severityLabel(f.severity)}
                             </span>
                           </div>
-                          {f.detail && <p className="mt-1 whitespace-pre-line text-xs text-muted-foreground/80">{f.detail}</p>}
+                          {f.detail && <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{f.detail}</p>}
                           {f.remediation && (
-                            <div className="mt-2 rounded-md border border-cyan-500/20 bg-cyan-500/8 px-2 py-1.5 text-xs text-cyan-800 dark:text-cyan-100">
+                            <div className="mt-3 rounded-lg border border-info-border bg-info-bg px-3 py-2 text-sm leading-relaxed text-info-fg">
                               <span className="font-medium">Suggested fix:</span> {f.remediation}
                             </div>
                           )}
@@ -953,11 +949,11 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                 {/* Deep gateway */}
                 {deepGateway && (
                   <Panel title="Deep Audit Gateway Check">
-                    <p className="text-xs text-muted-foreground/75">
+                    <p className="text-sm text-muted-foreground">
                       attempted: <code>{String(Boolean(deepGateway.attempted))}</code> · ok: <code>{String(Boolean(deepGateway.ok))}</code> · url: <code>{String(deepGateway.url || "unknown")}</code>
                     </p>
                     {Boolean(deepIssue) && (
-                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-200">
+                      <p className="mt-1.5 text-sm text-warning-fg">
                         issue: <code>{deepIssue}</code>
                       </p>
                     )}
@@ -967,34 +963,34 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                 {/* Last fix */}
                 {lastFix && (
                   <Panel title="Last Safe Fix Run">
-                    <p className="text-xs text-muted-foreground/75">
+                    <p className="text-sm text-muted-foreground">
                       {formatTime(lastFix.ts, timeFormat)} · status:{" "}
-                      <span className={lastFix.fix.ok ? "text-emerald-700 dark:text-emerald-200" : "text-red-700 dark:text-red-200"}>
+                      <span className={lastFix.fix.ok ? "text-success-fg" : "text-danger-fg"}>
                         {lastFix.fix.ok ? "ok" : "needs review"}
                       </span>
                       {" · "}changes: <code>{lastFix.fix.changes.length}</code> · action steps: <code>{lastFix.fix.actions.length}</code>
                     </p>
                     {lastFix.fix.configPath && (
-                      <p className="mt-1 text-xs text-muted-foreground/75">
+                      <p className="mt-1.5 text-sm text-muted-foreground">
                         config path: <code>{lastFix.fix.configPath}</code>
                       </p>
                     )}
                     {lastFix.fix.changes.length > 0 && (
-                      <div className="mt-2 glass-subtle rounded-lg p-2.5">
-                        <p className="text-xs font-medium text-emerald-700 dark:text-emerald-200">Changes</p>
-                        <div className="mt-1 space-y-1">
+                      <div className="mt-3 rounded-xl border border-success-border bg-success-bg p-3.5">
+                        <p className="text-sm font-medium text-success-fg">Changes</p>
+                        <div className="mt-1.5 space-y-1">
                           {lastFix.fix.changes.slice(0, 8).map((c, i) => (
-                            <p key={`change-${i}`} className="text-xs text-emerald-800 dark:text-emerald-100">{c}</p>
+                            <p key={`change-${i}`} className="text-sm text-success-fg">{c}</p>
                           ))}
                         </div>
                       </div>
                     )}
                     {lastFix.fix.errors.length > 0 && (
-                      <div className="mt-2 rounded-lg border border-red-500/20 bg-red-500/5 p-2.5">
-                        <p className="text-xs font-medium text-red-700 dark:text-red-200">Fix errors</p>
-                        <div className="mt-1 space-y-1">
+                      <div className="mt-3 rounded-xl border border-danger-border bg-danger-bg p-3.5">
+                        <p className="text-sm font-medium text-danger-fg">Fix errors</p>
+                        <div className="mt-1.5 space-y-1">
                           {lastFix.fix.errors.slice(0, 6).map((e, i) => (
-                            <p key={`err-${i}`} className="text-xs text-red-800 dark:text-red-100">{e}</p>
+                            <p key={`err-${i}`} className="text-sm text-danger-fg">{e}</p>
                           ))}
                         </div>
                       </div>
@@ -1063,13 +1059,13 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                 type="button"
                 onClick={checkSecrets}
                 disabled={secretsChecking}
-                className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-200 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md border border-success-border bg-success-bg px-2.5 py-1.5 text-xs font-medium text-success-fg disabled:opacity-50"
               >
                 {secretsChecking ? <Dots /> : <KeyRound className="h-3.5 w-3.5" />}
                 Check Secrets
               </button>
               {secretsResult && (
-                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words glass-subtle rounded-lg p-3 text-xs text-foreground/85">
+                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words glass-subtle rounded-lg p-3 text-xs text-foreground">
                   {secretsResult}
                 </pre>
               )}
@@ -1081,13 +1077,13 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
                 type="button"
                 onClick={checkModels}
                 disabled={modelsChecking}
-                className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/15 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-200 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md border border-info-border bg-info-bg px-2.5 py-1.5 text-xs font-medium text-info-fg disabled:opacity-50"
               >
                 {modelsChecking ? <Dots /> : <Bot className="h-3.5 w-3.5" />}
                 Check Models
               </button>
               {modelsResult && (
-                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words glass-subtle rounded-lg p-3 text-xs text-foreground/85">
+                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words glass-subtle rounded-lg p-3 text-xs text-foreground">
                   {modelsResult}
                 </pre>
               )}
@@ -1142,7 +1138,7 @@ function GatewayAuthCard({ cfgGet, patchConfig, busy }: CardProps) {
   return (
     <Panel title="Authentication Mode" subtitle="How clients authenticate to the gateway.">
       {current === "none" && (
-        <div className="mb-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-200">
+        <div className="mb-3 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
           <ShieldAlert className="mr-1 inline h-3 w-3" />
           Auth is disabled. Any client can connect without credentials.
         </div>
@@ -1167,9 +1163,9 @@ function GatewayAuthCard({ cfgGet, patchConfig, busy }: CardProps) {
 function GatewayBindCard({ cfgGet, patchConfig, busy }: CardProps) {
   const current = String(cfgGet("gateway.bind") || "loopback");
   const options = [
-    { value: "loopback", label: "Loopback", desc: "Only this computer (127.0.0.1).", icon: <Lock className="h-3.5 w-3.5 text-emerald-500" /> },
-    { value: "lan", label: "LAN", desc: "Accessible on your local network.", icon: <Wifi className="h-3.5 w-3.5 text-amber-500" /> },
-    { value: "tailnet", label: "Tailscale VPN", desc: "Accessible via Tailscale network only.", icon: <Radio className="h-3.5 w-3.5 text-blue-500" /> },
+    { value: "loopback", label: "Loopback", desc: "Only this computer (127.0.0.1).", icon: <Lock className="h-3.5 w-3.5 text-success-fg" /> },
+    { value: "lan", label: "LAN", desc: "Accessible on your local network.", icon: <Wifi className="h-3.5 w-3.5 text-warning-fg" /> },
+    { value: "tailnet", label: "Tailscale VPN", desc: "Accessible via Tailscale network only.", icon: <Radio className="h-3.5 w-3.5 text-info-fg" /> },
   ] as const;
 
   return (
@@ -1202,7 +1198,7 @@ function GatewayMdnsCard({ cfgGet, patchConfig, busy }: CardProps) {
   return (
     <Panel title="mDNS Discovery" subtitle="Controls what the gateway advertises on the local network.">
       {current === "full" && (
-        <div className="mb-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
+        <div className="mb-3 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning-fg">
           <AlertTriangle className="mr-1 inline h-3 w-3" />
           Full mDNS broadcasts all service metadata to the local network.
         </div>
@@ -1239,13 +1235,13 @@ function DangerousFlagsCard({ cfgGet, patchConfig, busy }: CardProps) {
               key={flag.id}
               className={cn(
                 "glass-subtle rounded-lg px-3 py-2.5",
-                isEnabled && "border-l-2 border-l-red-500",
+                isEnabled && "border-l-2 border-l-danger",
               )}
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-foreground/90">{flag.label}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground/60">{flag.description}</p>
+                  <p className="text-xs font-medium text-foreground">{flag.label}</p>
+                  <p className="mt-0.5 text-xs text-fg-subtle">{flag.description}</p>
                 </div>
                 <button
                   type="button"
@@ -1259,14 +1255,14 @@ function DangerousFlagsCard({ cfgGet, patchConfig, busy }: CardProps) {
                   title={isEnabled ? "Disable" : "Enable"}
                 >
                   {isEnabled ? (
-                    <ToggleRight className="h-6 w-6 text-red-500" />
+                    <ToggleRight className="h-6 w-6 text-danger-fg" />
                   ) : (
-                    <ToggleLeft className="h-6 w-6 text-muted-foreground/40" />
+                    <ToggleLeft className="h-6 w-6 text-fg-subtle" />
                   )}
                 </button>
               </div>
               {isEnabled && (
-                <div className="mt-2 rounded-md border border-red-500/20 bg-red-500/8 px-2 py-1 text-[11px] text-red-700 dark:text-red-200">
+                <div className="mt-2 rounded-md border border-danger-border bg-danger-bg px-2 py-1 text-[11px] text-danger-fg">
                   This override is currently active. Consider disabling it unless required.
                 </div>
               )}
@@ -1285,9 +1281,9 @@ function DangerousFlagsCard({ cfgGet, patchConfig, busy }: CardProps) {
 function SandboxModeCard({ cfgGet, patchConfig, busy }: CardProps) {
   const current = String(cfgGet("agents.defaults.sandbox.mode") || "off");
   const options = [
-    { value: "off", label: "Off", desc: "No sandboxing — agents run directly on your system.", icon: <WifiOff className="h-3.5 w-3.5 text-red-400" /> },
-    { value: "non-main", label: "Non-main", desc: "Sandbox non-primary sessions (recommended).", icon: <Container className="h-3.5 w-3.5 text-amber-400" /> },
-    { value: "all", label: "All", desc: "Maximum isolation — everything runs in containers.", icon: <Shield className="h-3.5 w-3.5 text-emerald-400" /> },
+    { value: "off", label: "Off", desc: "No sandboxing — agents run directly on your system.", icon: <WifiOff className="h-3.5 w-3.5 text-danger-fg" /> },
+    { value: "non-main", label: "Non-main", desc: "Sandbox non-primary sessions (recommended).", icon: <Container className="h-3.5 w-3.5 text-warning-fg" /> },
+    { value: "all", label: "All", desc: "Maximum isolation — everything runs in containers.", icon: <Shield className="h-3.5 w-3.5 text-success-fg" /> },
   ] as const;
 
   return (
@@ -1339,9 +1335,9 @@ function SandboxScopeCard({ cfgGet, patchConfig, busy }: CardProps) {
 function WorkspaceAccessCard({ cfgGet, patchConfig, busy }: CardProps) {
   const current = String(cfgGet("agents.defaults.sandbox.workspaceAccess") || "ro");
   const options = [
-    { value: "none", label: "None", desc: "No workspace access.", icon: <Lock className="h-3.5 w-3.5 text-red-400" /> },
-    { value: "ro", label: "Read-only", desc: "Can read but not modify workspace.", icon: <Eye className="h-3.5 w-3.5 text-amber-400" /> },
-    { value: "rw", label: "Read-write", desc: "Full workspace access.", icon: <Pencil className="h-3.5 w-3.5 text-emerald-400" /> },
+    { value: "none", label: "None", desc: "No workspace access.", icon: <Lock className="h-3.5 w-3.5 text-danger-fg" /> },
+    { value: "ro", label: "Read-only", desc: "Can read but not modify workspace.", icon: <Eye className="h-3.5 w-3.5 text-warning-fg" /> },
+    { value: "rw", label: "Read-write", desc: "Full workspace access.", icon: <Pencil className="h-3.5 w-3.5 text-success-fg" /> },
   ] as const;
 
   return (
@@ -1395,7 +1391,7 @@ function QuickPresetsCard({ patchConfig, busy }: { patchConfig: (patch: Record<s
     {
       label: "Locked Down",
       desc: "Maximum security: full sandboxing, no workspace access, exec denied.",
-      icon: <Shield className="h-4 w-4 text-red-400" />,
+      icon: <Shield className="h-4 w-4 text-danger-fg" />,
       color: "red" as const,
       patch: {
         "agents.defaults.sandbox.mode": "all",
@@ -1407,7 +1403,7 @@ function QuickPresetsCard({ patchConfig, busy }: { patchConfig: (patch: Record<s
     {
       label: "Balanced",
       desc: "Recommended: non-main sandboxing, read-only workspace, ask before exec.",
-      icon: <Shield className="h-4 w-4 text-amber-400" />,
+      icon: <Shield className="h-4 w-4 text-warning-fg" />,
       color: "amber" as const,
       patch: {
         "agents.defaults.sandbox.mode": "non-main",
@@ -1419,7 +1415,7 @@ function QuickPresetsCard({ patchConfig, busy }: { patchConfig: (patch: Record<s
     {
       label: "Full Access",
       desc: "No restrictions: sandboxing off, exec allowed. Use with caution.",
-      icon: <ShieldAlert className="h-4 w-4 text-emerald-400" />,
+      icon: <ShieldAlert className="h-4 w-4 text-success-fg" />,
       color: "emerald" as const,
       patch: {
         "agents.defaults.sandbox.mode": "off",
@@ -1439,21 +1435,21 @@ function QuickPresetsCard({ patchConfig, busy }: { patchConfig: (patch: Record<s
             disabled={busy}
             className={cn(
               "glass-glow rounded-lg p-3 text-left disabled:opacity-50",
-              p.color === "red" && "hover:border-red-500/30",
-              p.color === "amber" && "hover:border-amber-500/30",
-              p.color === "emerald" && "hover:border-emerald-500/30",
+              p.color === "red" && "hover:border-danger-border",
+              p.color === "amber" && "hover:border-warning-border",
+              p.color === "emerald" && "hover:border-success-border",
             )}
           >
             <div className="flex items-center gap-2">
               {p.icon}
-              <p className="text-xs font-medium text-foreground/90">{p.label}</p>
+              <p className="text-xs font-medium text-foreground">{p.label}</p>
               {p.label === "Balanced" && (
-                <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-200">
+                <span className="rounded border border-warning-border bg-warning-bg px-1 py-0.5 text-[10px] font-medium text-warning-fg">
                   recommended
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground/60">{p.desc}</p>
+            <p className="mt-1 text-xs text-fg-subtle">{p.desc}</p>
           </button>
         ))}
       </div>
@@ -1471,13 +1467,13 @@ function ToolPolicySummary({ cfgGet, onGoToPermissions }: { cfgGet: (path: strin
     <Panel title="Tool Policy Summary" subtitle="Configured allow/deny lists from your config.">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="glass-subtle rounded-lg p-2.5">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-emerald-700/90 dark:text-emerald-200/90">Allow List ({allowArr.length})</p>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-success-fg">Allow List ({allowArr.length})</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {allowArr.length === 0 ? (
-              <span className="text-xs text-muted-foreground/60">none configured</span>
+              <span className="text-xs text-fg-subtle">none configured</span>
             ) : (
               allowArr.map((t) => (
-                <span key={t} className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-700 dark:text-emerald-100">
+                <span key={t} className="rounded-md border border-success-border bg-success-bg px-1.5 py-0.5 text-xs text-success-fg">
                   {t}
                 </span>
               ))
@@ -1485,13 +1481,13 @@ function ToolPolicySummary({ cfgGet, onGoToPermissions }: { cfgGet: (path: strin
           </div>
         </div>
         <div className="glass-subtle rounded-lg p-2.5">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-700/90 dark:text-zinc-300/90">Deny List ({denyArr.length})</p>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-fg-secondary dark:text-fg-subtle">Deny List ({denyArr.length})</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {denyArr.length === 0 ? (
-              <span className="text-xs text-muted-foreground/60">none configured</span>
+              <span className="text-xs text-fg-subtle">none configured</span>
             ) : (
               denyArr.map((t) => (
-                <span key={t} className="rounded-md border border-zinc-500/25 bg-zinc-500/12 px-1.5 py-0.5 text-xs text-zinc-700 dark:text-zinc-200">
+                <span key={t} className="rounded-md border border-border-strong/25 bg-muted-foreground/12 px-1.5 py-0.5 text-xs text-fg-secondary dark:text-foreground">
                   {t}
                 </span>
               ))
@@ -1502,7 +1498,7 @@ function ToolPolicySummary({ cfgGet, onGoToPermissions }: { cfgGet: (path: strin
       <button
         type="button"
         onClick={onGoToPermissions}
-        className="mt-3 text-xs text-cyan-600 underline hover:text-cyan-500 dark:text-cyan-400"
+        className="mt-3 text-xs text-foreground underline hover:text-foreground"
       >
         Edit detailed permissions in the Permissions tab
       </button>
@@ -1524,8 +1520,8 @@ function RedactionCard({ cfgGet, patchConfig, busy }: CardProps) {
     <Panel title="Logging & Redaction" subtitle="Controls sensitive data redaction in tool output logs.">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-foreground/90">Redact Sensitive Data</p>
-          <p className="mt-0.5 text-xs text-muted-foreground/60">
+          <p className="text-xs font-medium text-foreground">Redact Sensitive Data</p>
+          <p className="mt-0.5 text-xs text-fg-subtle">
             When enabled, tool output is scanned for secrets and API keys before logging.
           </p>
         </div>
@@ -1536,20 +1532,20 @@ function RedactionCard({ cfgGet, patchConfig, busy }: CardProps) {
           className="shrink-0 disabled:opacity-50"
         >
           {isActive ? (
-            <ToggleRight className="h-6 w-6 text-emerald-500" />
+            <ToggleRight className="h-6 w-6 text-success-fg" />
           ) : (
-            <ToggleLeft className="h-6 w-6 text-muted-foreground/40" />
+            <ToggleLeft className="h-6 w-6 text-fg-subtle" />
           )}
         </button>
       </div>
       {patterns.length > 0 && (
         <div className="mt-3 glass-subtle rounded-lg p-2.5">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
+          <p className="text-[10px] font-medium uppercase tracking-widest text-fg-subtle">
             Custom Redaction Patterns ({patterns.length})
           </p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {patterns.map((p, i) => (
-              <code key={`pat-${i}`} className="rounded-md border border-foreground/10 bg-card px-1.5 py-0.5 text-xs text-foreground/80">
+              <code key={`pat-${i}`} className="rounded-md border border-foreground/10 bg-card px-1.5 py-0.5 text-xs text-foreground">
                 {p}
               </code>
             ))}

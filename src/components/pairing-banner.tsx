@@ -181,16 +181,16 @@ export function PairingBanner() {
   if (approved) {
     return (
       <div className="fixed bottom-4 right-4 z-50 w-96 animate-in slide-in-from-bottom-4 fade-in duration-300">
-        <div className="rounded-xl border border-emerald-500/30 bg-card/95 shadow-2xl shadow-emerald-500/10 backdrop-blur-sm">
+        <div className="rounded-xl border border-success-border bg-card/95 shadow-2xl shadow-success-border backdrop-blur-sm">
           <div className="flex items-center gap-3 px-4 py-4">
-            <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/20 text-emerald-400">
+            <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-success-border bg-success-bg text-success-fg">
               <ShieldCheck className="h-5 w-5" />
-              <span className="absolute inset-0 animate-ping rounded-lg border border-emerald-400/40" />
+              <span className="absolute inset-0 animate-ping rounded-lg border border-success-border" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                 Approved
-                <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                <Sparkles className="h-3.5 w-3.5 text-success-fg" />
               </p>
               <p className="text-xs text-muted-foreground">
                 Unlocking your sessions and cron data&hellip;
@@ -204,10 +204,10 @@ export function PairingBanner() {
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-96 max-w-[calc(100vw-2rem)] animate-in slide-in-from-bottom-4 fade-in duration-300">
-      <div className="rounded-xl border border-amber-500/30 bg-card/95 shadow-2xl shadow-amber-500/10 backdrop-blur-sm">
+      <div className="rounded-xl border border-warning-border bg-card/95 shadow-2xl shadow-warning-border backdrop-blur-sm">
         {/* Header */}
         <div className="flex items-start gap-3 px-4 py-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/20 text-amber-400">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-warning-border bg-warning-bg text-warning-fg">
             <ShieldAlert className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
@@ -222,7 +222,7 @@ export function PairingBanner() {
           <button
             type="button"
             onClick={() => setDismissedKey(pendingKey)}
-            className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+            className="shrink-0 rounded-md p-1 text-fg-subtle transition-colors hover:text-muted-foreground"
             aria-label="Dismiss"
           >
             <X className="h-3.5 w-3.5" />
@@ -238,11 +238,11 @@ export function PairingBanner() {
                 className="rounded-lg border border-foreground/10 bg-foreground/5 p-3"
               >
                 <div className="flex items-start gap-2.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-warning-border bg-warning-bg text-warning-fg">
                     <PlatformIcon platform={req.platform} className="h-3.5 w-3.5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <span className="text-xs font-semibold text-foreground/90">
+                    <span className="text-xs font-semibold text-foreground">
                       {req.displayName || req.clientId || "Unknown device"}
                     </span>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -254,13 +254,13 @@ export function PairingBanner() {
                       {(req.requestedScopes || []).map((scope) => (
                         <span
                           key={scope}
-                          className="rounded bg-violet-500/10 px-1.5 py-0.5 font-mono text-[10px] text-violet-400"
+                          className="rounded bg-muted-foreground/10 px-1.5 py-0.5 font-mono text-[10px] text-fg-secondary"
                         >
                           {scope}
                         </span>
                       ))}
                       {req.createdAtMs ? (
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground/60">
+                        <span className="flex items-center gap-1 text-xs text-fg-subtle">
                           <Clock className="h-2.5 w-2.5" />
                           {formatTimeAgo(req.createdAtMs)}
                         </span>
@@ -272,7 +272,7 @@ export function PairingBanner() {
                   type="button"
                   onClick={() => void approve(req.requestId)}
                   disabled={busyId !== null}
-                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-success py-1.5 text-xs font-medium text-white transition-colors hover:bg-success disabled:opacity-50"
                 >
                   {busyId === req.requestId ? (
                     <span className="inline-flex items-center gap-0.5">
@@ -303,7 +303,7 @@ export function PairingBanner() {
 
         {error && (
           <div className="border-t border-border/50 px-4 py-2">
-            <p className="text-[11px] text-red-400">{error}</p>
+            <p className="text-[11px] text-danger-fg">{error}</p>
           </div>
         )}
       </div>

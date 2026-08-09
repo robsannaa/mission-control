@@ -40,11 +40,11 @@ function CopyableCommand({ command }: { command: string }) {
           setTimeout(() => setCopied(false), 1500);
         });
       }}
-      className="flex w-full items-center gap-2 rounded-lg border border-stone-200 dark:border-[#23282e] bg-white dark:bg-[#0d1014] px-3 py-2 text-left font-mono text-[11px] text-stone-600 dark:text-[#a8b0ba] hover:border-stone-300 dark:hover:border-[#343b44] transition-colors"
+      className="flex w-full items-center gap-2 rounded-lg border border-border bg-card dark:bg-sidebar px-3 py-2 text-left font-mono text-[11px] text-fg-secondary dark:text-muted-foreground hover:border-border-strong dark:hover:border-border transition-colors"
     >
       <span className="min-w-0 flex-1 truncate">{command}</span>
       {copied ? (
-        <Check className="h-3 w-3 shrink-0 text-emerald-500" />
+        <Check className="h-3 w-3 shrink-0 text-success-fg" />
       ) : (
         <Copy className="h-3 w-3 shrink-0" />
       )}
@@ -193,21 +193,21 @@ export function StepModel({
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
-          <Key className="h-3.5 w-3.5 text-stone-400 dark:text-[#a8b0ba]" />
-          <h2 className="text-base font-semibold tracking-tight text-stone-900 dark:text-[#f5f7fa]">
+          <Key className="h-3.5 w-3.5 text-fg-subtle dark:text-muted-foreground" />
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
             Connect an AI model
           </h2>
         </div>
-        <p className="text-sm leading-relaxed text-stone-500 dark:text-[#a8b0ba]">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           Paste an API key — no terminal needed. We validate it live and pick a great default model.
         </p>
       </div>
 
       {alreadyConfigured && (
         <div className={cardClass}>
-          <p className="text-xs leading-relaxed text-stone-600 dark:text-[#a8b0ba]">
+          <p className="text-xs leading-relaxed text-fg-secondary dark:text-muted-foreground">
             A model is already configured:{" "}
-            <span className="font-mono text-stone-800 dark:text-[#d6dce3]">
+            <span className="font-mono text-foreground dark:text-fg-secondary">
               {getFriendlyModelName(existingDefault!)}
             </span>
           </p>
@@ -239,20 +239,20 @@ export function StepModel({
               className={cn(
                 "group relative flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3.5 transition-all duration-200",
                 isSelected
-                  ? "border-stone-900 dark:border-stone-200/60 bg-stone-900/[0.04] dark:bg-stone-100/[0.07] shadow-sm"
-                  : "border-stone-200 dark:border-[#23282e] bg-white dark:bg-[#0d1014] hover:border-stone-300 dark:hover:border-[#343b44] hover:-translate-y-px hover:shadow-sm",
+                  ? "border-border-strong dark:border-border/60 bg-foreground/[0.04] dark:bg-muted/[0.07] shadow-sm"
+                  : "border-border bg-card dark:bg-sidebar hover:border-border-strong dark:hover:border-border hover:-translate-y-px hover:shadow-sm",
                 (validating || saving) && "opacity-50 cursor-not-allowed",
               )}
             >
               {isSelected && (
-                <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-success" />
               )}
               <span
                 className={cn(
                   "text-xs font-semibold transition-colors",
                   isSelected
-                    ? "text-stone-900 dark:text-[#f5f7fa]"
-                    : "text-stone-500 dark:text-[#5a6270]",
+                    ? "text-foreground"
+                    : "text-muted-foreground dark:text-fg-subtle",
                 )}
               >
                 {p.label}
@@ -263,13 +263,13 @@ export function StepModel({
       </div>
 
       {activeProvider && (
-        <p className="text-xs leading-relaxed text-stone-500 dark:text-[#a8b0ba]">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {activeProvider.hint}{" "}
           <a
             href={activeProvider.keyUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 underline underline-offset-2 hover:opacity-90"
+            className="inline-flex items-center gap-1 text-foreground underline underline-offset-2 hover:opacity-90"
           >
             Get your key
             <ExternalLink className="h-2.5 w-2.5" />
@@ -311,8 +311,8 @@ export function StepModel({
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-300",
                 validating
-                  ? "bg-stone-100 dark:bg-[#1c2128] text-stone-500 dark:text-[#a8b0ba]"
-                  : "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-200 dark:ring-emerald-500/20",
+                  ? "bg-muted dark:bg-secondary text-muted-foreground"
+                  : "bg-success-bg text-success-fg ring-1 ring-success-border",
               )}
             >
               {validating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
@@ -321,8 +321,8 @@ export function StepModel({
           )}
         </div>
         {error && (
-          <p className="flex items-center gap-1.5 text-xs text-red-500 dark:text-red-400">
-            <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-red-500 dark:bg-red-400" />
+          <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+            <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-danger" />
             {error}
           </p>
         )}
@@ -351,11 +351,11 @@ export function StepModel({
       {/* Advanced: OAuth flows that need a terminal */}
       {activeProvider?.oauthCommand && (
         <details className="group">
-          <summary className="cursor-pointer text-[11px] font-medium uppercase tracking-wide text-stone-400 dark:text-[#5a6270] hover:text-stone-600 dark:hover:text-[#a8b0ba]">
+          <summary className="cursor-pointer text-[11px] font-medium uppercase tracking-wide text-fg-subtle hover:text-fg-secondary dark:hover:text-muted-foreground">
             Advanced: sign in with your {activeProvider.label} subscription
           </summary>
           <div className="mt-2 space-y-2">
-            <p className="text-[11px] leading-relaxed text-stone-500 dark:text-[#5a6270]">
+            <p className="text-[11px] leading-relaxed text-muted-foreground dark:text-fg-subtle">
               OAuth sign-in opens a browser but must be launched from a terminal on the machine
               running OpenClaw. Copy and run:
             </p>

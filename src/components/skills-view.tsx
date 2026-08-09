@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { Switch } from "@/components/ui/switch";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
 
@@ -134,7 +134,7 @@ function getAvailability(skill: Pick<Skill, "eligible" | "missing" | "blockedByA
       state: "blocked",
       label: "Blocked",
       labelShort: "Blocked",
-      badgeClass: "border-red-500/30 bg-red-500/10 text-red-300",
+      badgeClass: "border-danger-border bg-danger-bg text-danger-fg",
     };
   }
   if (skill.eligible) {
@@ -142,7 +142,7 @@ function getAvailability(skill: Pick<Skill, "eligible" | "missing" | "blockedByA
       state: "ready",
       label: "Ready",
       labelShort: "Ready",
-      badgeClass: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+      badgeClass: "border-success-border bg-success-bg text-success-fg",
     };
   }
   if (hasMissing(skill.missing)) {
@@ -150,14 +150,14 @@ function getAvailability(skill: Pick<Skill, "eligible" | "missing" | "blockedByA
       state: "needs-setup",
       label: "Needs setup",
       labelShort: "Setup",
-      badgeClass: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+      badgeClass: "border-warning-border bg-warning-bg text-warning-fg",
     };
   }
   return {
     state: "unavailable",
     label: "Unavailable",
     labelShort: "Unavailable",
-    badgeClass: "border-zinc-500/30 bg-zinc-500/10 text-muted-foreground",
+    badgeClass: "border-border-strong/30 bg-muted-foreground/10 text-muted-foreground",
   };
 }
 
@@ -188,10 +188,10 @@ function sourceLabelShort(source: string, bundled?: boolean): string {
 
 function sourceColor(source: string): string {
   const normalized = (source || "").toLowerCase();
-  if (normalized.includes("bundled")) return "bg-sky-500/10 text-sky-400 border-sky-500/20";
-  if (normalized.includes("workspace")) return "bg-violet-500/10 text-violet-400 border-violet-500/20";
-  if (normalized.includes("managed") || normalized.includes("local")) return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
-  return "bg-zinc-500/10 text-muted-foreground border-zinc-500/20";
+  if (normalized.includes("bundled")) return "bg-info-bg text-info-fg border-info-border";
+  if (normalized.includes("workspace")) return "bg-muted-foreground/10 text-fg-secondary border-border-strong";
+  if (normalized.includes("managed") || normalized.includes("local")) return "bg-info-bg text-info-fg border-info-border";
+  return "bg-muted-foreground/10 text-muted-foreground border-border-strong/20";
 }
 
 function sourceHint(source: string): string {
@@ -223,7 +223,7 @@ function runtimeMessage(skill: Skill, availability: ReturnType<typeof getAvailab
 function ToastBar({ toast, onDone }: { toast: Toast; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 3500); return () => clearTimeout(t); }, [onDone]);
   return (
-    <div className={cn("glass-strong fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg px-4 py-2.5 text-sm font-medium", toast.type === "success" ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-300")}>
+    <div className={cn("glass-strong fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg px-4 py-2.5 text-sm font-medium", toast.type === "success" ? "text-success-fg" : "text-danger-fg")}>
       <div className="flex items-center gap-2">{toast.type === "success" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}{toast.msg}</div>
     </div>
   );
@@ -377,9 +377,9 @@ function InstallTerminal({
         <div className="flex items-center gap-3">
           {/* Traffic lights */}
           <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded-full bg-red-500/80" />
-            <div className="h-3 w-3 rounded-full bg-amber-500/80" />
-            <div className="h-3 w-3 rounded-full bg-emerald-500/80" />
+            <div className="h-3 w-3 rounded-full bg-danger-bg" />
+            <div className="h-3 w-3 rounded-full bg-warning-bg" />
+            <div className="h-3 w-3 rounded-full bg-success-bg" />
           </div>
           <div className="flex items-center gap-2">
             <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
@@ -388,16 +388,16 @@ function InstallTerminal({
             </span>
           </div>
           {running && (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+            <span className="flex items-center gap-1.5 text-xs text-success-fg">
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
               </span>
               Running {formatElapsed(elapsed)}
             </span>
           )}
           {!running && exitCode !== null && (
-            <span className={cn("text-xs font-medium", exitCode === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
+            <span className={cn("text-xs font-medium", exitCode === 0 ? "text-success-fg" : "text-danger-fg")}>
               {exitCode === 0 ? "Done" : `Failed (${exitCode})`} — {formatElapsed(elapsed)}
             </span>
           )}
@@ -407,7 +407,7 @@ function InstallTerminal({
             <button
               type="button"
               onClick={handleAbort}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-red-600 dark:text-red-400 transition hover:bg-red-500/10"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-danger-fg transition hover:bg-danger-bg"
             >
               <CircleStop className="h-3 w-3" />
               Stop
@@ -426,7 +426,7 @@ function InstallTerminal({
       {/* Terminal body */}
       <div
         ref={scrollRef}
-        className="max-h-80 min-h-48 overflow-y-auto bg-muted/30 p-4 font-mono text-xs leading-5 text-foreground/90"
+        className="max-h-80 min-h-48 overflow-y-auto bg-muted/30 p-4 font-mono text-xs leading-5 text-foreground"
       >
         {lines.map((line, i) => (
           <span
@@ -434,7 +434,7 @@ function InstallTerminal({
             className={cn(
               "whitespace-pre-wrap break-all",
               line.stream === "stderr"
-                ? "text-red-600 dark:text-red-400"
+                ? "text-danger-fg"
                 : line.stream === "system"
                   ? "text-foreground font-semibold"
                   : "text-muted-foreground"
@@ -634,7 +634,7 @@ function SkillPlayground({ skillName }: { skillName: string }) {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-200">
+        <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
           {error}
         </div>
       )}
@@ -642,7 +642,7 @@ function SkillPlayground({ skillName }: { skillName: string }) {
       {result && (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300">
+            <span className="rounded border border-success-border bg-success-bg px-1.5 py-0.5 text-success-fg">
               completed
             </span>
             <span>agent: {result.agentId}</span>
@@ -660,8 +660,8 @@ function SkillPlayground({ skillName }: { skillName: string }) {
 /* ── Skill Card (list view) ─────────────────────── */
 
 function skillStatus(skill: Skill): { label: string; color: string; toggleColor: "green" | "amber" | "default" } {
-  if (skill.disabled) return { label: "Off", color: "text-muted-foreground/60", toggleColor: "default" };
-  return { label: "On", color: "text-emerald-400", toggleColor: "green" };
+  if (skill.disabled) return { label: "Off", color: "text-fg-subtle", toggleColor: "default" };
+  return { label: "On", color: "text-success-fg", toggleColor: "green" };
 }
 
 function SkillCard({ skill, onClick, onToggle, toggling }: { skill: Skill; onClick: () => void; onToggle: (enabled: boolean) => void; toggling?: boolean }) {
@@ -681,17 +681,17 @@ function SkillCard({ skill, onClick, onToggle, toggling }: { skill: Skill; onCli
           className="min-w-0 flex-1 text-left cursor-pointer group"
         >
           <div className="flex items-center gap-2">
-            <p className={cn("text-xs font-semibold group-hover:text-foreground", skill.disabled ? "text-foreground/50 line-through" : "text-foreground/90")}>{skill.name}</p>
+            <p className={cn("text-xs font-semibold group-hover:text-foreground", skill.disabled ? "text-fg-secondary line-through" : "text-foreground")}>{skill.name}</p>
             {skill.disabled ? (
-              <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs font-medium text-red-400/80">DISABLED</span>
+              <span className="rounded bg-danger-bg px-1.5 py-0.5 text-xs font-medium text-danger-fg">DISABLED</span>
             ) : availability.state === "ready" ? (
-              <CheckCircle className="h-3 w-3 shrink-0 text-emerald-500" />
+              <CheckCircle className="h-3 w-3 shrink-0 text-success-fg" />
             ) : availability.state === "blocked" ? (
-              <XCircle className="h-3 w-3 shrink-0 text-red-400/80" />
+              <XCircle className="h-3 w-3 shrink-0 text-danger-fg" />
             ) : (
-              <AlertTriangle className="h-3 w-3 shrink-0 text-amber-400/70" />
+              <AlertTriangle className="h-3 w-3 shrink-0 text-warning-fg" />
             )}
-            {skill.always && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-400">ALWAYS</span>}
+            {skill.always && <span className="rounded bg-warning-bg px-1.5 py-0.5 text-xs text-warning-fg">ALWAYS</span>}
           </div>
           <p className="mt-0.5 text-xs leading-snug text-muted-foreground break-words">{skill.description}</p>
           <div className="mt-2 flex flex-nowrap items-center gap-1.5 overflow-hidden">
@@ -721,7 +721,7 @@ function SkillCard({ skill, onClick, onToggle, toggling }: { skill: Skill; onCli
           <span className={cn("text-xs font-medium", status.color)} title="Turn this skill on or off for your agents">
             {status.label}
           </span>
-          <span className="text-xs text-muted-foreground/60">Use</span>
+          <span className="text-xs text-fg-subtle">Use</span>
         </div>
       </div>
     </div>
@@ -797,7 +797,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading skill..." />
+        <ScreenLoadingState label="Loading skill..." />
       </SectionLayout>
     );
   }
@@ -805,7 +805,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
     return (
       <SectionLayout>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <AlertTriangle className="h-5 w-5 text-amber-400" />
+          <AlertTriangle className="h-5 w-5 text-warning-fg" />
           <p className="text-sm font-medium text-foreground">Could not load {name}</p>
           <p className="max-w-md text-xs text-muted-foreground">{detailError}</p>
           <button
@@ -819,7 +819,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
       </SectionLayout>
     );
   }
-  if (!detail) return <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/60">Skill not found</div>;
+  if (!detail) return <div className="flex flex-1 items-center justify-center text-sm text-fg-subtle">Skill not found</div>;
 
   const missing = hasMissing(detail.missing);
   const missingTotal = missingCount(detail.missing);
@@ -837,16 +837,16 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
               <h1 className="text-sm font-semibold text-foreground">{detail.name}</h1>
-              {availability.state === "ready" ? <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-300"><CheckCircle className="h-3 w-3" />Ready</span> : availability.state === "blocked" ? <span className="flex items-center gap-1 rounded-full bg-red-500/20 px-2.5 py-0.5 text-xs font-semibold text-red-300"><XCircle className="h-3 w-3" />Blocked</span> : availability.state === "needs-setup" ? <span className="flex items-center gap-1 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-semibold text-amber-300"><AlertTriangle className="h-3 w-3" />Needs setup</span> : <span className="flex items-center gap-1 rounded-full bg-zinc-500/20 px-2.5 py-0.5 text-xs font-semibold text-muted-foreground"><XCircle className="h-3 w-3" />Unavailable</span>}
-              {detail.disabled && <span className="rounded-full bg-red-500/20 px-2.5 py-0.5 text-xs font-semibold text-red-400">Disabled</span>}
-              {detail.always && <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-semibold text-amber-300">Always active</span>}
+              {availability.state === "ready" ? <span className="flex items-center gap-1 rounded-full bg-success-bg px-2.5 py-0.5 text-xs font-semibold text-success-fg"><CheckCircle className="h-3 w-3" />Ready</span> : availability.state === "blocked" ? <span className="flex items-center gap-1 rounded-full bg-danger-bg px-2.5 py-0.5 text-xs font-semibold text-danger-fg"><XCircle className="h-3 w-3" />Blocked</span> : availability.state === "needs-setup" ? <span className="flex items-center gap-1 rounded-full bg-warning-bg px-2.5 py-0.5 text-xs font-semibold text-warning-fg"><AlertTriangle className="h-3 w-3" />Needs setup</span> : <span className="flex items-center gap-1 rounded-full bg-muted-foreground/20 px-2.5 py-0.5 text-xs font-semibold text-muted-foreground"><XCircle className="h-3 w-3" />Unavailable</span>}
+              {detail.disabled && <span className="rounded-full bg-danger-bg px-2.5 py-0.5 text-xs font-semibold text-danger-fg">Disabled</span>}
+              {detail.always && <span className="rounded-full bg-warning-bg px-2.5 py-0.5 text-xs font-semibold text-warning-fg">Always active</span>}
             </div>
             <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{detail.description}</p>
             <div className="mt-2 flex items-center gap-3 text-xs">
               <span className={cn("rounded border px-1.5 py-0.5 text-xs font-medium", sourceColor(detail.source))}>{sourceLabel(detail.source, detail.bundled)}</span>
               {detail.homepage && <a href={detail.homepage} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-foreground underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"><Globe className="h-3 w-3" />Homepage</a>}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground/70">{sourceHint(detail.source)}</p>
+            <p className="mt-2 text-xs text-muted-foreground">{sourceHint(detail.source)}</p>
           </div>
         </div>
       </div>
@@ -871,10 +871,10 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
                 />
               )}
               <div>
-                <p className={cn("text-xs font-medium", detail.disabled ? "text-muted-foreground" : "text-emerald-400")}>
+                <p className={cn("text-xs font-medium", detail.disabled ? "text-muted-foreground" : "text-success-fg")}>
                   {detail.disabled ? "Off" : "On"}
                 </p>
-                <p className="text-xs text-muted-foreground/60">
+                <p className="text-xs text-fg-subtle">
                   {detail.disabled ? "Agents cannot use this." : "Agents can use this when needed."}
                 </p>
               </div>
@@ -882,14 +882,14 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
           </div>
           <div className="glass-subtle rounded-lg px-4 py-3 min-w-0 flex-1" title="Whether this skill is ready to use right now">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</p>
-            <p className={cn("mt-0.5 text-xs font-medium", availability.state === "ready" ? "text-emerald-400" : availability.state === "blocked" ? "text-red-400" : availability.state === "needs-setup" ? "text-amber-400" : "text-muted-foreground")}>{availability.label}</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">{runtime}</p>
+            <p className={cn("mt-0.5 text-xs font-medium", availability.state === "ready" ? "text-success-fg" : availability.state === "blocked" ? "text-danger-fg" : availability.state === "needs-setup" ? "text-warning-fg" : "text-muted-foreground")}>{availability.label}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{runtime}</p>
           </div>
           {missing && detail.install.length > 0 && (
             <button
               type="button"
               onClick={() => installSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-              className="shrink-0 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors"
+              className="shrink-0 flex items-center gap-2 rounded-lg border border-warning-border bg-warning-bg px-4 py-3 text-xs font-medium text-warning-fg hover:bg-warning-bg transition-colors"
             >
               <Download className="h-4 w-4" />
               Install what’s missing
@@ -913,7 +913,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
                     <p className="text-xs font-medium text-muted-foreground">Tools required</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">{detail.requirements.bins.map((b) => {
                       const isMissing = detail.missing.bins.includes(b);
-                      return (<span key={b} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-mono", isMissing ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400")}>{isMissing ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}{b}</span>);
+                      return (<span key={b} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-mono", isMissing ? "border-danger-border bg-danger-bg text-danger-fg" : "border-success-border bg-success-bg text-success-fg")}>{isMissing ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}{b}</span>);
                     })}</div>
                   </div>
                 </div>
@@ -925,7 +925,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
                     <p className="text-xs font-medium text-muted-foreground">Environment variables (e.g. API keys)</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">{detail.requirements.env.map((e) => {
                       const isMissing = detail.missing.env.includes(e);
-                      return (<span key={e} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-mono", isMissing ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400")}>{isMissing ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}{e}</span>);
+                      return (<span key={e} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-mono", isMissing ? "border-danger-border bg-danger-bg text-danger-fg" : "border-success-border bg-success-bg text-success-fg")}>{isMissing ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}{e}</span>);
                     })}</div>
                   </div>
                 </div>
@@ -937,7 +937,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
                     <p className="text-xs font-medium text-muted-foreground">Settings this skill needs</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">{detail.requirements.config.map((c) => {
                       const isMissing = detail.missing.config.includes(c);
-                      return (<span key={c} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1 text-xs", isMissing ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400")}>{isMissing ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}{c}</span>);
+                      return (<span key={c} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1 text-xs", isMissing ? "border-danger-border bg-danger-bg text-danger-fg" : "border-success-border bg-success-bg text-success-fg")}>{isMissing ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}{c}</span>);
                     })}</div>
                   </div>
                 </div>
@@ -949,7 +949,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
                     <p className="text-xs font-medium text-muted-foreground">Operating system</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">{detail.requirements.os.map((o) => {
                       const isMissing = detail.missing.os.includes(o);
-                      return (<span key={o} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1 text-xs", isMissing ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400")}>{isMissing ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}{o}</span>);
+                      return (<span key={o} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1 text-xs", isMissing ? "border-danger-border bg-danger-bg text-danger-fg" : "border-success-border bg-success-bg text-success-fg")}>{isMissing ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}{o}</span>);
                     })}</div>
                   </div>
                 </div>
@@ -960,13 +960,13 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
 
         {/* Install options */}
         {missing && detail.install.length > 0 && (
-          <div ref={installSectionRef} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
-            <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300"><Download className="h-3.5 w-3.5" />Install what’s missing</h3>
-            <p className="text-xs text-amber-800/90 dark:text-amber-200/90">This skill needs the following to work. Click Install to add them (when available).</p>
+          <div ref={installSectionRef} className="rounded-lg border border-warning-border bg-warning-bg p-4 space-y-3">
+            <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-warning-fg"><Download className="h-3.5 w-3.5" />Install what’s missing</h3>
+            <p className="text-xs text-warning-fg">This skill needs the following to work. Click Install to add them (when available).</p>
             <div className="space-y-2">{detail.install.map((inst) => (
                 <div key={inst.id} className="glass-subtle flex items-center justify-between rounded-lg px-4 py-3">
                   <div>
-                    <p className="text-xs font-medium text-foreground/90">{inst.label}</p>
+                    <p className="text-xs font-medium text-foreground">{inst.label}</p>
                     <p className="text-xs text-muted-foreground">{inst.kind}{inst.bins ? " \u2022 installs " + inst.bins.join(", ") : ""}</p>
                   </div>
                   <button
@@ -1003,8 +1003,8 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
 
         {/* All good */}
         {!missing && detail.eligible && (
-          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4">
-            <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"><CheckCircle className="h-4 w-4" />All requirements met — this skill is active and available to your agents.</p>
+          <div className="rounded-lg border border-success-border bg-success-bg p-4">
+            <p className="flex items-center gap-2 text-sm font-medium text-success-fg"><CheckCircle className="h-4 w-4" />All requirements met — this skill is active and available to your agents.</p>
           </div>
         )}
 
@@ -1381,24 +1381,24 @@ function ClawHubPanel({
         </div>
       )}
       {clawhubNotFound && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200">
+        <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-sm text-warning-fg">
           <div className="flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
               <p className="font-medium">ClawHub is not available for this service</p>
-            <p className="text-xs mt-0.5 text-amber-700 dark:text-amber-300">
-                Catalog actions are disabled until the <code className="font-mono bg-amber-500/20 px-1 rounded">clawhub</code> binary is installed for the same OS user that runs Mission Control.
+            <p className="text-xs mt-0.5 text-warning-fg">
+                Catalog actions are disabled until the <code className="font-mono bg-warning-bg px-1 rounded">clawhub</code> binary is installed for the same OS user that runs Mission Control.
             </p>
           </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <code className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 font-mono text-xs text-amber-700 dark:text-amber-200">
+            <code className="rounded border border-warning-border bg-warning-bg px-2 py-1 font-mono text-xs text-warning-fg">
               {CLAWHUB_INSTALL_CMD}
             </code>
             <button
               type="button"
               onClick={() => void handleCopyInstallCommand()}
-              className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-200"
+              className="inline-flex items-center gap-1 rounded-md border border-warning-border bg-warning-bg px-2 py-1 text-xs font-medium text-warning-fg transition-colors hover:bg-warning-bg"
             >
               <Copy className="h-3 w-3" />
               {copiedInstallCmd ? "Copied" : "Copy"}
@@ -1409,13 +1409,13 @@ function ClawHubPanel({
                 void fetchInstalled();
                 void fetchExplore();
               }}
-              className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-200"
+              className="inline-flex items-center gap-1 rounded-md border border-warning-border bg-warning-bg px-2 py-1 text-xs font-medium text-warning-fg transition-colors hover:bg-warning-bg"
             >
               <RefreshCw className="h-3 w-3" />
               Retry
             </button>
           </div>
-          <p className="mt-2 text-xs text-amber-700/90 dark:text-amber-300">
+          <p className="mt-2 text-xs text-warning-fg">
             After installing, restart Mission Control and click Retry.
           </p>
         </div>
@@ -1455,7 +1455,7 @@ function ClawHubPanel({
       </div>
 
       {error && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
+        <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning-fg">
           {error}
         </div>
       )}
@@ -1499,14 +1499,14 @@ function ClawHubPanel({
                         {item.summary || item.slug}
                       </p>
                     </div>
-                    <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-xs font-medium leading-none", isInstalled ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-border text-muted-foreground")}>
+                    <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-xs font-medium leading-none", isInstalled ? "border-success-border bg-success-bg text-success-fg" : "border-border text-muted-foreground")}>
                       {isInstalled ? installedVersion : `v${item.version || "latest"}`}
                     </span>
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     {viewFilter === "all" && typeof item.stars === "number" && (
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <Star className="h-3 w-3 fill-amber-500/80 text-amber-500/80 shrink-0" />
+                        <Star className="h-3 w-3 fill-warning text-warning-fg shrink-0" />
                         {item.stars}
                       </span>
                     )}
@@ -1516,13 +1516,13 @@ function ClawHubPanel({
                           type="button"
                           disabled={isBusy}
                           onClick={() => void updateSkill(item.slug)}
-                          className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+                          className="rounded-md border border-warning-border bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning-fg hover:bg-warning-bg disabled:opacity-50"
                         >
                           {isBusy && busyAction === "update" ? "…" : "Update"}
                         </button>
                       )}
                       {isInstalled && (
-                        <button type="button" disabled={isBusy} onClick={() => void uninstallSkill(item.slug)} className="rounded-md border border-border bg-card px-2 py-0.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:opacity-50">
+                        <button type="button" disabled={isBusy} onClick={() => void uninstallSkill(item.slug)} className="rounded-md border border-border bg-card px-2 py-0.5 text-xs text-danger-fg hover:bg-danger-bg disabled:opacity-50">
                           Delete
                         </button>
                       )}
@@ -1730,7 +1730,7 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading skills..." size="lg" />
+        <ScreenLoadingState label="Loading skills..." size="lg" />
       </SectionLayout>
     );
   }
@@ -1780,8 +1780,8 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
           {summary && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <SumCard value={summary.total} label="Total" color="text-foreground" />
-              <SumCard value={summary.eligible} label="Ready" color="text-emerald-600 dark:text-emerald-400" border="border-emerald-500/20" bg="bg-emerald-500/5" title="On and ready for agents to use" />
-              <SumCard value={workspaceCount} label="Installed" color="text-violet-600 dark:text-violet-400" border="border-violet-500/20" bg="bg-violet-500/5" title="Installed in this project (e.g. from ClawHub)" />
+              <SumCard value={summary.eligible} label="Ready" color="text-success-fg" border="border-success-border" bg="bg-success-bg" title="On and ready for agents to use" />
+              <SumCard value={workspaceCount} label="Installed" color="text-muted-foreground dark:text-fg-secondary" border="border-border-strong" bg="bg-muted-foreground/5" title="Installed in this project (e.g. from ClawHub)" />
               <SumCard value={summary.disabled} label="Off" color="text-muted-foreground" border="border-border" bg="bg-muted/30" title="Turned off" />
             </div>
           )}

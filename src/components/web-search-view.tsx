@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 
 /* ── Types ──────────────────────────────────────── */
 
@@ -86,7 +86,7 @@ function ProviderCard({
       className={cn(
         "rounded-xl border p-3.5 transition-all",
         isActive
-          ? "border-emerald-500/30 bg-emerald-500/5"
+          ? "border-success-border bg-success-bg"
           : configured
             ? "border-foreground/10 bg-foreground/5"
             : "border-foreground/5 bg-foreground/5 opacity-60"
@@ -97,9 +97,9 @@ function ProviderCard({
           {icon}
           <div>
             <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold text-foreground/90">{name}</p>
+              <p className="text-xs font-semibold text-foreground">{name}</p>
               {isActive && (
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-success-fg">
                   Active
                 </span>
               )}
@@ -108,25 +108,25 @@ function ProviderCard({
           </div>
         </div>
         {configured ? (
-          <CheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+          <CheckCircle className="h-4 w-4 shrink-0 text-success-fg" />
         ) : (
-          <XCircle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+          <XCircle className="h-4 w-4 shrink-0 text-fg-subtle" />
         )}
       </div>
       <div className="mt-2.5 rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-2">
         <div className="flex items-center justify-between gap-2">
           <code className="text-xs font-medium text-muted-foreground">{envKey}</code>
           {configured ? (
-            <span className="text-xs text-muted-foreground/70">{keySource}</span>
+            <span className="text-xs text-muted-foreground">{keySource}</span>
           ) : (
-            <span className="text-xs text-red-400/80">Not set</span>
+            <span className="text-xs text-danger-fg">Not set</span>
           )}
         </div>
         {configured && keyPreview && (
-          <p className="mt-1 font-mono text-xs text-foreground/60">{keyPreview}</p>
+          <p className="mt-1 font-mono text-xs text-fg-secondary">{keyPreview}</p>
         )}
         {!configured && (
-          <p className="mt-1 text-xs text-muted-foreground/50">
+          <p className="mt-1 text-xs text-fg-subtle">
             Set via <code className="text-xs">openclaw.json</code> config, env block, or system environment
           </p>
         )}
@@ -137,7 +137,7 @@ function ProviderCard({
             type="button"
             onClick={onActivate}
             disabled={Boolean(activating)}
-            className="inline-flex items-center gap-1 rounded-md border border-foreground/10 bg-foreground/5 px-2.5 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-foreground/10 disabled:opacity-60"
+            className="inline-flex items-center gap-1 rounded-md border border-foreground/10 bg-foreground/5 px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-foreground/10 disabled:opacity-60"
           >
             {activating ? (
               <span className="inline-flex items-center gap-0.5">
@@ -246,11 +246,11 @@ function SearchPlayground({
   return (
     <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-xs font-semibold text-foreground/90">
-          <Search className="h-4 w-4 text-cyan-400" />
+        <h3 className="flex items-center gap-2 text-xs font-semibold text-foreground">
+          <Search className="h-4 w-4 text-info-fg" />
           Search Playground
         </h3>
-        <span className="rounded border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-xs font-medium text-cyan-300">
+        <span className="rounded border border-info-border bg-info-bg px-2 py-0.5 text-xs font-medium text-info-fg">
           Browser test runner
         </span>
       </div>
@@ -260,7 +260,7 @@ function SearchPlayground({
       </p>
 
       {disabled && (
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+        <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning-fg">
           <div className="flex items-center gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             No search provider configured. Set an API key above to enable web search.
@@ -270,12 +270,12 @@ function SearchPlayground({
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <label className="space-y-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/75">Agent</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agent</span>
           <select
             value={agentId}
             onChange={(e) => setAgentId(e.target.value)}
             disabled={running || disabled}
-            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-2 text-xs text-foreground/90 outline-none transition-colors focus:border-cyan-500/40 disabled:opacity-50"
+            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-2 text-xs text-foreground outline-none transition-colors focus:border-info-border disabled:opacity-50"
           >
             {agents.map((agent) => (
               <option key={agent.id} value={agent.id}>
@@ -286,24 +286,24 @@ function SearchPlayground({
         </label>
 
         <label className="space-y-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/75">Search query</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Search query</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !running && !disabled && query.trim()) void runSearch(); }}
             placeholder="e.g. latest Next.js 16 features"
             disabled={running || disabled}
-            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground/90 outline-none transition-colors focus:border-cyan-500/40 disabled:opacity-50"
+            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground outline-none transition-colors focus:border-info-border disabled:opacity-50"
           />
         </label>
 
         <label className="space-y-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/75">Results</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Results</span>
           <select
             value={resultCount}
             onChange={(e) => setResultCount(Number(e.target.value))}
             disabled={running || disabled}
-            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-2 text-xs text-foreground/90 outline-none transition-colors focus:border-cyan-500/40 disabled:opacity-50"
+            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-2 text-xs text-foreground outline-none transition-colors focus:border-info-border disabled:opacity-50"
           >
             {[3, 5, 7, 10].map((n) => (
               <option key={n} value={n}>{n}</option>
@@ -314,9 +314,9 @@ function SearchPlayground({
 
       {/* Command preview */}
       <div className="rounded-lg border border-foreground/10 bg-foreground/5 p-2.5">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground/70">Command preview</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Command preview</p>
         <div className="mt-1 flex items-start gap-2">
-          <code className="min-w-0 flex-1 break-all rounded bg-foreground/5 px-2 py-1 text-xs text-foreground/80">
+          <code className="min-w-0 flex-1 break-all rounded bg-foreground/5 px-2 py-1 text-xs text-foreground">
             {commandPreview}
           </code>
           <button
@@ -335,7 +335,7 @@ function SearchPlayground({
           type="button"
           onClick={() => void runSearch()}
           disabled={running || disabled || !query.trim()}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/88 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
         >
           {running ? (
                 <span className="inline-flex items-center gap-0.5">
@@ -349,22 +349,22 @@ function SearchPlayground({
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
           {error}
         </div>
       )}
 
       {result && (
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground/80">
-            <span className="rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded border border-success-border bg-success-bg px-1.5 py-0.5 text-success-fg">
               completed
             </span>
             <span>provider: {activeProvider}</span>
             <span>agent: {result.agentId}</span>
             <span>duration: {(result.durationMs / 1000).toFixed(1)}s</span>
           </div>
-          <pre className="max-h-96 overflow-auto rounded-lg border border-foreground/10 bg-zinc-950 p-3 text-xs leading-relaxed text-cyan-100 whitespace-pre-wrap wrap-break-word">
+          <pre className="max-h-96 overflow-auto rounded-lg border border-foreground/10 bg-surface-inset p-3 text-xs leading-relaxed text-info-fg whitespace-pre-wrap wrap-break-word">
             {result.output || "(no output)"}
           </pre>
         </div>
@@ -502,7 +502,7 @@ export function WebSearchView() {
       <SectionHeader
         title={
           <span className="inline-flex items-center gap-2">
-            <Search className="h-5 w-5 text-stone-700 dark:text-[#f5f7fa]" />
+            <Search className="h-5 w-5 text-fg-secondary dark:text-foreground" />
             Web Search
           </span>
         }
@@ -512,7 +512,7 @@ export function WebSearchView() {
           <button
             type="button"
             onClick={() => void load()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#c7d0d9] dark:hover:bg-[#1e2227] dark:hover:text-[#f5f7fa]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-card"
           >
             {loading ? (
                 <span className="inline-flex items-center gap-0.5">
@@ -530,9 +530,9 @@ export function WebSearchView() {
 
       <SectionBody width="wide" padding="regular" innerClassName="space-y-4">
         {loading && !status ? (
-          <LoadingState label="Loading search config..." />
+          <ScreenLoadingState label="Loading search config..." />
         ) : error && !status ? (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+          <div className="rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
             {error}
           </div>
         ) : status ? (
@@ -542,26 +542,26 @@ export function WebSearchView() {
               <div className={cn(
                 "rounded-lg border px-2.5 py-1.5",
                 anyConfigured
-                  ? "border-emerald-500/15 bg-emerald-500/5"
-                  : "border-red-500/15 bg-red-500/5"
+                  ? "border-success-border bg-success-bg"
+                  : "border-danger-border bg-danger-bg"
               )}>
-                <p className={cn("text-xs font-semibold leading-tight", anyConfigured ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
+                <p className={cn("text-xs font-semibold leading-tight", anyConfigured ? "text-success-fg" : "text-danger-fg")}>
                   {status.activeProvider === "none" ? "None" : status.activeProvider === "perplexity" ? "Perplexity" : "Brave"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">Active provider</p>
               </div>
               <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-1.5">
-                <p className="text-xs font-semibold leading-tight text-foreground/80">
+                <p className="text-xs font-semibold leading-tight text-foreground">
                   {activeModel?.label || status.model}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">Model</p>
               </div>
               <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-1.5">
-                <p className="text-xs font-semibold leading-tight text-foreground/80">{status.cacheTtlMinutes}m</p>
+                <p className="text-xs font-semibold leading-tight text-foreground">{status.cacheTtlMinutes}m</p>
                 <p className="text-xs text-muted-foreground mt-0.5">Cache TTL</p>
               </div>
               <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-1.5">
-                <p className="text-xs font-semibold leading-tight text-foreground/80">
+                <p className="text-xs font-semibold leading-tight text-foreground">
                   {[status.providers.perplexity.configured, status.providers.openrouter.configured, status.providers.brave.configured].filter(Boolean).length}/3
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">Keys configured</p>
@@ -570,11 +570,11 @@ export function WebSearchView() {
 
             {/* Provider cards */}
             <div>
-              <h2 className="text-xs font-semibold text-foreground/80 mb-2">Search Providers</h2>
+              <h2 className="text-xs font-semibold text-foreground mb-2">Search Providers</h2>
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                 <ProviderCard
                   name="Perplexity (Direct)"
-                  icon={<Zap className="h-5 w-5 text-violet-400" />}
+                  icon={<Zap className="h-5 w-5 text-fg-secondary" />}
                   description="AI-synthesized answers with citations from real-time web search"
                   configured={status.providers.perplexity.configured}
                   keySource={status.providers.perplexity.keySource}
@@ -592,7 +592,7 @@ export function WebSearchView() {
                 />
                 <ProviderCard
                   name="OpenRouter"
-                  icon={<Globe className="h-5 w-5 text-sky-400" />}
+                  icon={<Globe className="h-5 w-5 text-info-fg" />}
                   description="Access Perplexity models via OpenRouter (alternative billing)"
                   configured={status.providers.openrouter.configured}
                   keySource={status.providers.openrouter.keySource}
@@ -602,7 +602,7 @@ export function WebSearchView() {
                 />
                 <ProviderCard
                   name="Brave Search"
-                  icon={<Shield className="h-5 w-5 text-orange-400" />}
+                  icon={<Shield className="h-5 w-5 text-warning-fg" />}
                   description="Structured search results (default fallback provider)"
                   configured={status.providers.brave.configured}
                   keySource={status.providers.brave.keySource}
@@ -622,7 +622,7 @@ export function WebSearchView() {
             </div>
 
             <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-2">
-              <h3 className="text-xs font-semibold text-foreground/80">Quick setup: Brave (recommended fallback)</h3>
+              <h3 className="text-xs font-semibold text-foreground">Quick setup: Brave (recommended fallback)</h3>
               <p className="text-xs text-muted-foreground">
                 Paste a Brave API key to save it in <code className="text-xs">openclaw.json</code> and make Brave the default search provider.
               </p>
@@ -633,7 +633,7 @@ export function WebSearchView() {
                   onChange={(e) => setBraveApiKeyDraft(e.target.value)}
                   placeholder="BSA... (Brave API key)"
                   disabled={savingBraveKey || loading}
-                  className="min-w-0 flex-1 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground/90 outline-none transition-colors focus:border-cyan-500/40 disabled:opacity-60"
+                  className="min-w-0 flex-1 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground outline-none transition-colors focus:border-info-border disabled:opacity-60"
                 />
                 <button
                   type="button"
@@ -641,7 +641,7 @@ export function WebSearchView() {
                     void saveBraveKey();
                   }}
                   disabled={savingBraveKey || loading}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-orange-500 disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/88 disabled:opacity-60"
                 >
                   {savingBraveKey ? "Saving..." : "Save key + Use Brave"}
                 </button>
@@ -653,8 +653,8 @@ export function WebSearchView() {
                 className={cn(
                   "rounded-xl border p-3 text-xs",
                   configMessage.type === "success"
-                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                    : "border-red-500/20 bg-red-500/10 text-red-300"
+                    ? "border-success-border bg-success-bg text-success-fg"
+                    : "border-danger-border bg-danger-bg text-danger-fg"
                 )}
               >
                 {configMessage.text}
@@ -664,15 +664,15 @@ export function WebSearchView() {
             {/* Model selector (perplexity only) */}
             {status.activeProvider === "perplexity" && (
               <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-2">
-                <h3 className="text-xs font-semibold text-foreground/80">Perplexity Models</h3>
+                <h3 className="text-xs font-semibold text-foreground">Perplexity Models</h3>
                 <p className="text-xs text-muted-foreground">
                   Select a model below. Currently using{" "}
-                  <code className="rounded bg-foreground/10 px-1 text-foreground/70">{status.model}</code>.
+                  <code className="rounded bg-foreground/10 px-1 text-fg-secondary">{status.model}</code>.
                   {switchingModel && (
                     <span className="ml-1.5 inline-flex items-center gap-0.5">
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
+                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
                     </span>
                   )}
                 </p>
@@ -688,21 +688,21 @@ export function WebSearchView() {
                         className={cn(
                           "rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           isSelected
-                            ? "border-violet-500/30 bg-violet-500/10"
-                            : "border-foreground/5 bg-foreground/5 hover:border-violet-500/20 hover:bg-violet-500/5 cursor-pointer",
+                            ? "border-border-strong bg-muted-foreground/10"
+                            : "border-foreground/5 bg-foreground/5 hover:border-border-strong hover:bg-muted-foreground/5 cursor-pointer",
                           switchingModel && !isSelected && "opacity-50"
                         )}
                       >
                         <div className="flex items-center gap-1.5">
-                          <p className={cn("text-xs font-medium", isSelected ? "text-violet-300" : "text-foreground/70")}>
+                          <p className={cn("text-xs font-medium", isSelected ? "text-fg-secondary" : "text-fg-secondary")}>
                             {m.label}
                           </p>
                           {isSelected && (
-                            <CheckCircle className="h-3 w-3 text-violet-400" />
+                            <CheckCircle className="h-3 w-3 text-fg-secondary" />
                           )}
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground">{m.description}</p>
-                        <code className="mt-1 block text-xs text-muted-foreground/60">{m.id}</code>
+                        <code className="mt-1 block text-xs text-fg-subtle">{m.id}</code>
                       </button>
                     );
                   })}
@@ -712,14 +712,14 @@ export function WebSearchView() {
 
             {/* No provider warning */}
             {!anyConfigured && (
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <div className="rounded-xl border border-warning-border bg-warning-bg p-4">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-warning-fg mt-0.5" />
                   <div>
-                    <p className="text-xs font-semibold text-amber-300">No search provider configured</p>
+                    <p className="text-xs font-semibold text-warning-fg">No search provider configured</p>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       To enable web search, set at least one API key. Go to{" "}
-                      <Link href="/accounts" className="text-cyan-400 hover:underline">Keys & Access</Link>{" "}
+                      <Link href="/accounts" className="text-foreground hover:underline">Keys & Access</Link>{" "}
                       to add <code className="text-xs">PERPLEXITY_API_KEY</code>, <code className="text-xs">OPENROUTER_API_KEY</code>,
                       or <code className="text-xs">BRAVE_API_KEY</code>.
                     </p>
@@ -728,7 +728,7 @@ export function WebSearchView() {
                         href="https://docs.openclaw.ai/tools/web#setting-up-perplexity-search"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-cyan-400 hover:underline"
+                        className="inline-flex items-center gap-1 text-foreground hover:underline"
                       >
                         <ExternalLink className="h-3 w-3" />
                         Setup guide
@@ -747,7 +747,7 @@ export function WebSearchView() {
 
             {/* Docs link */}
             <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4">
-              <h3 className="text-xs font-semibold text-foreground/80">Documentation</h3>
+              <h3 className="text-xs font-semibold text-foreground">Documentation</h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 For full setup instructions, supported parameters (query, country, language, freshness filters), and
                 configuration details:
@@ -756,7 +756,7 @@ export function WebSearchView() {
                 href="https://docs.openclaw.ai/tools/web#setting-up-perplexity-search"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-cyan-400 transition-colors hover:bg-foreground/10"
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-info-fg transition-colors hover:bg-foreground/10"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 OpenClaw Web Search Docs

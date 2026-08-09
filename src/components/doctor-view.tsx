@@ -150,7 +150,7 @@ function ConfirmDialog({
       <div
         className={cn(
           "w-full max-w-md rounded-lg border bg-card p-5 shadow-xl",
-          confirm.serious ? "border-red-500/40" : "border-border"
+          confirm.serious ? "border-danger-border" : "border-border"
         )}
       >
         <h3 className="text-sm font-semibold text-foreground">{confirm.title}</h3>
@@ -158,14 +158,14 @@ function ConfirmDialog({
 
         {confirm.serious && (
           <div className="mt-4">
-            <label className="block text-xs font-medium text-red-400 mb-1.5">
+            <label className="block text-xs font-medium text-danger-fg mb-1.5">
               Type CONFIRM to proceed
             </label>
             <input
               type="text"
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
-              className="w-full rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500/50"
+              className="w-full rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-danger-border"
               placeholder="CONFIRM"
               autoFocus
             />
@@ -187,7 +187,7 @@ function ConfirmDialog({
             className={cn(
               "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
               confirm.serious
-                ? "bg-red-500/90 text-white hover:bg-red-500 disabled:hover:bg-red-500/90"
+                ? "bg-danger-bg text-white hover:bg-danger disabled:hover:bg-danger-bg"
                 : "bg-primary text-primary-foreground hover:bg-primary/90"
             )}
           >
@@ -226,10 +226,10 @@ function HealthBanner({
 
   const scoreColor =
     status.healthScore >= 80
-      ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+      ? "text-success-fg border-success-border bg-success-bg"
       : status.healthScore >= 40
-        ? "text-amber-400 border-amber-500/30 bg-amber-500/10"
-        : "text-red-400 border-red-500/30 bg-red-500/10";
+        ? "text-warning-fg border-warning-border bg-warning-bg"
+        : "text-danger-fg border-danger-border bg-danger-bg";
 
   const statusText =
     status.overallHealth === "healthy"
@@ -252,24 +252,24 @@ function HealthBanner({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground">{statusText}</p>
           {status.lastRunAt && (
-            <p className="mt-0.5 text-xs text-muted-foreground/60">
+            <p className="mt-0.5 text-xs text-fg-subtle">
               Last checked {relativeTime(status.lastRunAt)}
             </p>
           )}
           <div className="mt-2 flex flex-wrap gap-2">
             {status.summary.errors > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-400">
+              <span className="inline-flex items-center gap-1 rounded-full bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger-fg">
                 <AlertCircle className="h-3 w-3" />
                 {status.summary.errors} error{status.summary.errors !== 1 ? "s" : ""}
               </span>
             )}
             {status.summary.warnings > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400">
+              <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning-fg">
                 <AlertTriangle className="h-3 w-3" />
                 {status.summary.warnings} warning{status.summary.warnings !== 1 ? "s" : ""}
               </span>
             )}
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-400">
+            <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success-fg">
               <CheckCircle className="h-3 w-3" />
               {status.summary.healthy} healthy
             </span>
@@ -293,10 +293,10 @@ function IssueCard({
 }) {
   const cfg =
     issue.severity === "error"
-      ? { icon: AlertCircle, border: "border-red-500/20", bg: "bg-red-500/5", iconColor: "text-red-400" }
+      ? { icon: AlertCircle, border: "border-danger-border", bg: "bg-danger-bg", iconColor: "text-danger-fg" }
       : issue.severity === "warning"
-        ? { icon: AlertTriangle, border: "border-amber-500/20", bg: "bg-amber-500/5", iconColor: "text-amber-400" }
-        : { icon: Info, border: "border-blue-500/20", bg: "bg-blue-500/5", iconColor: "text-blue-400" };
+        ? { icon: AlertTriangle, border: "border-warning-border", bg: "bg-warning-bg", iconColor: "text-warning-fg" }
+        : { icon: Info, border: "border-info-border", bg: "bg-info-bg", iconColor: "text-info-fg" };
 
   const Icon = cfg.icon;
 
@@ -306,14 +306,14 @@ function IssueCard({
         <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", cfg.iconColor)} />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-foreground">{issue.title}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground/70 leading-relaxed">{issue.detail}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{issue.detail}</p>
         </div>
         {issue.fixable && issue.fixMode && (
           <button
             type="button"
             onClick={() => onFix(issue.fixMode === "restart" ? "restart-gateway" : issue.fixMode!)}
             disabled={running}
-            className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/[0.08] disabled:opacity-50"
+            className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.08] disabled:opacity-50"
           >
             Fix this
             <ArrowRight className="h-3 w-3" />
@@ -341,9 +341,9 @@ function IssueCards({
   if (actionableIssues.length === 0) {
     return (
       <div className="glass-subtle rounded-lg p-6 text-center">
-        <CheckCircle className="mx-auto h-8 w-8 text-emerald-400/80" />
-        <p className="mt-2 text-sm font-medium text-foreground/90">Everything looks good!</p>
-        <p className="mt-0.5 text-xs text-muted-foreground/60">No issues detected in your system.</p>
+        <CheckCircle className="mx-auto h-8 w-8 text-success-fg" />
+        <p className="mt-2 text-sm font-medium text-foreground">Everything looks good!</p>
+        <p className="mt-0.5 text-xs text-fg-subtle">No issues detected in your system.</p>
       </div>
     );
   }
@@ -354,7 +354,7 @@ function IssueCards({
     <div className="space-y-4">
       {Array.from(grouped.entries()).map(([category, catIssues]) => (
         <div key={category}>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
             {category}
           </h3>
           <div className="space-y-2">
@@ -411,23 +411,23 @@ function StreamingOutputPanel({
           {running ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
           ) : exitCode === 0 ? (
-            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+            <CheckCircle className="h-3.5 w-3.5 text-success-fg" />
           ) : exitCode !== null ? (
-            <AlertCircle className="h-3.5 w-3.5 text-red-400" />
+            <AlertCircle className="h-3.5 w-3.5 text-danger-fg" />
           ) : null}
-          <span className="text-xs font-medium text-foreground/90">
+          <span className="text-xs font-medium text-foreground">
             {running ? "Running..." : exitCode !== null ? (exitCode === 0 ? "Completed" : `Exited (${exitCode})`) : "Output"}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs tabular-nums text-muted-foreground/60">
+          <span className="text-xs tabular-nums text-fg-subtle">
             {formatDuration(elapsed)}
           </span>
           {running && (
             <button
               type="button"
               onClick={onCancel}
-              className="inline-flex items-center gap-1 rounded border border-red-500/20 bg-red-500/5 px-2 py-1 text-xs text-red-400 transition-colors hover:bg-red-500/10"
+              className="inline-flex items-center gap-1 rounded border border-danger-border bg-danger-bg px-2 py-1 text-xs text-danger-fg transition-colors hover:bg-danger-bg"
             >
               <X className="h-3 w-3" />
               Cancel
@@ -445,14 +445,14 @@ function StreamingOutputPanel({
             key={idx}
             className={cn(
               "whitespace-pre-wrap break-all",
-              line.type === "stderr" ? "text-red-400/90" : "text-foreground/80"
+              line.type === "stderr" ? "text-danger-fg" : "text-foreground"
             )}
           >
             {line.text}
           </div>
         ))}
         {lines.length === 0 && (
-          <div className="text-muted-foreground/40">Waiting for output...</div>
+          <div className="text-fg-subtle">Waiting for output...</div>
         )}
       </div>
     </div>
@@ -482,7 +482,7 @@ function RunHistory({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 py-2 text-left text-xs font-medium text-muted-foreground/80 transition-colors hover:text-foreground"
+        className="flex w-full items-center gap-2 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         {expanded ? (
           <ChevronDown className="h-3.5 w-3.5" />
@@ -506,13 +506,13 @@ function RunHistory({
                   onClick={() => setExpandedRun(isExpanded ? null : run.id)}
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-foreground/[0.04]"
                 >
-                  <span className="text-xs tabular-nums text-muted-foreground/60 w-32 shrink-0">
+                  <span className="text-xs tabular-nums text-fg-subtle w-32 shrink-0">
                     {formatDate(run.completedAt, timeFormat)}
                   </span>
-                  <span className="inline-flex items-center rounded bg-foreground/[0.06] px-1.5 py-0.5 text-xs font-medium text-foreground/70">
+                  <span className="inline-flex items-center rounded bg-foreground/[0.06] px-1.5 py-0.5 text-xs font-medium text-fg-secondary">
                     {MODE_LABELS[run.mode] || run.mode}
                   </span>
-                  <span className="text-xs tabular-nums text-muted-foreground/50">
+                  <span className="text-xs tabular-nums text-fg-subtle">
                     {formatDuration(run.durationMs)}
                   </span>
                   <span className="flex-1" />
@@ -520,11 +520,11 @@ function RunHistory({
                     className={cn(
                       "inline-flex items-center gap-1 text-xs font-medium",
                       passed
-                        ? "text-emerald-400"
+                        ? "text-success-fg"
                         : run.exitCode !== 0
-                          ? "text-red-400"
+                          ? "text-danger-fg"
                           : hasIssues
-                            ? "text-amber-400"
+                            ? "text-warning-fg"
                             : "text-muted-foreground"
                     )}
                   >
@@ -532,20 +532,20 @@ function RunHistory({
                       className={cn(
                         "h-1.5 w-1.5 rounded-full",
                         passed
-                          ? "bg-emerald-400"
+                          ? "bg-success"
                           : run.exitCode !== 0
-                            ? "bg-red-400"
+                            ? "bg-danger"
                             : hasIssues
-                              ? "bg-amber-400"
+                              ? "bg-warning"
                               : "bg-muted-foreground"
                       )}
                     />
                     {passed ? "Passed" : run.exitCode !== 0 ? "Failed" : "Issues found"}
                   </span>
                   {isExpanded ? (
-                    <ChevronDown className="h-3 w-3 text-muted-foreground/40" />
+                    <ChevronDown className="h-3 w-3 text-fg-subtle" />
                   ) : (
-                    <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
+                    <ChevronRight className="h-3 w-3 text-fg-subtle" />
                   )}
                 </button>
 
@@ -553,13 +553,13 @@ function RunHistory({
                   <div className="ml-3 mt-1 mb-2 space-y-2 border-l-2 border-border/40 pl-4">
                     <div className="flex flex-wrap gap-2">
                       {run.summary.errors > 0 && (
-                        <span className="text-xs text-red-400">{run.summary.errors} errors</span>
+                        <span className="text-xs text-danger-fg">{run.summary.errors} errors</span>
                       )}
                       {run.summary.warnings > 0 && (
-                        <span className="text-xs text-amber-400">{run.summary.warnings} warnings</span>
+                        <span className="text-xs text-warning-fg">{run.summary.warnings} warnings</span>
                       )}
                       {run.summary.healthy > 0 && (
-                        <span className="text-xs text-emerald-400">{run.summary.healthy} healthy</span>
+                        <span className="text-xs text-success-fg">{run.summary.healthy} healthy</span>
                       )}
                     </div>
                     {run.issues.filter((i) => i.severity !== "info").length > 0 && (
@@ -573,11 +573,11 @@ function RunHistory({
                               className="flex items-start gap-2 text-xs"
                             >
                               {issue.severity === "error" ? (
-                                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-red-400" />
+                                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-danger-fg" />
                               ) : (
-                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
+                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning-fg" />
                               )}
-                              <span className="text-muted-foreground/80">{issue.title}</span>
+                              <span className="text-muted-foreground">{issue.title}</span>
                             </div>
                           ))}
                       </div>
@@ -591,7 +591,7 @@ function RunHistory({
             <button
               type="button"
               onClick={onLoadMore}
-              className="w-full rounded-lg py-2 text-center text-xs text-muted-foreground/60 transition-colors hover:bg-foreground/[0.04] hover:text-muted-foreground"
+              className="w-full rounded-lg py-2 text-center text-xs text-fg-subtle transition-colors hover:bg-foreground/[0.04] hover:text-muted-foreground"
             >
               Load more...
             </button>
@@ -633,7 +633,7 @@ function ActionBar({
   }, [showMore]);
 
   const btnClass =
-    "inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 py-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/[0.08] disabled:opacity-50";
+    "inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.08] disabled:opacity-50";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -685,9 +685,9 @@ function ActionBar({
                 setShowMore(false);
                 onRun("repair-force", true);
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:bg-foreground/[0.06]"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-foreground/[0.06]"
             >
-              <Zap className="h-3.5 w-3.5 text-red-400" />
+              <Zap className="h-3.5 w-3.5 text-danger-fg" />
               Advanced Repair
             </button>
             <button
@@ -696,9 +696,9 @@ function ActionBar({
                 setShowMore(false);
                 onRun("generate-token", true);
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:bg-foreground/[0.06]"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-foreground/[0.06]"
             >
-              <KeyRound className="h-3.5 w-3.5 text-amber-400" />
+              <KeyRound className="h-3.5 w-3.5 text-warning-fg" />
               Generate Security Token
             </button>
             <button
@@ -707,9 +707,9 @@ function ActionBar({
                 setShowMore(false);
                 onRun("restart-gateway", true);
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:bg-foreground/[0.06]"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-foreground/[0.06]"
             >
-              <RefreshCw className="h-3.5 w-3.5 text-blue-400" />
+              <RefreshCw className="h-3.5 w-3.5 text-info-fg" />
               Restart Gateway
             </button>
           </div>
@@ -961,7 +961,7 @@ export function DoctorView() {
             type="button"
             onClick={() => void fetchStatus()}
             disabled={statusLoading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-foreground/[0.08] disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-foreground/[0.08] disabled:opacity-60"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", statusLoading && "animate-spin")} />
             Refresh

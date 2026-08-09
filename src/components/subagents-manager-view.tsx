@@ -537,16 +537,16 @@ export function SubagentsManagerView({
           steer, send, kill, plus direct agent-send.
         </p>
         <a
-          className="mt-2 inline-block text-xs text-violet-300 hover:text-violet-200"
+          className="mt-2 inline-block text-xs text-fg-secondary hover:text-fg-secondary"
           href="https://docs.openclaw.ai/tools/subagents#sub-agents"
           target="_blank"
           rel="noreferrer"
         >
           Subagents docs
         </a>
-        <span className="mx-2 text-xs text-muted-foreground/60">•</span>
+        <span className="mx-2 text-xs text-fg-subtle">•</span>
         <a
-          className="inline-block text-xs text-violet-300 hover:text-violet-200"
+          className="inline-block text-xs text-fg-secondary hover:text-fg-secondary"
           href="https://docs.openclaw.ai/tools/agent-send"
           target="_blank"
           rel="noreferrer"
@@ -939,7 +939,7 @@ export function SubagentsManagerView({
           </div>
         )}
         {action === "spawn" && spawnableAgentIds.length === 0 && (
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+          <div className="rounded-md border border-warning-border bg-warning-bg p-2 text-xs text-warning-fg">
             Control agent <code>{activeAgentId}</code> has no allowed subagents. Configure
             <span className="mx-1 font-medium">allowAgents</span>
             above before spawning.
@@ -1086,7 +1086,7 @@ export function SubagentsManagerView({
               })
             }
             disabled={running}
-            className="inline-flex items-center gap-1 rounded-md border border-red-500/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-md border border-danger-border px-3 py-1.5 text-xs text-danger-fg hover:bg-danger-bg disabled:opacity-50"
           >
             <Square className="h-3.5 w-3.5" /> Kill all
           </button>
@@ -1131,7 +1131,7 @@ export function SubagentsManagerView({
                       </button>
                       <button
                         type="button"
-                        className="rounded border border-red-500/40 px-2 py-0.5 text-red-300 hover:bg-red-500/10"
+                        className="rounded border border-danger-border px-2 py-0.5 text-danger-fg hover:bg-danger-bg"
                         onClick={() => void executeCommand({ action: "kill", target: id })}
                       >
                         kill
@@ -1161,8 +1161,8 @@ export function SubagentsManagerView({
           <Send className="h-4 w-4" /> Last command output
         </div>
         {lastRun?.spawnAccepted?.childSessionKey && (
-          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-200">
-            <p className="font-medium text-emerald-100">Spawn accepted</p>
+          <div className="rounded-md border border-success-border bg-success-bg p-2 text-xs text-success-fg">
+            <p className="font-medium text-success-fg">Spawn accepted</p>
             <p>
               childSessionKey: <code>{lastRun.spawnAccepted.childSessionKey}</code>
             </p>
@@ -1188,12 +1188,12 @@ export function SubagentsManagerView({
       </div>
 
       {error && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+        <div className="rounded-md border border-danger-border bg-danger-bg p-3 text-xs text-danger-fg">
           {error}
         </div>
       )}
       {notice && (
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+        <div className="rounded-md border border-success-border bg-success-bg p-3 text-xs text-success-fg">
           {notice}
         </div>
       )}

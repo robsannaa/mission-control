@@ -16,7 +16,7 @@ const baseComponents = {
   ),
   h2: ({ children, ...props }: React.ComponentPropsWithoutRef<"h2">) => (
     <h2
-      className="mb-2 mt-5 text-xs font-semibold text-violet-300 first:mt-0"
+      className="mb-2 mt-5 text-xs font-semibold text-fg-secondary first:mt-0"
       {...props}
     >
       {children}
@@ -24,7 +24,7 @@ const baseComponents = {
   ),
   h3: ({ children, ...props }: React.ComponentPropsWithoutRef<"h3">) => (
     <h3
-      className="mb-2 mt-4 text-sm font-semibold text-foreground/90 first:mt-0"
+      className="mb-2 mt-4 text-sm font-semibold text-foreground first:mt-0"
       {...props}
     >
       {children}
@@ -32,7 +32,7 @@ const baseComponents = {
   ),
   h4: ({ children, ...props }: React.ComponentPropsWithoutRef<"h4">) => (
     <h4
-      className="mb-1.5 mt-3 text-sm font-medium text-foreground/70 first:mt-0"
+      className="mb-1.5 mt-3 text-sm font-medium text-fg-secondary first:mt-0"
       {...props}
     >
       {children}
@@ -68,18 +68,18 @@ const baseComponents = {
     <hr className="my-4 border-foreground/10" {...props} />
   ),
   strong: ({ children, ...props }: React.ComponentPropsWithoutRef<"strong">) => (
-    <strong className="font-semibold text-foreground/90" {...props}>
+    <strong className="font-semibold text-foreground" {...props}>
       {children}
     </strong>
   ),
   em: ({ children, ...props }: React.ComponentPropsWithoutRef<"em">) => (
-    <em className="italic text-foreground/70" {...props}>
+    <em className="italic text-fg-secondary" {...props}>
       {children}
     </em>
   ),
   code: ({ children, ...props }: React.ComponentPropsWithoutRef<"code">) => (
     <code
-      className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground/70"
+      className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-fg-secondary"
       {...props}
     >
       {children}
@@ -87,7 +87,7 @@ const baseComponents = {
   ),
   pre: ({ children, ...props }: React.ComponentPropsWithoutRef<"pre">) => (
     <pre
-      className="my-3 overflow-x-auto rounded-lg bg-muted/80 p-4 text-sm text-foreground/70"
+      className="my-3 overflow-x-auto rounded-lg bg-muted/80 p-4 text-sm text-fg-secondary"
       {...props}
     >
       {children}
@@ -98,7 +98,7 @@ const baseComponents = {
     ...props
   }: React.ComponentPropsWithoutRef<"blockquote">) => (
     <blockquote
-      className="my-2 border-l-2 border-violet-500/40 pl-4 italic text-muted-foreground"
+      className="my-2 border-l-2 border-border-strong pl-4 italic text-muted-foreground"
       {...props}
     >
       {children}
@@ -111,7 +111,7 @@ const baseComponents = {
   }: React.ComponentPropsWithoutRef<"a">) => (
     <a
       href={href}
-      className="text-violet-400 hover:underline"
+      className="text-fg-secondary hover:underline"
       target="_blank"
       rel="noopener noreferrer"
       {...props}
@@ -131,7 +131,7 @@ const baseComponents = {
   ),
   th: ({ children, ...props }: React.ComponentPropsWithoutRef<"th">) => (
     <th
-      className="border border-foreground/10 bg-muted/60 px-3 py-2 text-left text-sm font-medium text-foreground/90"
+      className="border border-foreground/10 bg-muted/60 px-3 py-2 text-left text-sm font-medium text-foreground"
       {...props}
     >
       {children}
@@ -159,7 +159,7 @@ export function MarkdownContent({
   const source = typeof content === "string" ? content : "";
   if (!source.trim()) {
     return (
-      <p className={cn("text-sm italic text-muted-foreground/60", className)}>
+      <p className={cn("text-sm italic text-fg-subtle", className)}>
         No content
       </p>
     );

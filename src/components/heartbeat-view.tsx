@@ -10,7 +10,7 @@ export function HeartbeatView() {
       <SectionHeader
         title={
           <span className="flex items-center gap-2 text-xs">
-            <Heart className="h-4 w-4 text-rose-400" />
+            <Heart className="h-4 w-4 text-danger-fg" />
             Heartbeat
           </span>
         }

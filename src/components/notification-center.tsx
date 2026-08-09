@@ -375,24 +375,24 @@ export function NotificationCenter() {
         data-notification-bell
         onClick={handleOpen}
         className={cn(
-          "relative flex h-9 w-9 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#a8b0ba] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]",
-          open && "bg-stone-100 text-stone-700 dark:bg-[#20252a] dark:text-[#f5f7fa]",
+          "relative flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary dark:hover:bg-secondary dark:hover:text-foreground",
+          open && "bg-muted text-fg-secondary dark:bg-secondary dark:text-foreground",
         )}
         aria-label="Notifications"
       >
         {muted ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-lg">
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white shadow-lg">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-2xl dark:border-[#2c343d] dark:bg-[#171a1d] animate-in slide-in-from-top-1 fade-in duration-150">
+        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-in slide-in-from-top-1 fade-in duration-150">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3 dark:border-[#2c343d]">
-            <p className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <p className="text-sm font-semibold text-foreground">
               Notifications
             </p>
             <div className="flex items-center gap-1">
@@ -400,7 +400,7 @@ export function NotificationCenter() {
                 <button
                   type="button"
                   onClick={markAllRead}
-                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:text-[#8d98a5] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary dark:hover:bg-secondary dark:hover:text-foreground"
                 >
                   <CheckCheck className="h-3 w-3" />
                   Mark read
@@ -414,8 +414,8 @@ export function NotificationCenter() {
                 className={cn(
                   "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
                   muted
-                    ? "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10"
-                    : "text-stone-500 hover:bg-stone-100 hover:text-stone-700 dark:text-[#8d98a5] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]",
+                    ? "text-warning-fg hover:bg-warning-bg"
+                    : "text-muted-foreground hover:bg-muted hover:text-fg-secondary dark:hover:bg-secondary dark:hover:text-foreground",
                 )}
               >
                 {muted ? <BellOff className="h-3 w-3" /> : <Bell className="h-3 w-3" />}
@@ -428,8 +428,8 @@ export function NotificationCenter() {
           <div className="max-h-80 overflow-y-auto overscroll-contain" role="list" aria-label="Alert notifications" aria-live="polite">
             {displayItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                <Bell className="h-5 w-5 text-stone-300 dark:text-[#4a5260]" />
-                <p className="text-xs text-stone-500 dark:text-[#8d98a5]">
+                <Bell className="h-5 w-5 text-fg-subtle" />
+                <p className="text-xs text-muted-foreground">
                   No alerts — everything looks good
                 </p>
               </div>
@@ -445,41 +445,41 @@ export function NotificationCenter() {
                       type="button"
                       onClick={() => handleItemClick(item)}
                       className={cn(
-                        "flex w-full gap-3 border-b border-stone-100 px-4 py-3 pr-9 text-left transition-colors last:border-b-0 hover:bg-stone-50 dark:border-[#1e2228] dark:hover:bg-[#1a1f25]",
-                        !item.read && "bg-stone-50 dark:bg-[#151920]",
+                        "flex w-full gap-3 border-b border-border px-4 py-3 pr-9 text-left transition-colors last:border-b-0 hover:bg-muted dark:hover:bg-card",
+                        !item.read && "bg-muted",
                       )}
                     >
                       <div
                         className={cn(
                           "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
                           item.status === "error"
-                            ? "bg-red-100 dark:bg-red-500/10"
+                            ? "bg-danger-bg"
                             : item.status === "warning"
-                              ? "bg-amber-100 dark:bg-amber-500/10"
+                              ? "bg-warning-bg"
                               : item.status === "success"
-                                ? "bg-emerald-100 dark:bg-emerald-500/10"
-                                : "bg-stone-100 dark:bg-[#20252a]",
+                                ? "bg-success-bg"
+                                : "bg-muted dark:bg-secondary",
                         )}
                       >
                         <Icon
                           className={cn(
                             "h-3 w-3",
                             item.status === "error"
-                              ? "text-red-500 dark:text-red-400"
+                              ? "text-danger-fg"
                               : item.status === "warning"
-                                ? "text-amber-500 dark:text-amber-400"
+                                ? "text-warning-fg"
                                 : item.status === "success"
-                                  ? "text-emerald-500 dark:text-emerald-400"
-                                  : "text-stone-400 dark:text-[#8d98a5]",
+                                  ? "text-success-fg"
+                                  : "text-fg-subtle dark:text-muted-foreground",
                           )}
                         />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-stone-900 dark:text-[#f5f7fa]">
+                        <p className="truncate text-xs font-medium text-foreground">
                           {item.title}
                         </p>
                         {item.detail && (
-                          <p className="mt-0.5 truncate text-xs text-stone-500 dark:text-[#8d98a5]">
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
                             {item.detail}
                           </p>
                         )}
@@ -495,7 +495,7 @@ export function NotificationCenter() {
                                   action.callback();
                                   notificationStore.markRead(item.id);
                                 }}
-                                className="rounded bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-200 dark:bg-[#20252a] dark:text-[#c8d0da] dark:hover:bg-[#2a2f36]"
+                                className="rounded bg-muted px-2 py-0.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-secondary dark:bg-secondary"
                               >
                                 {action.label}
                               </button>
@@ -503,10 +503,10 @@ export function NotificationCenter() {
                           </div>
                         )}
                         <div className="mt-1 flex items-center gap-2">
-                          <p className="text-xs text-stone-400 dark:text-[#7a8591]">
+                          <p className="text-xs text-fg-subtle">
                             {timeAgo(item.timestamp)}
                           </p>
-                          <span className="text-xs text-stone-300 dark:text-[#4a5260]">
+                          <span className="text-xs text-fg-subtle">
                             {TYPE_ROUTE[item.type]?.slice(1) || item.type}
                           </span>
                         </div>
@@ -517,7 +517,7 @@ export function NotificationCenter() {
                       onClick={(e) => dismissItem(item, e)}
                       aria-label="Dismiss notification"
                       title="Dismiss"
-                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-stone-400 opacity-0 transition-opacity hover:bg-stone-200 hover:text-stone-700 focus:opacity-100 group-hover:opacity-100 dark:text-[#7a8591] dark:hover:bg-[#2a2f36] dark:hover:text-[#f5f7fa]"
+                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-fg-subtle opacity-0 transition-opacity hover:bg-secondary hover:text-fg-secondary focus:opacity-100 group-hover:opacity-100 dark:hover:text-foreground"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>

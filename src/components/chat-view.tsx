@@ -177,7 +177,7 @@ const chatMarkdownComponents: React.ComponentProps<
     }
     return (
       <code
-        className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-xs text-stone-700 dark:bg-stone-800 dark:text-stone-200"
+        className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-fg-secondary"
         {...props}
       >
         {children}
@@ -194,7 +194,7 @@ const chatMarkdownComponents: React.ComponentProps<
   ),
   blockquote: ({ children, ...props }) => (
     <blockquote
-      className="my-2 border-l-2 border-emerald-300 pl-3 text-xs italic opacity-90 dark:border-emerald-500/40"
+      className="my-2 border-l-2 border-success-border pl-3 text-xs italic opacity-90"
       {...props}
     >
       {children}
@@ -205,7 +205,7 @@ const chatMarkdownComponents: React.ComponentProps<
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-emerald-700 underline decoration-emerald-300/70 hover:text-emerald-600 dark:text-emerald-300 dark:decoration-emerald-500/40 dark:hover:text-emerald-200"
+      className="text-foreground underline decoration-border-strong hover:text-foreground"
       {...props}
     >
       {children}
@@ -355,27 +355,27 @@ function ToolCallBlock({ segment }: { segment: ToolCallSegment | AgentSegment })
       >
         <ChevronRight
           className={cn(
-            "h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform",
+            "h-3 w-3 shrink-0 text-fg-subtle transition-transform",
             open && "rotate-90"
           )}
         />
         {isAgent ? (
-          <Users className="h-3 w-3 shrink-0 text-violet-400" />
+          <Users className="h-3 w-3 shrink-0 text-fg-secondary" />
         ) : (
-          <Wrench className="h-3 w-3 shrink-0 text-amber-400" />
+          <Wrench className="h-3 w-3 shrink-0 text-warning-fg" />
         )}
-        <span className="flex-1 truncate font-medium text-foreground/70">
+        <span className="flex-1 truncate font-medium text-fg-secondary">
           {label}
         </span>
         {isDone ? (
-          <Check className="h-3 w-3 shrink-0 text-emerald-400" />
+          <Check className="h-3 w-3 shrink-0 text-success-fg" />
         ) : (
-          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground/50" />
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-fg-subtle" />
         )}
       </button>
       {open && args && (
         <div className="border-t border-foreground/5 px-3 py-2">
-          <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all text-[10px] leading-relaxed text-muted-foreground/60">
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all text-[10px] leading-relaxed text-fg-subtle">
             {tryFormatJson(args)}
           </pre>
         </div>
@@ -696,7 +696,7 @@ function ChatPanel({
                 {emoji}
               </div>
               <div className="text-center">
-                <h3 className="text-xs font-semibold text-foreground/90">
+                <h3 className="text-xs font-semibold text-foreground">
                   Chat with {agentName}
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -726,7 +726,7 @@ function ChatPanel({
                       onClearPostOnboarding();
                       void sendWithActiveModel({ text: prompt });
                     }}
-                    className="rounded-lg border border-foreground/10 bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground/70"
+                    className="rounded-lg border border-foreground/10 bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary"
                   >
                     {prompt}
                   </button>
@@ -774,8 +774,8 @@ function ChatPanel({
                     className={cn(
                       "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs",
                       isUser
-                        ? "bg-muted/80 text-foreground/70"
-                        : "border border-violet-500/30 bg-violet-500/10"
+                        ? "bg-muted/80 text-fg-secondary"
+                        : "border border-border-strong bg-muted-foreground/10"
                     )}
                   >
                     {isUser ? (
@@ -793,7 +793,7 @@ function ChatPanel({
                       "max-w-md rounded-xl px-4 py-3 text-xs",
                       isUser
                         ? "bg-accent text-foreground"
-                        : "bg-muted/80 text-foreground/70"
+                        : "bg-muted/80 text-fg-secondary"
                     )}
                   >
                     {text ? <MessageContent text={text} /> : null}
@@ -827,8 +827,8 @@ function ChatPanel({
                       className={cn(
                         "mt-2 text-xs",
                         isUser
-                          ? "text-right text-stone-400 dark:text-stone-500"
-                          : "text-muted-foreground/60"
+                          ? "text-right text-fg-subtle dark:text-muted-foreground"
+                          : "text-fg-subtle"
                       )}
                     >
                       {formatTime(
@@ -885,90 +885,90 @@ function ChatPanel({
                   </a>
                 </div>
               ) : /avoid sending your message with a different model|switch this chat back to the agent setup|could not use .* because the OpenClaw gateway/i.test(error.message) ? (
-                <div className="mb-6 rounded-lg border border-violet-500/20 bg-violet-500/5 px-4 py-3">
+                <div className="mb-6 rounded-lg border border-border-strong bg-muted-foreground/5 px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-violet-500">
+                    <span className="text-xs font-medium text-muted-foreground">
                       Your selected chat model was protected
                     </span>
                     <button
                       type="button"
                       onClick={retryLastUserMessage}
-                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-violet-500 transition-colors hover:bg-violet-500/10"
+                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted-foreground/10"
                     >
                       <RefreshCw className="h-3 w-3" />
                       Try again
                     </button>
                   </div>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-violet-500/80">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
                     Mission Control stopped the request instead of sending it with the wrong model.
                     You can try again, or switch this chat back to the agent setup below.
                   </p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-violet-500/60">
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                     {error.message}
                   </p>
                 </div>
               ) : /timeout|timed out|ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(error.message) ? (
                 /* Connection / network error */
-                <div className="mb-6 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+                <div className="mb-6 rounded-lg border border-warning-border bg-warning-bg px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-amber-400">
+                    <span className="text-xs font-medium text-warning-fg">
                       Connection problem
                     </span>
                     <button
                       type="button"
                       onClick={retryLastUserMessage}
-                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-amber-400 transition-colors hover:bg-amber-500/10"
+                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-warning-fg transition-colors hover:bg-warning-bg"
                     >
                       <RefreshCw className="h-3 w-3" />
                       Try again
                     </button>
                   </div>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-amber-400/70">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-warning-fg">
                     Could not reach the AI provider. Check that your internet connection is
                     working and that the OpenClaw gateway is online (green dot in the sidebar).
                   </p>
                 </div>
               ) : /rate.?limit|429|quota|exceeded|billing/i.test(error.message) ? (
                 /* Rate limit / quota error */
-                <div className="mb-6 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+                <div className="mb-6 rounded-lg border border-warning-border bg-warning-bg px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-amber-400">
+                    <span className="text-xs font-medium text-warning-fg">
                       Usage limit reached
                     </span>
                     <button
                       type="button"
                       onClick={retryLastUserMessage}
-                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-amber-400 transition-colors hover:bg-amber-500/10"
+                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-warning-fg transition-colors hover:bg-warning-bg"
                     >
                       <RefreshCw className="h-3 w-3" />
                       Try again
                     </button>
                   </div>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-amber-400/70">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-warning-fg">
                     Your AI provider says you&apos;ve hit a usage or billing limit. Wait a minute
                     and try again, or check your plan&apos;s dashboard to add credits.
                   </p>
                 </div>
               ) : (
                 /* Generic error — still helpful */
-                <div className="mb-6 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
+                <div className="mb-6 rounded-lg border border-danger-border bg-danger-bg px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-red-400">
+                    <span className="text-xs font-medium text-danger-fg">
                       Something went wrong
                     </span>
                     <button
                       type="button"
                       onClick={retryLastUserMessage}
-                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-red-400 transition-colors hover:bg-red-500/10"
+                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-danger-fg transition-colors hover:bg-danger-bg"
                     >
                       <RefreshCw className="h-3 w-3" />
                       Try again
                     </button>
                   </div>
-                  <p className="mt-1 text-xs text-red-400/70">
+                  <p className="mt-1 text-xs text-danger-fg">
                     {error.message}
                   </p>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-red-400/50">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-danger-fg">
                     If this keeps happening, try switching models (brain icon below),
                     or visit the Doctor page from the sidebar to run a system check.
                   </p>
@@ -985,7 +985,7 @@ function ChatPanel({
       <div
         className={cn(
           "shrink-0 border-t border-foreground/10 bg-card/60 px-4 py-3 transition-colors",
-          isDraggingOver && "bg-violet-500/10 border-violet-500/20"
+          isDraggingOver && "bg-muted-foreground/10 border-border-strong"
         )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1000,14 +1000,14 @@ function ChatPanel({
                   key={`${f.name}-${i}`}
                   className="inline-flex items-center gap-1 rounded-md border border-foreground/10 bg-muted/60 px-2 py-1 text-xs"
                 >
-                  <Paperclip className="h-3 w-3 text-muted-foreground/60" />
+                  <Paperclip className="h-3 w-3 text-fg-subtle" />
                   <span className="max-w-32 truncate">{f.name}</span>
                   <button
                     type="button"
                     onClick={() =>
                       setAttachedFiles((prev) => prev.filter((_, j) => j !== i))
                     }
-                    className="rounded p-0.5 text-muted-foreground/40 hover:bg-muted hover:text-foreground"
+                    className="rounded p-0.5 text-fg-subtle hover:bg-muted hover:text-foreground"
                     aria-label="Remove file"
                   >
                     <X className="h-3 w-3" />
@@ -1028,7 +1028,7 @@ function ChatPanel({
           />
           {/* Input row: textarea with inline actions */}
           <div className="flex min-w-0 items-end gap-2 sm:gap-3">
-            <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-foreground/10 bg-card focus-within:border-violet-500/30 focus-within:ring-1 focus-within:ring-violet-500/20">
+            <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-foreground/10 bg-card focus-within:border-border-strong focus-within:ring-1 focus-within:ring-border-strong">
               <textarea
                 ref={inputRef}
                 value={inputValue}
@@ -1037,7 +1037,7 @@ function ChatPanel({
                 placeholder={noApiKeys ? "Add an API key to start chatting..." : `Message ${agentName}...`}
                 rows={1}
                 disabled={isLoading || noApiKeys}
-                className="max-h-48 flex-1 resize-none bg-transparent px-3 pt-2.5 pb-1 text-xs text-foreground/90 outline-none placeholder:text-muted-foreground/60 disabled:opacity-50 sm:px-4"
+                className="max-h-48 flex-1 resize-none bg-transparent px-3 pt-2.5 pb-1 text-xs text-foreground outline-none placeholder:text-fg-subtle disabled:opacity-50 sm:px-4"
               />
               {/* Inline toolbar */}
               <div className="flex items-center gap-1 px-2 pb-1.5 sm:px-3">
@@ -1045,7 +1045,7 @@ function ChatPanel({
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   title="Attach files"
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-muted hover:text-foreground/70"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary"
                 >
                   <Paperclip className="h-3.5 w-3.5" />
                 </button>
@@ -1054,7 +1054,7 @@ function ChatPanel({
                     type="button"
                     onClick={clearChat}
                     title="Clear conversation"
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-muted hover:text-foreground/70"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -1070,7 +1070,7 @@ function ChatPanel({
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
                 (inputValue.trim() || attachedFiles.length > 0) && !isLoading && !noApiKeys
                   ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-muted text-muted-foreground/60"
+                  : "bg-muted text-fg-subtle"
               )}
             >
               {isLoading ? (
@@ -1085,7 +1085,7 @@ function ChatPanel({
             </button>
           </div>
         </div>
-        <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-muted-foreground/40">
+        <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-fg-subtle">
           Press Enter to send, Shift+Enter for a new line. You can also attach files.
         </p>
       </div>
@@ -1251,10 +1251,10 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* ── Top bar ─────────────── */}
-      <div className="shrink-0 border-b border-stone-200 bg-stone-50 px-4 py-3 md:px-6 dark:border-stone-700 dark:bg-stone-900">
+      <div className="shrink-0 border-b border-border bg-muted px-4 py-3 md:px-6">
         <div className="flex items-center gap-2.5">
           <span className="text-sm">{currentAgent?.emoji || "🤖"}</span>
-          <span className="text-sm font-medium text-stone-700 dark:text-stone-200">
+          <span className="text-sm font-medium text-fg-secondary dark:text-foreground">
             {currentAgentTitle}
           </span>
           {showSecondaryModelLabel && (
@@ -1279,7 +1279,7 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
               🤖
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-foreground/90">
+              <h3 className="text-sm font-semibold text-foreground">
                 Getting your agent ready
                 <TypingDots size="sm" className="ml-1 text-muted-foreground" />
               </h3>
@@ -1295,7 +1295,7 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
               🤖
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-foreground/90">
+              <h3 className="text-sm font-semibold text-foreground">
                 Your agent isn&apos;t available yet
               </h3>
               <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-muted-foreground">
@@ -1305,7 +1305,7 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
             <button
               type="button"
               onClick={fetchBootstrap}
-              className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground/70"
+              className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary"
             >
               <RefreshCw className="h-3 w-3" />
               Refresh
@@ -1318,7 +1318,7 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
               🤖
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-foreground/90">
+              <h3 className="text-sm font-semibold text-foreground">
                 No agents found
               </h3>
               <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-muted-foreground">
@@ -1330,14 +1330,14 @@ export function ChatView({ isVisible = true }: { isVisible?: boolean }) {
               <button
                 type="button"
                 onClick={fetchBootstrap}
-                className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground/70"
+                className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary"
               >
                 <RefreshCw className="h-3 w-3" />
                 Refresh
               </button>
               <a
                 href="/doctor"
-                className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground/70"
+                className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-muted/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary"
               >
                 <Cpu className="h-3 w-3" />
                 Run Doctor

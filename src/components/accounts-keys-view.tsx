@@ -196,8 +196,8 @@ function statusPill(ok: boolean, label: string) {
     <span
       className={
         ok
-          ? "inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300"
-          : "inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-300"
+          ? "inline-flex items-center gap-1 rounded-full border border-success-border bg-success-bg px-2 py-1 text-xs text-success-fg"
+          : "inline-flex items-center gap-1 rounded-full border border-danger-border bg-danger-bg px-2 py-1 text-xs text-danger-fg"
       }
     >
       {ok ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldX className="h-3.5 w-3.5" />}
@@ -245,22 +245,22 @@ type SecretsActionResponse = {
 
 const SEVERITY_STYLES: Record<string, { bg: string; text: string; border: string; icon: React.ReactNode }> = {
   warn: {
-    bg: "bg-amber-500/10",
-    text: "text-amber-300",
-    border: "border-amber-500/20",
-    icon: <ShieldAlert className="h-3.5 w-3.5 text-amber-400" />,
+    bg: "bg-warning-bg",
+    text: "text-warning-fg",
+    border: "border-warning-border",
+    icon: <ShieldAlert className="h-3.5 w-3.5 text-warning-fg" />,
   },
   error: {
-    bg: "bg-red-500/10",
-    text: "text-red-300",
-    border: "border-red-500/20",
-    icon: <FileWarning className="h-3.5 w-3.5 text-red-400" />,
+    bg: "bg-danger-bg",
+    text: "text-danger-fg",
+    border: "border-danger-border",
+    icon: <FileWarning className="h-3.5 w-3.5 text-danger-fg" />,
   },
   info: {
-    bg: "bg-blue-500/10",
-    text: "text-blue-300",
-    border: "border-blue-500/20",
-    icon: <Shield className="h-3.5 w-3.5 text-blue-400" />,
+    bg: "bg-info-bg",
+    text: "text-info-fg",
+    border: "border-info-border",
+    icon: <Shield className="h-3.5 w-3.5 text-info-fg" />,
   },
 };
 
@@ -387,33 +387,33 @@ function SecretsPanel() {
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"
       >
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10">
-          <Shield className="h-4 w-4 text-violet-400" />
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted-foreground/10">
+          <Shield className="h-4 w-4 text-fg-secondary" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h2 className="text-xs font-semibold text-foreground">Secrets Management</h2>
             {audit && !loading && (
               isClean ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400">
+                <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-xs text-success-fg">
                   <CheckCircle className="h-2.5 w-2.5" /> Clean
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-400">
+                <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-xs text-warning-fg">
                   <ShieldAlert className="h-2.5 w-2.5" /> {totalFindings} finding{totalFindings !== 1 ? "s" : ""}
                 </span>
               )
             )}
-            {loading && <InlineSpinner size="sm" className="text-muted-foreground/50" />}
+            {loading && <InlineSpinner size="sm" className="text-fg-subtle" />}
           </div>
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-xs text-fg-subtle">
             Audit, configure SecretRefs, and reload runtime secrets
           </p>
         </div>
         {expanded ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+          <ChevronUp className="h-4 w-4 text-fg-subtle shrink-0" />
         ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+          <ChevronDown className="h-4 w-4 text-fg-subtle shrink-0" />
         )}
       </button>
 
@@ -421,30 +421,30 @@ function SecretsPanel() {
         <div className="border-t border-foreground/10 px-4 py-4 space-y-4">
           {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+            <div className="flex items-center gap-2 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               {error}
             </div>
           )}
           {configureCommand && (
-            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-300">
+            <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning-fg">
               <p className="leading-relaxed">
                 Configure requires an interactive terminal in this environment. Run:
                 {" "}
-                <code className="text-amber-200">{configureCommand}</code>
+                <code className="text-warning-fg">{configureCommand}</code>
               </p>
             </div>
           )}
 
           {/* Config/Reload success */}
           {configResult && (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-400">
+            <div className="flex items-center gap-2 rounded-lg border border-success-border bg-success-bg px-3 py-2 text-xs text-success-fg">
               <CheckCircle className="h-3.5 w-3.5 shrink-0" />
               {configResult}
             </div>
           )}
           {reloadResult && (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-400">
+            <div className="flex items-center gap-2 rounded-lg border border-success-border bg-success-bg px-3 py-2 text-xs text-success-fg">
               <CheckCircle className="h-3.5 w-3.5 shrink-0" />
               {reloadResult}
             </div>
@@ -454,26 +454,26 @@ function SecretsPanel() {
           {audit && (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2">
-                <p className="text-xs text-muted-foreground/60">Plaintext</p>
-                <p className={`text-sm font-bold ${audit.summary.plaintextCount > 0 ? "text-amber-400" : "text-emerald-400"}`}>
+                <p className="text-xs text-fg-subtle">Plaintext</p>
+                <p className={`text-sm font-bold ${audit.summary.plaintextCount > 0 ? "text-warning-fg" : "text-success-fg"}`}>
                   {audit.summary.plaintextCount}
                 </p>
               </div>
               <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2">
-                <p className="text-xs text-muted-foreground/60">Unresolved</p>
-                <p className={`text-sm font-bold ${audit.summary.unresolvedRefCount > 0 ? "text-red-400" : "text-emerald-400"}`}>
+                <p className="text-xs text-fg-subtle">Unresolved</p>
+                <p className={`text-sm font-bold ${audit.summary.unresolvedRefCount > 0 ? "text-danger-fg" : "text-success-fg"}`}>
                   {audit.summary.unresolvedRefCount}
                 </p>
               </div>
               <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2">
-                <p className="text-xs text-muted-foreground/60">Shadowed</p>
-                <p className={`text-sm font-bold ${audit.summary.shadowedRefCount > 0 ? "text-amber-400" : "text-emerald-400"}`}>
+                <p className="text-xs text-fg-subtle">Shadowed</p>
+                <p className={`text-sm font-bold ${audit.summary.shadowedRefCount > 0 ? "text-warning-fg" : "text-success-fg"}`}>
                   {audit.summary.shadowedRefCount}
                 </p>
               </div>
               <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2">
-                <p className="text-xs text-muted-foreground/60">Legacy</p>
-                <p className={`text-sm font-bold ${audit.summary.legacyResidueCount > 0 ? "text-blue-400" : "text-emerald-400"}`}>
+                <p className="text-xs text-fg-subtle">Legacy</p>
+                <p className={`text-sm font-bold ${audit.summary.legacyResidueCount > 0 ? "text-info-fg" : "text-success-fg"}`}>
                   {audit.summary.legacyResidueCount}
                 </p>
               </div>
@@ -486,7 +486,7 @@ function SecretsPanel() {
               <button
                 type="button"
                 onClick={() => setFindingsExpanded(!findingsExpanded)}
-                className="flex w-full items-center gap-2 text-left text-xs font-medium text-foreground/70 hover:text-foreground/90"
+                className="flex w-full items-center gap-2 text-left text-xs font-medium text-fg-secondary hover:text-foreground"
               >
                 {findingsExpanded ? (
                   <ChevronUp className="h-3 w-3" />
@@ -494,9 +494,9 @@ function SecretsPanel() {
                   <ChevronDown className="h-3 w-3" />
                 )}
                 {totalFindings} finding{totalFindings !== 1 ? "s" : ""}
-                {warnCount > 0 && <span className="text-amber-400">{warnCount} warn</span>}
-                {errorCount > 0 && <span className="text-red-400">{errorCount} error</span>}
-                {infoCount > 0 && <span className="text-blue-400">{infoCount} info</span>}
+                {warnCount > 0 && <span className="text-warning-fg">{warnCount} warn</span>}
+                {errorCount > 0 && <span className="text-danger-fg">{errorCount} error</span>}
+                {infoCount > 0 && <span className="text-info-fg">{infoCount} info</span>}
               </button>
 
               {findingsExpanded && (
@@ -520,8 +520,8 @@ function SecretsPanel() {
                                 {finding.code}
                               </code>
                             </div>
-                            <p className="mt-1 text-xs text-foreground/70">{finding.message}</p>
-                            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground/60">
+                            <p className="mt-1 text-xs text-fg-secondary">{finding.message}</p>
+                            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-fg-subtle">
                               <span>
                                 File: <code>{shortFilePath(finding.file)}</code>
                               </span>
@@ -535,7 +535,7 @@ function SecretsPanel() {
                               )}
                             </div>
                             {codeMeta?.hint && (
-                              <p className="mt-1.5 text-xs text-muted-foreground/50 italic">
+                              <p className="mt-1.5 text-xs text-fg-subtle italic">
                                 {codeMeta.hint}
                               </p>
                             )}
@@ -551,7 +551,7 @@ function SecretsPanel() {
 
           {/* Files scanned */}
           {audit && (
-            <p className="text-xs text-muted-foreground/40">
+            <p className="text-xs text-fg-subtle">
               {audit.filesScanned.length} file{audit.filesScanned.length !== 1 ? "s" : ""} scanned
               {audit.status === "clean" && " — no issues found"}
             </p>
@@ -563,7 +563,7 @@ function SecretsPanel() {
               type="button"
               onClick={() => void runAudit()}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-foreground/70 transition-colors hover:bg-foreground/10 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-fg-secondary transition-colors hover:bg-foreground/10 disabled:opacity-40"
             >
               {loading ? <InlineSpinner size="sm" /> : <RefreshCw className="h-3 w-3" />}
               Re-audit
@@ -582,7 +582,7 @@ function SecretsPanel() {
               type="button"
               onClick={() => void handleConfigure({ providersOnly: true, apply: true })}
               disabled={configuring || loading || configureBlockedByTty}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-foreground/70 transition-colors hover:bg-foreground/10 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-fg-secondary transition-colors hover:bg-foreground/10 disabled:opacity-40"
               title={configureBlockedByTty ? "Run this command in Terminal instead" : "Configure providers only without mapping credentials"}
             >
               {configuring ? <InlineSpinner size="sm" /> : <Shield className="h-3 w-3" />}
@@ -592,7 +592,7 @@ function SecretsPanel() {
               type="button"
               onClick={() => void handleReload()}
               disabled={reloading || loading}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-foreground/70 transition-colors hover:bg-foreground/10 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-fg-secondary transition-colors hover:bg-foreground/10 disabled:opacity-40"
               title="Re-resolve secret references and swap runtime snapshot"
             >
               {reloading ? <InlineSpinner size="sm" /> : <RotateCw className="h-3 w-3" />}
@@ -602,11 +602,11 @@ function SecretsPanel() {
 
           {/* Help text */}
           <div className="rounded-lg border border-foreground/5 bg-foreground/[0.02] px-3 py-2.5">
-            <p className="text-xs text-muted-foreground/50 leading-relaxed">
-              <strong className="text-foreground/60">Secrets audit</strong> scans your config for plaintext tokens, unresolved SecretRefs, and legacy credentials.{" "}
-              <strong className="text-foreground/60">Auto-configure</strong> maps plaintext values to secure SecretRef providers (env/file/exec).{" "}
-              <strong className="text-foreground/60">Reload</strong> re-resolves all references and updates the runtime snapshot without restarting.{" "}
-              CLI equivalents: <code className="text-muted-foreground/60">openclaw secrets audit</code>, <code className="text-muted-foreground/60">secrets configure --apply</code>, <code className="text-muted-foreground/60">secrets reload</code>.
+            <p className="text-xs text-fg-subtle leading-relaxed">
+              <strong className="text-fg-secondary">Secrets audit</strong> scans your config for plaintext tokens, unresolved SecretRefs, and legacy credentials.{" "}
+              <strong className="text-fg-secondary">Auto-configure</strong> maps plaintext values to secure SecretRef providers (env/file/exec).{" "}
+              <strong className="text-fg-secondary">Reload</strong> re-resolves all references and updates the runtime snapshot without restarting.{" "}
+              CLI equivalents: <code className="text-fg-subtle">openclaw secrets audit</code>, <code className="text-fg-subtle">secrets configure --apply</code>, <code className="text-fg-subtle">secrets reload</code>.
             </p>
           </div>
         </div>
@@ -782,7 +782,7 @@ export function AccountsKeysView() {
       <SectionHeader
         title={
           <span className="inline-flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-stone-700 dark:text-stone-200" />
+            <KeyRound className="h-5 w-5 text-fg-secondary dark:text-foreground" />
             Keys & Access
           </span>
         }
@@ -810,7 +810,7 @@ export function AccountsKeysView() {
             <button
               type="button"
               onClick={() => setRevealSecrets((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 disabled:opacity-60 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-100"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
               disabled={!data}
             >
               {revealSecrets ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -819,7 +819,7 @@ export function AccountsKeysView() {
             <button
               type="button"
               onClick={() => void load()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 disabled:opacity-60 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-100"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
               disabled={busy}
             >
               {busy ? (
@@ -839,12 +839,12 @@ export function AccountsKeysView() {
 
       <SectionBody width="narrow" className="space-y-4">
         {error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+          <div className="rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
             {error}
           </div>
         )}
         {notice && (
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+          <div className="rounded-xl border border-success-border bg-success-bg p-4 text-sm text-success-fg">
             {notice}
           </div>
         )}
@@ -961,7 +961,7 @@ export function AccountsKeysView() {
                       <p className="font-medium text-foreground">
                         {acct.channel} / {acct.accountId}
                       </p>
-                      <p className={acct.running ? "text-emerald-300" : "text-red-300"}>
+                      <p className={acct.running ? "text-success-fg" : "text-danger-fg"}>
                         {acct.running ? "running" : "stopped"}
                       </p>
                     </div>
@@ -972,7 +972,7 @@ export function AccountsKeysView() {
                       bot={acct.botUsername || "n/a"} ({acct.botId || "n/a"}) · probe={acct.probeOk == null ? "n/a" : String(acct.probeOk)} · inbound={formatAgo(acct.lastInboundAt)} · outbound={formatAgo(acct.lastOutboundAt)}
                     </p>
                     {acct.lastError ? (
-                      <p className="mt-1 text-red-300">lastError: {acct.lastError}</p>
+                      <p className="mt-1 text-danger-fg">lastError: {acct.lastError}</p>
                     ) : null}
                   </div>
                 ))}
@@ -1000,7 +1000,7 @@ export function AccountsKeysView() {
                       <p className="font-medium text-foreground">
                         {entry.service || "unknown service"} · {entry.key}
                       </p>
-                      <span className={entry.confidence === "high" ? "text-emerald-300" : "text-amber-300"}>
+                      <span className={entry.confidence === "high" ? "text-success-fg" : "text-warning-fg"}>
                         {entry.confidence}
                       </span>
                     </div>
@@ -1061,7 +1061,7 @@ export function AccountsKeysView() {
                               <button
                                 type="button"
                                 onClick={() => void saveEnvKey(item.key)}
-                                className="rounded border border-emerald-500/40 px-2 py-1 text-xs text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+                                className="rounded border border-success-border px-2 py-1 text-xs text-success-fg hover:bg-success-bg disabled:opacity-50"
                                 disabled={saving}
                               >
                                 {saving ? "Saving..." : "Save"}
@@ -1160,7 +1160,7 @@ export function AccountsKeysView() {
             </div>
 
             {data.warnings.length > 0 ? (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-300">
+              <div className="rounded-xl border border-warning-border bg-warning-bg p-4 text-xs text-warning-fg">
                 <div className="mb-2 inline-flex items-center gap-2 font-medium">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   Partial data warnings

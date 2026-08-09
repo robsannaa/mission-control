@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
 
 const isHosted =
   process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true" ||
@@ -59,15 +60,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   }, [fetchStatus]);
 
   if (loading && !status) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
-        <div className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:0ms]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:150ms]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:300ms]" />
-        </div>
-      </div>
-    );
+    return <ScreenLoadingState className="bg-muted dark:bg-background" />;
   }
 
   if (error) {

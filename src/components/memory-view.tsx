@@ -104,19 +104,19 @@ function vectorBadge(entry: { vectorState?: VectorState }): {
     case "indexed":
       return {
         label: "Indexed",
-        className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+        className: "border-success-border bg-success-bg text-success-fg",
         Icon: CheckCircle2,
       };
     case "stale":
       return {
         label: "Stale",
-        className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+        className: "border-warning-border bg-warning-bg text-warning-fg",
         Icon: AlertTriangle,
       };
     case "not_indexed":
       return {
         label: "Not Indexed",
-        className: "border-zinc-500/30 bg-zinc-500/10 text-zinc-300",
+        className: "border-border-strong/30 bg-muted-foreground/10 text-fg-subtle",
         Icon: CircleDashed,
       };
     default:
@@ -945,8 +945,8 @@ export function MemoryView() {
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               activeTab === "journal"
-                ? "bg-violet-500/15 text-violet-300"
-                : "text-muted-foreground hover:text-foreground/80"
+                ? "bg-muted-foreground/15 text-fg-secondary"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             <Brain className="h-3.5 w-3.5" />
@@ -958,8 +958,8 @@ export function MemoryView() {
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               activeTab === "graph"
-                ? "bg-sky-500/15 text-sky-300"
-                : "text-muted-foreground hover:text-foreground/80"
+                ? "bg-info-bg text-info-fg"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             <GitBranch className="h-3.5 w-3.5" />
@@ -1011,7 +1011,7 @@ export function MemoryView() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 aria-label="Search memory files, agents, workspaces"
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
           </div>
@@ -1027,11 +1027,11 @@ export function MemoryView() {
                 className={cn(
                   "mb-4 flex w-full flex-col gap-1.5 rounded-xl border p-4 text-left transition-colors",
                   selected === "memory"
-                    ? "border-violet-500/30 bg-violet-500/10 ring-1 ring-violet-400/20"
-                    : "border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10"
+                    ? "border-border-strong bg-muted-foreground/10 ring-1 ring-border"
+                    : "border-border-strong bg-muted-foreground/5 hover:bg-muted-foreground/10"
                 )}
               >
-                <div className="flex items-center gap-2 text-violet-300">
+                <div className="flex items-center gap-2 text-fg-secondary">
                   <Brain className="h-4 w-4" />
                   <span className="text-sm font-medium">Core Workspace MEMORY.md</span>
                 </div>
@@ -1068,7 +1068,7 @@ export function MemoryView() {
                     onClick={() => setWorkspaceFilesCollapsed((prev) => !prev)}
                     aria-expanded={!workspaceFilesCollapsed}
                     aria-controls="workspace-files-list"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-fg-subtle transition-colors hover:text-muted-foreground"
                   >
                     {workspaceFilesCollapsed ? (
                       <ChevronRight className="h-3.5 w-3.5 shrink-0" />
@@ -1085,7 +1085,7 @@ export function MemoryView() {
                       type="button"
                       onClick={() => void ensureWorkspaceIndex()}
                       disabled={ensuringIndex}
-                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-300 hover:bg-sky-500/20 disabled:opacity-60"
+                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-info-border bg-info-bg px-2 py-0.5 text-xs font-medium text-info-fg hover:bg-info-bg disabled:opacity-60"
                     >
                       {ensuringIndex ? (
                         <span className="inline-flex items-center gap-0.5">
@@ -1116,13 +1116,13 @@ export function MemoryView() {
                           className={cn(
                             "w-full rounded-lg border px-3 py-2 text-left transition-colors",
                             selectedHere
-                              ? "border-indigo-500/35 bg-indigo-500/10 ring-1 ring-indigo-400/20"
+                              ? "border-info-border bg-info-bg ring-1 ring-info-border"
                               : "border-foreground/10 bg-foreground/5 hover:bg-foreground/8"
                           )}
                         >
                           <div className="flex items-center gap-2">
-                            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                            <span className="flex-1 truncate text-xs font-medium text-foreground/90">
+                            <FileText className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
+                            <span className="flex-1 truncate text-xs font-medium text-foreground">
                               {file.name}
                             </span>
                           </div>
@@ -1141,7 +1141,7 @@ export function MemoryView() {
                                 </span>
                               );
                             })()}
-                            <span className="text-xs text-muted-foreground/70">
+                            <span className="text-xs text-muted-foreground">
                               {file.words > 0 ? `${file.words}w` : "empty"}
                               {file.mtime ? ` • ${formatAgo(file.mtime)}` : ""}
                             </span>
@@ -1155,7 +1155,7 @@ export function MemoryView() {
 
             {/* Agent memory files */}
             <div className="mb-2 flex items-center gap-2 px-1">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+              <span className="text-xs font-medium uppercase tracking-wider text-fg-subtle">
                 Agent MEMORY Files
               </span>
               <span className="rounded bg-muted/80 px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -1181,27 +1181,27 @@ export function MemoryView() {
                     className={cn(
                       "w-full rounded-lg border px-3 py-2 text-left transition-colors",
                       selectedHere
-                        ? "border-cyan-500/35 bg-cyan-500/10 ring-1 ring-cyan-400/20"
+                        ? "border-info-border bg-info-bg ring-1 ring-info-border"
                         : "border-foreground/10 bg-foreground/5 hover:bg-foreground/5"
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-foreground/90">
+                        <p className="truncate text-xs font-semibold text-foreground">
                           {entry.agentName}
                         </p>
-                        <p className="truncate text-xs text-muted-foreground/70">
+                        <p className="truncate text-xs text-muted-foreground">
                           {entry.agentId} • {shortWorkspace(entry.workspace)}
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
                         {entry.isDefault && (
-                          <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-xs font-medium text-violet-300">
+                          <span className="rounded bg-muted-foreground/20 px-1.5 py-0.5 text-xs font-medium text-fg-secondary">
                             default
                           </span>
                         )}
                         {!entry.exists && (
-                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-300">
+                          <span className="rounded bg-warning-bg px-1.5 py-0.5 text-xs font-medium text-warning-fg">
                             missing
                           </span>
                         )}
@@ -1224,11 +1224,11 @@ export function MemoryView() {
                         );
                       })()}
                       {entry.dirty && (
-                        <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-xs font-medium text-amber-300">
+                        <span className="rounded border border-warning-border bg-warning-bg px-1.5 py-0.5 text-xs font-medium text-warning-fg">
                           index dirty
                         </span>
                       )}
-                      <span className="text-xs text-muted-foreground/70">
+                      <span className="text-xs text-muted-foreground">
                         {entry.exists ? `${entry.words}w` : "No file"} • {entry.indexedFiles ?? 0} files
                       </span>
                       {needsIndex && (
@@ -1248,7 +1248,7 @@ export function MemoryView() {
                             }
                           }}
                           className={cn(
-                            "ml-auto inline-flex cursor-pointer items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-xs font-medium text-sky-300 hover:bg-sky-500/20",
+                            "ml-auto inline-flex cursor-pointer items-center gap-1 rounded-md border border-info-border bg-info-bg px-1.5 py-0.5 text-xs font-medium text-info-fg hover:bg-info-bg",
                             indexingFile === key && "opacity-60 pointer-events-none"
                           )}
                         >
@@ -1270,13 +1270,13 @@ export function MemoryView() {
               })}
 
               {!loading && filteredAgentMemories.length === 0 && (
-                <p className="px-1 text-xs text-muted-foreground/70">No matching agent memory files.</p>
+                <p className="px-1 text-xs text-muted-foreground">No matching agent memory files.</p>
               )}
             </div>
 
             {/* Daily journal section */}
             <div className="flex items-center gap-2 px-1">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+              <span className="text-xs font-medium uppercase tracking-wider text-fg-subtle">
                 Daily Journal
               </span>
               <span className="rounded bg-muted/80 px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -1317,23 +1317,23 @@ export function MemoryView() {
                               return (
                                 <div
                                   key={e.name}
-                                  className="flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-1.5"
+                                  className="flex items-center gap-2 rounded-lg bg-danger-bg px-3 py-1.5"
                                 >
-                                  <Trash2 className="h-3 w-3 shrink-0 text-red-400" />
-                                  <span className="flex-1 truncate text-xs text-red-300">
+                                  <Trash2 className="h-3 w-3 shrink-0 text-danger-fg" />
+                                  <span className="flex-1 truncate text-xs text-danger-fg">
                                     Delete {e.name}?
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => deleteEntry(e)}
-                                    className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-red-500"
+                                    className="rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-white hover:bg-destructive/88"
                                   >
                                     Delete
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setConfirmDelete(null)}
-                                    className="text-xs text-muted-foreground hover:text-foreground/70"
+                                    className="text-xs text-muted-foreground hover:text-fg-secondary"
                                   >
                                     Cancel
                                   </button>
@@ -1345,9 +1345,9 @@ export function MemoryView() {
                               return (
                                 <div
                                   key={e.name}
-                                  className="flex items-center gap-2 rounded-lg border border-violet-500/30 bg-card px-3 py-1.5"
+                                  className="flex items-center gap-2 rounded-lg border border-border-strong bg-card px-3 py-1.5"
                                 >
-                                  <Pencil className="h-3 w-3 shrink-0 text-violet-400" />
+                                  <Pencil className="h-3 w-3 shrink-0 text-fg-secondary" />
                                   <input
                                     value={renameValue}
                                     onChange={(ev) =>
@@ -1361,7 +1361,7 @@ export function MemoryView() {
                                     }}
                                     onBlur={() => void renameEntry(e, renameValue)}
                                     aria-label="Rename file"
-                                    className="flex-1 bg-transparent text-sm text-foreground/90 outline-none"
+                                    className="flex-1 bg-transparent text-sm text-foreground outline-none"
                                     autoFocus
                                   />
                                 </div>
@@ -1379,8 +1379,8 @@ export function MemoryView() {
                                 className={cn(
                                   "flex w-full justify-between rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
                                   selected === key
-                                    ? "bg-muted text-violet-300"
-                                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground/70"
+                                    ? "bg-muted text-fg-secondary"
+                                    : "text-muted-foreground hover:bg-muted/60 hover:text-fg-secondary"
                                 )}
                               >
                                 <span className="text-sm">
@@ -1396,7 +1396,7 @@ export function MemoryView() {
                                   })()}
                                 </span>
                                 <span className="flex items-center gap-2">
-                                  <span className="text-xs text-muted-foreground/60">
+                                  <span className="text-xs text-fg-subtle">
                                     {e.words ?? 0}w
                                   </span>
                                   {(() => {
@@ -1437,9 +1437,9 @@ export function MemoryView() {
               <div className="shrink-0 border-b border-foreground/10 px-6 py-4">
                 <div className="flex flex-wrap items-center gap-2.5">
                   {detailMeta.kind === "workspace-file" ? (
-                    <FileText className="h-4 w-4 text-indigo-400" />
+                    <FileText className="h-4 w-4 text-info-fg" />
                   ) : (
-                    <Brain className="h-4 w-4 text-violet-400" />
+                    <Brain className="h-4 w-4 text-fg-secondary" />
                   )}
                   <h2 className="text-xs font-semibold text-foreground">
                     {detailMeta.title}
@@ -1466,10 +1466,10 @@ export function MemoryView() {
                     <span className="text-xs text-muted-foreground">Saving...</span>
                   )}
                   {saveStatus === "saved" && (
-                    <span className="text-xs text-emerald-500">Saved</span>
+                    <span className="text-xs text-success-fg">Saved</span>
                   )}
                   {saveStatus === "unsaved" && (
-                    <span className="text-xs text-amber-500">Unsaved</span>
+                    <span className="text-xs text-warning-fg">Unsaved</span>
                   )}
 
                   {detailMeta.kind === "workspace-file" &&
@@ -1478,7 +1478,7 @@ export function MemoryView() {
                       type="button"
                       onClick={() => void ensureWorkspaceIndex()}
                       disabled={ensuringIndex}
-                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-300 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-info-border bg-info-bg px-2 py-0.5 text-xs font-medium text-info-fg transition-colors hover:bg-info-bg disabled:cursor-not-allowed disabled:opacity-60"
                       title="Add this file to the vector index"
                     >
                       {ensuringIndex ? (
@@ -1499,7 +1499,7 @@ export function MemoryView() {
                       type="button"
                       onClick={() => void indexJournalEntry(selectedDailyEntry)}
                       disabled={indexingFile === journalKey(selectedDailyEntry.name)}
-                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-300 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-info-border bg-info-bg px-2 py-0.5 text-xs font-medium text-info-fg transition-colors hover:bg-info-bg disabled:cursor-not-allowed disabled:opacity-60"
                       title="Re-index this memory entry"
                     >
                       {indexingFile === journalKey(selectedDailyEntry.name) ? (
@@ -1520,7 +1520,7 @@ export function MemoryView() {
                       type="button"
                       onClick={() => void indexAgentMemory(selectedAgentMemory)}
                       disabled={indexingFile === agentMemoryKey(selectedAgentMemory.agentId)}
-                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-300 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-info-border bg-info-bg px-2 py-0.5 text-xs font-medium text-info-fg transition-colors hover:bg-info-bg disabled:cursor-not-allowed disabled:opacity-60"
                       title="Re-index this agent memory file"
                     >
                       {indexingFile === agentMemoryKey(selectedAgentMemory.agentId) ? (
@@ -1537,7 +1537,7 @@ export function MemoryView() {
                   )}
                 </div>
 
-                <p className="mt-1 text-xs text-muted-foreground/60">
+                <p className="mt-1 text-xs text-fg-subtle">
                   {detailMeta.words != null && `${detailMeta.words} words`}
                   {detailMeta.size != null && ` • ${formatBytes(detailMeta.size)}`}
                   {detailMeta.workspace && ` • ${detailMeta.workspace}`}
@@ -1545,7 +1545,7 @@ export function MemoryView() {
                   {detailMeta.kind !== "workspace-file" && (
                     <>
                       {" • Use "}
-                      <span className="inline-flex items-center rounded-md border border-foreground/10 bg-card/50 px-1.5 py-0.5 text-[11px] font-medium text-foreground/80">
+                      <span className="inline-flex items-center rounded-md border border-foreground/10 bg-card/50 px-1.5 py-0.5 text-[11px] font-medium text-foreground">
                         Edit
                       </span>
                       {" to modify • "}
@@ -1558,13 +1558,13 @@ export function MemoryView() {
 
               <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6 min-w-0">
                 {detailMeta.kind === "agent-memory" && selectedAgentMemory && !selectedAgentMemory.exists && (
-                  <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  <div className="mb-3 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning-fg">
                     This agent has no `{selectedAgentMemory.fileName}` yet. Start typing and save to create it.
                   </div>
                 )}
 
                 {detailMeta.kind === "agent-memory" && selectedAgentMemory?.hasAltCaseFile && (
-                  <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-200">
+                  <div className="mb-3 rounded-lg border border-info-border bg-info-bg px-3 py-2 text-xs text-info-fg">
                     Both `MEMORY.md` and `memory.md` exist in this workspace. Mission Control edits the canonical file shown in the title.
                   </div>
                 )}
@@ -1582,7 +1582,7 @@ export function MemoryView() {
               </div>
             </>
           ) : !loading ? (
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/60">
+            <div className="flex flex-1 items-center justify-center text-sm text-fg-subtle">
               Select a memory entry
             </div>
           ) : null}
@@ -1600,7 +1600,7 @@ export function MemoryView() {
           >
             <button
               type="button"
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
               onClick={() => {
                 loadJournalFile(ctxMenu.entry.name, ctxMenu.entry.date);
                 setCtxMenu(null);
@@ -1613,7 +1613,7 @@ export function MemoryView() {
               ctxMenu.entry.vectorState === "not_indexed") && (
               <button
                 type="button"
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-sky-300 transition-colors hover:bg-sky-500/10"
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-info-fg transition-colors hover:bg-info-bg"
                 onClick={() => {
                   void indexJournalEntry(ctxMenu.entry);
                   setCtxMenu(null);
@@ -1635,7 +1635,7 @@ export function MemoryView() {
             <div className="mx-2 my-1 h-px bg-foreground/10" />
             <button
               type="button"
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
               onClick={() => {
                 setRenaming(ctxMenu.entry);
                 setRenameValue(ctxMenu.entry.name);
@@ -1647,7 +1647,7 @@ export function MemoryView() {
             </button>
             <button
               type="button"
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
               onClick={() => {
                 void duplicateEntry(ctxMenu.entry);
                 setCtxMenu(null);
@@ -1658,7 +1658,7 @@ export function MemoryView() {
             </button>
             <button
               type="button"
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
               onClick={() => {
                 copyEntryName(ctxMenu.entry);
                 setCtxMenu(null);
@@ -1670,7 +1670,7 @@ export function MemoryView() {
             <div className="mx-2 my-1 h-px bg-foreground/10" />
             <button
               type="button"
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-danger-fg transition-colors hover:bg-danger-bg hover:text-danger-fg"
               onClick={() => {
                 setConfirmDelete(ctxMenu.entry);
                 setCtxMenu(null);
@@ -1688,8 +1688,8 @@ export function MemoryView() {
             className={cn(
               "fixed bottom-4 right-4 z-50 rounded-lg border px-4 py-2.5 text-sm shadow-lg backdrop-blur-sm transition-all",
               actionMsg.ok
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                : "border-red-500/30 bg-red-500/10 text-red-300"
+                ? "border-success-border bg-success-bg text-success-fg"
+                : "border-danger-border bg-danger-bg text-danger-fg"
             )}
           >
             {actionMsg.msg}

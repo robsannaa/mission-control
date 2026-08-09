@@ -119,7 +119,7 @@ export function OpenClawUpdateBanner() {
                 </p>
               )}
               {info.channelLabel && (
-                <p className="text-[11px] text-muted-foreground/80">
+                <p className="text-[11px] text-muted-foreground">
                   Channel: {info.channelLabel}
                 </p>
               )}
@@ -127,7 +127,7 @@ export function OpenClawUpdateBanner() {
             <button
               type="button"
               onClick={handleDismiss}
-              className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              className="shrink-0 rounded-md p-1 text-fg-subtle transition-colors hover:text-muted-foreground"
               aria-label="Dismiss"
             >
               <X className="h-3.5 w-3.5" />
@@ -165,8 +165,8 @@ export function OpenClawUpdateBanner() {
           </div>
           {(updateError || updateSuccess) && (
             <div className="border-t border-border/50 px-4 py-2">
-              {updateError && <p className="text-[11px] text-red-400">{updateError}</p>}
-              {!updateError && updateSuccess && <p className="text-[11px] text-emerald-400">{updateSuccess}</p>}
+              {updateError && <p className="text-[11px] text-danger-fg">{updateError}</p>}
+              {!updateError && updateSuccess && <p className="text-[11px] text-success-fg">{updateSuccess}</p>}
             </div>
           )}
         </div>

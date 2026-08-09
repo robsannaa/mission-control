@@ -70,7 +70,7 @@ function ChatBubble({ msg, timeFormat }: { msg: ChatMessage; timeFormat: TimeFor
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-md rounded-2xl rounded-tr-sm border border-primary/30 bg-primary text-primary-foreground px-3.5 py-2 text-xs leading-relaxed shadow-sm dark:border-violet-400/40 dark:bg-violet-500 dark:text-white">
+        <div className="max-w-md rounded-2xl rounded-tr-sm border border-primary/30 bg-primary text-primary-foreground px-3.5 py-2 text-xs leading-relaxed shadow-sm dark:border-border dark:bg-muted-foreground dark:text-white">
           <p className="whitespace-pre-wrap break-words">{msg.text}</p>
           <p className="mt-1 text-right text-xs text-white/70 dark:text-white/75">{formatTime(msg.timestamp, timeFormat)}</p>
         </div>
@@ -80,12 +80,12 @@ function ChatBubble({ msg, timeFormat }: { msg: ChatMessage; timeFormat: TimeFor
   if (msg.role === "error") {
     return (
       <div className="flex justify-start">
-        <div className="max-w-md rounded-2xl rounded-tl-sm border border-red-500/20 bg-red-500/10 px-3.5 py-2 text-xs leading-relaxed text-red-300 shadow-sm">
-          <div className="mb-1 flex items-center gap-1 text-xs font-medium text-red-400">
+        <div className="max-w-md rounded-2xl rounded-tl-sm border border-danger-border bg-danger-bg px-3.5 py-2 text-xs leading-relaxed text-danger-fg shadow-sm">
+          <div className="mb-1 flex items-center gap-1 text-xs font-medium text-danger-fg">
             <AlertTriangle className="h-3 w-3" />Error
           </div>
           <p className="whitespace-pre-wrap break-words">{msg.text}</p>
-          <p className="mt-1 text-xs text-red-400/40">{formatTime(msg.timestamp, timeFormat)}</p>
+          <p className="mt-1 text-xs text-danger-fg">{formatTime(msg.timestamp, timeFormat)}</p>
         </div>
       </div>
     );
@@ -93,9 +93,9 @@ function ChatBubble({ msg, timeFormat }: { msg: ChatMessage; timeFormat: TimeFor
   // assistant
   return (
     <div className="flex justify-start">
-      <div className="max-w-md rounded-2xl rounded-tl-sm border border-foreground/10 bg-foreground/5 px-3.5 py-2 text-xs leading-relaxed text-foreground/80 shadow-sm">
+      <div className="max-w-md rounded-2xl rounded-tl-sm border border-foreground/10 bg-foreground/5 px-3.5 py-2 text-xs leading-relaxed text-foreground shadow-sm">
         <p className="whitespace-pre-wrap break-words">{msg.text}</p>
-        <p className="mt-1 text-xs text-muted-foreground/30">{formatTime(msg.timestamp, timeFormat)}</p>
+        <p className="mt-1 text-xs text-fg-subtle">{formatTime(msg.timestamp, timeFormat)}</p>
       </div>
     </div>
   );
@@ -250,8 +250,8 @@ export function AgentChatPanel() {
             <MessageSquare className="h-3.5 w-3.5 text-foreground" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-foreground/80">Agent Chat</p>
-            <p className="text-xs text-muted-foreground/50">
+            <p className="text-xs font-semibold text-foreground">Agent Chat</p>
+            <p className="text-xs text-fg-subtle">
               {chat.messages.length} messages
               {chat.sending && " · typing..."}
             </p>
@@ -262,7 +262,7 @@ export function AgentChatPanel() {
             <button
               type="button"
               onClick={() => chatStore.clearMessages()}
-              className="rounded-md p-1.5 text-muted-foreground/40 transition hover:bg-muted/60 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-md p-1.5 text-fg-subtle transition hover:bg-muted/60 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title="Clear chat"
               aria-label="Clear chat history"
             >
@@ -272,7 +272,7 @@ export function AgentChatPanel() {
           <button
             type="button"
             onClick={() => chatStore.close()}
-            className="rounded-md p-1.5 text-muted-foreground/40 transition hover:bg-muted/60 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-md p-1.5 text-fg-subtle transition hover:bg-muted/60 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Close chat panel"
           >
             <X className="h-3.5 w-3.5" />
@@ -289,15 +289,15 @@ export function AgentChatPanel() {
             className="flex w-full items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-1.5 text-left transition-colors hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="text-xs text-muted-foreground">Agent:</span>
-            <span className="flex-1 truncate text-xs font-medium text-foreground/70">
+            <span className="flex-1 truncate text-xs font-medium text-fg-secondary">
               {currentAgent?.name || currentAgent?.id || "Select agent..."}
             </span>
             {currentAgent?.model && (
-              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground/60">
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-fg-subtle">
                 {currentAgent.model.split("/").pop()}
               </span>
             )}
-            <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+            <ChevronDown className="h-3 w-3 shrink-0 text-fg-subtle" />
           </button>
 
           {showAgentPicker && agents.length > 0 && (
@@ -315,11 +315,11 @@ export function AgentChatPanel() {
                     a.id === chat.agentId && "bg-muted"
                   )}
                 >
-                  <span className="text-xs font-medium text-foreground/70">
+                  <span className="text-xs font-medium text-fg-secondary">
                     {a.name || a.id}
                   </span>
                   {a.model && (
-                    <span className="ml-auto text-xs text-muted-foreground/60">
+                    <span className="ml-auto text-xs text-fg-subtle">
                       {a.model.split("/").pop()}
                     </span>
                   )}
@@ -338,10 +338,10 @@ export function AgentChatPanel() {
         {chat.messages.length === 0 && !chat.sending && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
-              <Zap className="h-6 w-6 text-foreground/60" />
+              <Zap className="h-6 w-6 text-fg-secondary" />
             </div>
-            <p className="text-sm font-medium text-foreground/50">Send a message</p>
-            <p className="max-w-xs text-xs text-muted-foreground/40">
+            <p className="text-sm font-medium text-fg-secondary">Send a message</p>
+            <p className="max-w-xs text-xs text-fg-subtle">
               Chat with your agents. History is kept while the app is open.
             </p>
           </div>
@@ -357,7 +357,7 @@ export function AgentChatPanel() {
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:150ms]" />
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:300ms]" />
               </span>
-              <span className="text-xs text-muted-foreground/60">Agent is thinking...</span>
+              <span className="text-xs text-fg-subtle">Agent is thinking...</span>
             </div>
           </div>
         )}
@@ -374,7 +374,7 @@ export function AgentChatPanel() {
             placeholder="Message your agent..."
             rows={1}
             disabled={chat.sending || !chat.agentId}
-            className="flex-1 resize-none rounded-xl border border-foreground/10 bg-foreground/5 px-3.5 py-2 text-xs text-foreground/90 placeholder:text-muted-foreground/40 focus:border-ring focus:ring-2 focus:ring-ring/20 focus:outline-none disabled:opacity-50"
+            className="flex-1 resize-none rounded-xl border border-foreground/10 bg-foreground/5 px-3.5 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-ring focus:ring-2 focus:ring-ring/20 focus:outline-none disabled:opacity-50"
             style={{ maxHeight: "80px" }}
             onInput={(e) => {
               const ta = e.target as HTMLTextAreaElement;
@@ -399,7 +399,7 @@ export function AgentChatPanel() {
             )}
           </button>
         </div>
-        <p className="mt-1.5 text-xs text-muted-foreground/30">
+        <p className="mt-1.5 text-xs text-fg-subtle">
           Enter to send · Shift+Enter for newline · Esc to close
         </p>
       </div>
@@ -520,35 +520,35 @@ function GatewayStatusBadge({
 
   const statusConfig = {
     online: {
-      dot: "bg-emerald-400",
+      dot: "bg-success",
       ping: true,
-      text: "text-emerald-700 dark:text-emerald-400",
+      text: "text-success-fg",
       label: "Online",
-      bg: "bg-emerald-100 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20",
+      bg: "bg-success-bg border-success-border",
       icon: Wifi,
     },
     degraded: {
-      dot: "bg-amber-400",
+      dot: "bg-warning",
       ping: false,
-      text: "text-amber-700 dark:text-amber-400",
+      text: "text-warning-fg",
       label: "Degraded",
-      bg: "bg-amber-100 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/20",
+      bg: "bg-warning-bg border-warning-border",
       icon: Activity,
     },
     offline: {
-      dot: "bg-red-400",
+      dot: "bg-danger",
       ping: false,
-      text: "text-red-700 dark:text-red-400",
+      text: "text-danger-fg",
       label: "Offline",
-      bg: "bg-red-100 border-red-200 dark:bg-red-500/10 dark:border-red-500/20",
+      bg: "bg-danger-bg border-danger-border",
       icon: WifiOff,
     },
     loading: {
-      dot: "bg-zinc-400 animate-pulse",
+      dot: "bg-muted-foreground animate-pulse",
       ping: false,
-      text: "text-stone-500 dark:text-stone-400",
+      text: "text-muted-foreground dark:text-fg-subtle",
       label: "Checking…",
-      bg: "bg-stone-100 border-stone-200 dark:bg-stone-800 dark:border-stone-700",
+      bg: "bg-muted border-border",
       icon: Loader2,
     },
   };
@@ -564,7 +564,7 @@ function GatewayStatusBadge({
     >
       <div
         className={cn(
-          "flex cursor-default items-center gap-1 rounded-full border px-2 py-1 text-xs transition-colors",
+          "flex cursor-default items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
           cfg.bg
         )}
       >
@@ -644,7 +644,7 @@ function GatewayStatusBadge({
           {/* Error info */}
           {!!health?.error && (
             <div className="border-t border-border px-3.5 py-2.5">
-              <p className="text-xs leading-relaxed text-red-400">
+              <p className="text-xs leading-relaxed text-danger-fg">
                 {String(health.error)}
               </p>
             </div>
@@ -652,7 +652,7 @@ function GatewayStatusBadge({
 
           {/* Footer hint */}
           <div className="border-t border-border px-3.5 py-2">
-            <p className="text-xs text-muted-foreground/50">
+            <p className="text-xs text-fg-subtle">
               {latencyMs !== null && latencyMs !== undefined ? `${latencyMs}ms · ` : ""}Polling every 12s · Use the power button to control gateway
             </p>
           </div>
@@ -665,8 +665,8 @@ function GatewayStatusBadge({
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between py-1.5">
-      <span className="text-xs text-muted-foreground/60">{label}</span>
-      <span className="text-xs font-medium text-foreground/70">{value}</span>
+      <span className="text-xs text-fg-subtle">{label}</span>
+      <span className="text-xs font-medium text-fg-secondary">{value}</span>
     </div>
   );
 }
@@ -694,7 +694,7 @@ export function Header() {
 
   return (
     <>
-      <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-stone-50 px-4 py-2 text-xs md:px-8 dark:border-[#23282e] dark:bg-[#121519]">
+      <header className="flex shrink-0 items-center justify-between border-b border-border bg-surface-header px-4 py-3 text-xs backdrop-blur-md md:px-8">
         <div className="flex items-center gap-2 ml-11 md:ml-0">
           <GatewayStatusBadge status={gwStatus} health={gwHealth} latencyMs={gwLatencyMs} />
         </div>
@@ -708,16 +708,16 @@ export function Header() {
             data-chat-toggle
             onClick={() => chatStore.toggle()}
             className={cn(
-              "relative flex h-8 items-center gap-1.5 rounded-md border border-stone-200 bg-white px-2.5 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#d6dce3] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]",
+              "relative flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               chat.open
-                ? "border-stone-300 bg-stone-100 text-stone-900 dark:border-[#38414b] dark:bg-[#20252a] dark:text-[#f5f7fa]"
+                ? "border-border-strong bg-accent text-foreground"
                 : ""
             )}
           >
             <Zap className="h-3 w-3" />
             <span className="hidden md:inline">Ping Agent</span>
             {chat.unread > 0 && !chat.open && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-stone-900 px-0.5 text-xs font-bold leading-none text-white shadow-lg dark:bg-stone-100 dark:text-stone-900">
+              <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-xs font-bold leading-none text-primary-foreground shadow-lg">
                 {chat.unread}
               </span>
             )}
@@ -734,11 +734,11 @@ export function Header() {
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="flex h-8 items-center gap-1.5 rounded-md border border-stone-200 bg-white px-2.5 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#d6dce3] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]"
+            className="flex h-8 items-center justify-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:min-w-36 sm:gap-2 sm:px-4 sm:text-sm"
           >
-            <Search className="h-3 w-3" />
+            <Search className="h-3 w-3 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Search</span>
-            <kbd className="ml-1 hidden rounded bg-stone-100 px-1 py-0.5 text-xs text-stone-400 sm:inline dark:bg-stone-700 dark:text-stone-500">
+            <kbd className="ml-1 hidden rounded-md border border-border bg-muted px-2 py-0.5 font-sans text-xs text-fg-subtle sm:inline">
               ⌘K
             </kbd>
           </button>
@@ -760,10 +760,10 @@ export function Header() {
               }}
               disabled={powerBusy}
               className={cn(
-                "flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 isAlive
-                  ? "border border-red-300 bg-red-500 text-white hover:bg-red-600"
-                  : "border border-emerald-300 bg-emerald-500 text-white hover:bg-emerald-600"
+                  ? "border border-danger-border bg-danger-bg text-danger-fg hover:border-danger hover:bg-danger-bg/70"
+                  : "border border-success-border bg-success-bg text-success-fg hover:border-success hover:bg-success-bg/70"
               )}
             >
               {powerBusy ? (
@@ -777,7 +777,7 @@ export function Header() {
               )}
               <span className="hidden sm:inline">{isAlive ? "Kill" : "Start"}</span>
             </button>
-            <div className="pointer-events-none absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+            <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
               {isAlive ? "Emergency stop — kill the gateway" : "Start the gateway"}
             </div>
           </div>
