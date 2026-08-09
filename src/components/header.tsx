@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { SearchModal } from "./search-modal";
 import { NotificationCenter } from "./notification-center";
 import { ThemeToggle } from "./theme-toggle";
+import { InlineSpinner } from "./ui/loading-state";
 import { chatStore, type ChatMessage } from "@/lib/chat-store";
 import {
   notifyGatewayRestarting as notifyGatewayRestartingStore,
@@ -708,7 +709,7 @@ export function Header() {
             data-chat-toggle
             onClick={() => chatStore.toggle()}
             className={cn(
-              "relative flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "relative flex h-8 items-center gap-1.5 rounded-control border border-border bg-card px-3 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               chat.open
                 ? "border-border-strong bg-accent text-foreground"
                 : ""
@@ -734,7 +735,7 @@ export function Header() {
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="flex h-8 items-center justify-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:min-w-36 sm:gap-2 sm:px-4 sm:text-sm"
+            className="flex h-8 items-center justify-center gap-1.5 rounded-control border border-border bg-card px-3 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:min-w-36 sm:gap-2 sm:px-4 sm:text-sm"
           >
             <Search className="h-3 w-3 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Search</span>
@@ -760,25 +761,21 @@ export function Header() {
               }}
               disabled={powerBusy}
               className={cn(
-                "flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-all disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 isAlive
-                  ? "border border-danger-border bg-danger-bg text-danger-fg hover:border-danger hover:bg-danger-bg/70"
-                  : "border border-success-border bg-success-bg text-success-fg hover:border-success hover:bg-success-bg/70"
+                  ? "bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60 dark:hover:bg-destructive/70"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90"
               )}
             >
               {powerBusy ? (
-                <span className="inline-flex items-center gap-0.5">
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                </span>
+                <InlineSpinner className="border-white/40 border-t-white" />
               ) : (
-                <Power className="h-3 w-3" />
+                <Power className="h-3.5 w-3.5" />
               )}
-              <span className="hidden sm:inline">{isAlive ? "Kill" : "Start"}</span>
+              <span className="hidden sm:inline">{isAlive ? "Stop" : "Start"}</span>
             </button>
             <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
-              {isAlive ? "Emergency stop — kill the gateway" : "Start the gateway"}
+              {isAlive ? "Stop the gateway" : "Start the gateway"}
             </div>
           </div>
 

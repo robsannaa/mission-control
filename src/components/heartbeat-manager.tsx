@@ -1133,7 +1133,7 @@ export function HeartbeatManager() {
   if (loading) {
     return (
       <div className="flex flex-1 flex-col">
-        <ScreenLoadingState label="Loading heartbeat configuration..." />
+        <ScreenLoadingState />
       </div>
     );
   }

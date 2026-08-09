@@ -10,6 +10,7 @@ import { StepChannel } from "@/components/onboarding/step-channel";
 import { StepChat } from "@/components/onboarding/step-chat";
 import { ONBOARDING_STEP_IDS, type OnboardingStepId } from "@/components/onboarding/types";
 import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { OnboardingWelcome } from "@/components/onboarding/welcome";
 
 /** chat-view reads this to show its post-onboarding welcome. */
 const POST_ONBOARDING_KEY = "mc-post-onboarding";
@@ -37,6 +38,7 @@ export function OnboardingWizard({ onComplete }: Props) {
   const { state, loaded, patch } = useOnboardingState();
   // null until the user navigates — before that, resume from persisted progress
   const [chosenStep, setChosenStep] = useState<OnboardingStepId | null>(null);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const activeStep: OnboardingStepId | null = chosenStep ?? (loaded ? state?.currentStep ?? "gateway" : null);
 
   const finishWizard = useCallback(() => {
@@ -76,6 +78,17 @@ export function OnboardingWizard({ onComplete }: Props) {
 
   if (!loaded || activeStep === null) {
     return <ScreenLoadingState className="bg-muted dark:bg-background" />;
+  }
+
+  if (!welcomeDismissed && !state?.startedAt) {
+    return (
+      <OnboardingWelcome
+        onStart={() => {
+          setWelcomeDismissed(true);
+          void patch({ startedAt: new Date().toISOString() });
+        }}
+      />
+    );
   }
 
   const activeIdx = ONBOARDING_STEP_IDS.indexOf(activeStep);

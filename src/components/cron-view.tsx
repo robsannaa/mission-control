@@ -1116,9 +1116,6 @@ function EditCronForm({
               ) : targetsLoading && knownTargets.length === 0 ? (
                 <div className="flex h-9 items-center rounded-lg border border-foreground/10 bg-muted/80 px-3">
                   <InlineSpinner size="sm" />
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    Loading targets…
-                  </span>
                 </div>
               ) : (
                 <div className="space-y-1.5">
@@ -1967,7 +1964,6 @@ function CreateCronForm({
                 ) : targetsLoading && knownTargets.length === 0 ? (
                   <div className="flex h-9 items-center rounded-lg border border-foreground/10 bg-muted/80 px-3">
                     <InlineSpinner size="sm" />
-                    <span className="ml-2 text-xs text-muted-foreground">Loading targets…</span>
                   </div>
                 ) : (
                   <div className="space-y-1.5">
@@ -2566,7 +2562,7 @@ export function CronView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading cron jobs..." />
+        <ScreenLoadingState />
       </SectionLayout>
     );
   }
@@ -3208,13 +3204,8 @@ export function CronView() {
                       </button>
                     </div>
                     {runsLoading === job.id && jobRuns.length === 0 ? (
-                      <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-0.5">
-                          <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                          <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                          <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                        </span>
-                        Loading runs...
+                      <div className="flex items-center py-4">
+                        <InlineSpinner size="sm" />
                       </div>
                     ) : jobRuns.length === 0 ? (
                       <p className="text-xs text-muted-foreground">

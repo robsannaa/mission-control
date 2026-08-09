@@ -881,7 +881,7 @@ export function DocsView() {
         {/* Document list grouped by workspace -> type */}
         <div className="flex-1 overflow-y-auto px-2 pb-3">
           {loading ? (
-            <LoadingState label="Loading documents..." className="px-3 py-4 justify-start text-sm" />
+            <LoadingState className="px-3 py-4 justify-start" />
           ) : workspaceGroups.length === 0 ? (
             <p className="px-3 py-4 text-sm text-fg-subtle">
               No documents found
@@ -1138,7 +1138,7 @@ export function DocsView() {
                   />
                 )
               ) : (
-                <LoadingState label="Loading document..." className="py-12" />
+                <LoadingState className="py-12" />
               )}
             </div>
           </>

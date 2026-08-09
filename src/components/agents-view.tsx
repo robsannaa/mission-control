@@ -1257,9 +1257,8 @@ function AgentIntegrationsPanel({
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 py-1 text-xs text-fg-subtle">
+        <div className="flex items-center py-1">
           <InlineSpinner size="sm" />
-          Loading integration access...
         </div>
       ) : error ? (
         <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
@@ -1867,9 +1866,8 @@ function ModelPicker({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-xs text-fg-subtle">
+      <div className="flex items-center rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5">
         <InlineSpinner size="sm" />
-        Loading available models...
       </div>
     );
   }
@@ -3632,13 +3630,8 @@ function EditAgentModal({
               <Cpu className="h-3 w-3 text-[var(--accent-brand-text)]" /> Primary Model
             </label>
             {modelsLoading ? (
-              <div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-xs text-fg-subtle">
-                <span className="inline-flex items-center gap-0.5">
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                </span>
-                Loading models…
+              <div className="flex items-center rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5">
+                <InlineSpinner size="sm" />
               </div>
             ) : (
               <select
@@ -3681,12 +3674,8 @@ function EditAgentModal({
               </span>
             </label>
             {modelsLoading ? (
-              <div className="flex items-center gap-2 text-xs text-fg-subtle">
-                <span className="inline-flex items-center gap-0.5">
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                </span> Loading…
+              <div className="flex items-center">
+                <InlineSpinner size="sm" />
               </div>
             ) : models.length === 0 ? (
               <p className="text-xs text-fg-subtle">
@@ -4340,13 +4329,8 @@ function WorkspaceFilesModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
           {loading ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-0.5">
-                <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-              </span>
-              Loading workspace files...
+            <div className="flex items-center">
+              <InlineSpinner size="sm" />
             </div>
           ) : error ? (
             <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
@@ -4617,7 +4601,7 @@ export function AgentsView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading agents..." />
+        <ScreenLoadingState />
       </SectionLayout>
     );
   }

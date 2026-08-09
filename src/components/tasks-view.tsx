@@ -287,7 +287,7 @@ export function TasksView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading tasks..." />
+        <ScreenLoadingState />
       </SectionLayout>
     );
   }

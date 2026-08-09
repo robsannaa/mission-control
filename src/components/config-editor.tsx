@@ -1,6 +1,14 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { requestRestart } from "@/lib/restart-store";
@@ -24,10 +32,57 @@ import {
   Code,
   Settings2,
   GripVertical,
+  ListMinus,
+  Lock,
+  Sparkles,
+  Variable,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState } from "@/components/ui/loading-state";
+import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { applyMergePatch, buildConfigDiff, type JsonObject } from "@/lib/config-diff";
+// The validator MUST come from config-schema-validate: config-schema-lookup
+// re-exports it but also pulls in the gateway transport (child_process/fs),
+// which must never reach a client bundle.
+import {
+  validateConfigValue,
+  type NormalizedConfigLookup,
+} from "@/lib/config-schema-validate";
+import {
+  ConfigLookupContext,
+  useConfigLookupSource,
+  useFieldLookup,
+} from "@/hooks/use-config-lookup";
+import {
+  analyzeConflict,
+  buildFieldIndex,
+  buildSaveBody,
+  deleteAtPath,
+  describeChanges,
+  detectAuthTokenMint,
+  getAtPath,
+  isEnvSubstitutedPath,
+  isSensitiveConfigPath,
+  planRestart,
+  searchFields,
+  setAtPath,
+  type ChangeEntry,
+  type FieldIndexEntry,
+} from "@/components/config/config-changes";
+import {
+  fetchConfigPayload,
+  runDoctor,
+  saveConfig,
+  type DoctorReport,
+  type SaveSuccess,
+} from "@/components/config/config-api";
+import { ConfigDiffPreview } from "@/components/config/config-diff-preview";
+import { ConfigConflictDialog } from "@/components/config/config-conflict-dialog";
+import {
+  ConfigErrorPanel,
+  type ConfigErrorDetail,
+} from "@/components/config/config-error-panel";
+import { ConfigDoctorPanel } from "@/components/config/config-doctor-panel";
 
 const MonacoEditor = dynamic(
   () => import("@monaco-editor/react").then((mod) => mod.default),
@@ -107,15 +162,17 @@ const SECTION_ICONS: Record<string, string> = {
   voicewake: "🎤",
 };
 
-const READONLY_SECTIONS = new Set(["meta", "wizard", "diagnostics"]);
+/**
+ * Sections Mission Control and the OpenClaw wizard write for themselves.
+ *
+ * These used to be flagged `READONLY_SECTIONS` and rendered with disabled
+ * inputs — pure theater: `PATCH /api/config` has always written them, and the
+ * Raw tab never honoured the flag either. Claiming a lock that does not exist
+ * is exactly the kind of quiet lie this editor is being fixed to stop, so they
+ * are now editable and honestly labelled instead.
+ */
+const MANAGED_SECTIONS = new Set(["meta", "wizard", "diagnostics"]);
 const SENSITIVE_SECTIONS = new Set(["env", "auth"]);
-const SENSITIVE_KEY_PATTERNS = [
-  /api[_-]?key/i,
-  /secret/i,
-  /password/i,
-  /token/i,
-  /credential/i,
-];
 
 /** Default order for group names in the sidebar */
 const GROUP_ORDER = [
@@ -135,45 +192,6 @@ const GROUP_ORDER = [
    Helpers
    ================================================================ */
 
-/** Set a nested value by dot-path (returns a new object) */
-function setDeep(
-  obj: Record<string, unknown>,
-  path: string,
-  value: unknown
-): Record<string, unknown> {
-  const parts = path.split(".");
-  const result = { ...obj };
-  let cur: Record<string, unknown> = result;
-  for (let i = 0; i < parts.length - 1; i++) {
-    const p = parts[i];
-    const existing = cur[p];
-    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
-      cur[p] = { ...(existing as Record<string, unknown>) };
-    } else {
-      cur[p] = {};
-    }
-    cur = cur[p] as Record<string, unknown>;
-  }
-  cur[parts[parts.length - 1]] = value;
-  return result;
-}
-
-/** Build a nested object from a dot-path + value, for config.patch */
-function buildPatchObject(
-  path: string,
-  value: unknown
-): Record<string, unknown> {
-  const parts = path.split(".");
-  const result: Record<string, unknown> = {};
-  let cur = result;
-  for (let i = 0; i < parts.length - 1; i++) {
-    cur[parts[i]] = {};
-    cur = cur[parts[i]] as Record<string, unknown>;
-  }
-  cur[parts[parts.length - 1]] = value;
-  return result;
-}
-
 /** Get the label for a config path from hints */
 function getLabel(
   hints: Record<string, UiHint>,
@@ -187,15 +205,8 @@ function getHelp(hints: Record<string, UiHint>, path: string): string {
   return hints[path]?.help || "";
 }
 
-function isSensitivePath(
-  hints: Record<string, UiHint>,
-  path: string
-): boolean {
-  if (hints[path]?.sensitive) return true;
-  const parts = path.split(".");
-  if (SENSITIVE_SECTIONS.has(parts[0])) return true;
-  const lastKey = parts[parts.length - 1] ?? "";
-  return SENSITIVE_KEY_PATTERNS.some((p) => p.test(lastKey));
+function isSensitivePath(hints: Record<string, UiHint>, path: string): boolean {
+  return isSensitiveConfigPath(hints, path);
 }
 
 /** Infer field type from JSON Schema */
@@ -246,8 +257,30 @@ function extractEnumValues(schema: JsonSchema | undefined): string[] {
   return [];
 }
 
+/**
+ * Seed a value for a field that has never been configured, so "Set up" lands
+ * the user on a usable control instead of an empty JSON blob.
+ */
+function emptyValueForType(fieldType: string, schema: JsonSchema | undefined): unknown {
+  switch (fieldType) {
+    case "string":
+    case "enum":
+      return "";
+    case "number":
+      return 0;
+    case "boolean":
+      return false;
+    case "array":
+      return [];
+    case "object":
+      return {};
+    default:
+      return schema?.type === "array" ? [] : "";
+  }
+}
+
 /* ================================================================
-   Toast
+   Toast — success only. Failures get a persistent panel.
    ================================================================ */
 
 function ToastBar({ toast, onDone }: { toast: Toast; onDone: () => void }) {
@@ -277,6 +310,32 @@ function ToastBar({ toast, onDone }: { toast: Toast; onDone: () => void }) {
   );
 }
 
+/* ================================================================
+   Field environment — everything a deeply nested field needs without
+   threading eight props through five levels of recursion.
+   ================================================================ */
+
+type FieldEnv = {
+  hints: Record<string, UiHint>;
+  showSensitive: boolean;
+  envSubstituted: string[];
+  reportValidity: (path: string, message: string | null) => void;
+  onDelete: (path: string) => void;
+  highlightPath: string | null;
+};
+
+const FieldEnvContext = createContext<FieldEnv>({
+  hints: {},
+  showSensitive: false,
+  envSubstituted: [],
+  reportValidity: () => {},
+  onDelete: () => {},
+  highlightPath: null,
+});
+
+function useFieldEnv(): FieldEnv {
+  return useContext(FieldEnvContext);
+}
 
 /* ================================================================
    Field Renderers
@@ -307,6 +366,186 @@ function FieldLabel({
       {help && (
         <p className="text-xs text-muted-foreground/60 mt-0.5 leading-relaxed">
           {help}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Small badge row: what the gateway's schema says about this field. */
+function FieldBadges({
+  lookup,
+  envLocked,
+}: {
+  lookup: NormalizedConfigLookup | null | undefined;
+  envLocked: boolean;
+}) {
+  const badges: React.ReactNode[] = [];
+  if (lookup?.reloadKind === "restart") {
+    badges.push(
+      <span
+        key="restart"
+        title={
+          lookup.reloadKindSource === "matrix"
+            ? "Documented reload table says this restarts the gateway."
+            : "The gateway reports that this path needs a restart."
+        }
+        className="inline-flex items-center gap-1 rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300"
+      >
+        <RefreshCw className="h-2.5 w-2.5" />
+        restarts gateway
+      </span>
+    );
+  }
+  if (lookup?.deprecated) {
+    badges.push(
+      <span
+        key="deprecated"
+        className="rounded border border-foreground/15 bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+      >
+        deprecated
+      </span>
+    );
+  }
+  if (lookup?.readOnly) {
+    badges.push(
+      <span
+        key="readonly"
+        className="rounded border border-foreground/15 bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+      >
+        read-only
+      </span>
+    );
+  }
+  if (envLocked) {
+    badges.push(
+      <span
+        key="env"
+        className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-300"
+      >
+        <Variable className="h-2.5 w-2.5" />
+        from environment
+      </span>
+    );
+  }
+  if (badges.length === 0) return null;
+  return <div className="flex flex-wrap items-center gap-1">{badges}</div>;
+}
+
+/**
+ * Everything shared by every field: schema lookup, live validation, the
+ * restart/deprecated/env badges, a real delete button, and the anchor that
+ * makes "jump to field" work from search.
+ */
+function FieldShell({
+  path,
+  label,
+  help,
+  value,
+  exists,
+  sensitive,
+  disabled,
+  children,
+}: {
+  path: string;
+  label: string;
+  help?: string;
+  value: unknown;
+  /** True when the key is present in the document (so it can be removed). */
+  exists: boolean;
+  sensitive: boolean;
+  disabled: boolean;
+  children: (opts: { disabled: boolean }) => React.ReactNode;
+}) {
+  const env = useFieldEnv();
+  const { reportValidity, onDelete, highlightPath } = env;
+  const lookup = useFieldLookup(path);
+  const [envUnlocked, setEnvUnlocked] = useState(false);
+
+  const envSubstituted = isEnvSubstitutedPath(env.envSubstituted, path);
+  const envLocked = envSubstituted && !envUnlocked;
+
+  // A field that has never been configured is not part of this write, so a
+  // `required` rule on it is not the operator's problem yet — validating it
+  // would block every save on an untouched optional section.
+  const inPlay = exists || value !== undefined;
+  const validation = useMemo(
+    () => (inPlay ? validateConfigValue(lookup, value) : { ok: true as const }),
+    [inPlay, lookup, value]
+  );
+  const message = validation.ok ? null : validation.message;
+
+  useEffect(() => {
+    reportValidity(path, message);
+    return () => reportValidity(path, null);
+  }, [path, message, reportValidity]);
+
+  const highlighted = highlightPath === path;
+
+  return (
+    <div
+      id={`cfg-field-${path}`}
+      data-config-path={path}
+      className={cn(
+        "space-y-1 scroll-mt-24 rounded-lg transition-colors",
+        highlighted && "bg-emerald-500/10 ring-1 ring-emerald-500/40 -mx-2 px-2 py-1.5"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <FieldLabel
+            label={label}
+            help={help || lookup?.help}
+            sensitive={sensitive}
+            required={lookup?.required === true}
+          />
+        </div>
+        {exists && !disabled && (
+          <button
+            type="button"
+            onClick={() => onDelete(path)}
+            title={`Remove ${label} from the configuration`}
+            aria-label={`Remove ${path}`}
+            data-testid="field-remove"
+            className="mt-0.5 shrink-0 rounded p-1 text-muted-foreground/50 transition-colors hover:bg-red-500/10 hover:text-red-500"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+
+      <FieldBadges lookup={lookup} envLocked={envSubstituted} />
+
+      {children({ disabled: disabled || envLocked })}
+
+      {envLocked && (
+        <p className="flex flex-wrap items-center gap-1.5 text-xs text-sky-700 dark:text-sky-300">
+          <Lock className="h-3 w-3" />
+          This value resolves from the environment at runtime.
+          <button
+            type="button"
+            onClick={() => setEnvUnlocked(true)}
+            className="font-medium underline underline-offset-2 hover:no-underline"
+          >
+            Edit anyway
+          </button>
+        </p>
+      )}
+      {envSubstituted && envUnlocked && (
+        <p className="text-xs text-amber-700 dark:text-amber-300">
+          Replacing <code className="font-mono">${"{VAR}"}</code> with a literal value removes the
+          environment indirection permanently.
+        </p>
+      )}
+
+      {message && (
+        <p
+          role="alert"
+          data-testid="field-error"
+          className="flex items-start gap-1.5 text-xs font-medium text-red-600 dark:text-red-400"
+        >
+          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+          {message}
         </p>
       )}
     </div>
@@ -1002,6 +1241,70 @@ function GenericArrayEditor({
    Section renderer — renders all fields in a config section
    ================================================================ */
 
+/** One key inside a section or nested object, with schema + validation. */
+function ConfigField({
+  path,
+  label,
+  help,
+  schema,
+  hint,
+  value,
+  exists,
+  sensitive,
+  disabled,
+  onFieldChange,
+}: {
+  path: string;
+  label: string;
+  help?: string;
+  schema: JsonSchema | undefined;
+  hint: UiHint | undefined;
+  value: unknown;
+  exists: boolean;
+  sensitive: boolean;
+  disabled: boolean;
+  onFieldChange: (path: string, value: unknown) => void;
+}) {
+  const fieldType = inferFieldType(schema, hint);
+  const neverSet = !exists && value === undefined;
+
+  return (
+    <FieldShell
+      path={path}
+      label={label}
+      help={help}
+      value={value}
+      exists={exists}
+      sensitive={sensitive}
+      disabled={disabled}
+    >
+      {({ disabled: effectiveDisabled }) =>
+        neverSet ? (
+          <button
+            type="button"
+            disabled={effectiveDisabled}
+            onClick={() => onFieldChange(path, emptyValueForType(fieldType, schema))}
+            className="flex items-center gap-1.5 rounded-lg border border-dashed border-stone-200 px-3 py-1.5 text-xs text-stone-500 transition-colors hover:border-emerald-500/30 hover:text-emerald-700 disabled:opacity-50 dark:border-[#2c343d] dark:text-[#a8b0ba] dark:hover:text-emerald-300"
+          >
+            <Plus className="h-3 w-3" />
+            Not set — configure
+          </button>
+        ) : (
+          renderField(
+            fieldType,
+            value,
+            (v) => onFieldChange(path, v),
+            schema,
+            hint,
+            sensitive,
+            effectiveDisabled
+          )
+        )
+      }
+    </FieldShell>
+  );
+}
+
 function SectionFields({
   sectionKey,
   sectionSchema,
@@ -1023,16 +1326,27 @@ function SectionFields({
   rawConfig?: Record<string, unknown> | null;
   onJumpToSection?: (key: string) => void;
 }) {
-  if (sectionValue == null || typeof sectionValue !== "object") {
+  const props = sectionSchema?.properties || {};
+  const val =
+    sectionValue && typeof sectionValue === "object" && !Array.isArray(sectionValue)
+      ? (sectionValue as Record<string, unknown>)
+      : {};
+
+  if (sectionValue != null && (typeof sectionValue !== "object" || Array.isArray(sectionValue))) {
     return (
-      <div className="text-xs text-muted-foreground/60 italic">
-        No configuration set for this section.
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground/70">
+          This section holds a single value rather than a set of fields.
+        </p>
+        <GenericValueEditor
+          value={sectionValue}
+          onChange={(v) => onFieldChange(sectionKey, v)}
+          disabled={disabled}
+          depth={0}
+        />
       </div>
     );
   }
-
-  const props = sectionSchema?.properties || {};
-  const val = sectionValue as Record<string, unknown>;
 
   // In openclaw.json, default model lives under agents.defaults.model, not under top-level "models".
   // If we're in the Models section and that exists, show a cross-link so the UI matches the file.
@@ -1044,7 +1358,8 @@ function SectionFields({
         : undefined
       : undefined;
 
-  // Get all keys: from schema + from value (to show unknown keys)
+  // Every key the schema declares plus every key actually present, so a
+  // never-configured field is still offered instead of being invisible.
   const allKeys = Array.from(
     new Set([...Object.keys(props), ...Object.keys(val)])
   );
@@ -1082,11 +1397,9 @@ function SectionFields({
         const hint = hints[fullPath];
         const label = getLabel(hints, fullPath, key);
         const help = getHelp(hints, fullPath);
-        const sensitive = isSensitivePath(hints, fullPath);
+        const sensitive = isSensitivePath(hints, fullPath) && !showSensitive;
         const fieldType = inferFieldType(fieldSchema, hint);
-
-        // Skip undefined values with no schema
-        if (fieldValue === undefined && !fieldSchema) return null;
+        const exists = key in val;
 
         // For nested objects: use dedicated UI for model primary/fallbacks (no raw JSON)
         if (
@@ -1129,24 +1442,27 @@ function SectionFields({
         }
 
         return (
-          <div key={key} className="space-y-1">
-            <FieldLabel
-              label={label}
-              help={help}
-              sensitive={sensitive && !showSensitive}
-            />
-            {renderField(
-              fieldType,
-              fieldValue,
-              (v) => onFieldChange(fullPath, v),
-              fieldSchema,
-              hint,
-              sensitive && !showSensitive,
-              disabled
-            )}
-          </div>
+          <ConfigField
+            key={key}
+            path={fullPath}
+            label={label}
+            help={help}
+            schema={fieldSchema}
+            hint={hint}
+            value={fieldValue}
+            exists={exists}
+            sensitive={sensitive}
+            disabled={disabled}
+            onFieldChange={onFieldChange}
+          />
         );
       })}
+      {allKeys.length === 0 && (
+        <p className="text-xs text-muted-foreground/70">
+          This section is empty. Add fields in the <strong>Raw</strong> tab, or remove it from the
+          section header.
+        </p>
+      )}
     </div>
   );
 }
@@ -1231,7 +1547,9 @@ function renderField(
           />
         );
       }
-      return <FormViewEditInRawPlaceholder />;
+      return (
+        <GenericValueEditor value={value} onChange={onChange} disabled={disabled} depth={0} />
+      );
     }
   }
 }
@@ -1261,11 +1579,16 @@ function NestedSection({
   onFieldChange: (path: string, value: unknown) => void;
   disabled: boolean;
 }) {
+  const { highlightPath, onDelete } = useFieldEnv();
   const props = schema?.properties || {};
   const allKeys = Array.from(
     new Set([...Object.keys(props), ...Object.keys(value)])
   );
   const [expanded, setExpanded] = useState(allKeys.length <= 4);
+  // "Jump to field" must reach a field inside a collapsed group, so a highlight
+  // inside this subtree forces it open (derived, not stored — collapsing again
+  // is the user's call once the highlight fades).
+  const isOpen = expanded || Boolean(highlightPath?.startsWith(`${path}.`));
 
   allKeys.sort((a, b) => {
     const aHint = hints[`${path}.${a}`];
@@ -1283,23 +1606,36 @@ function NestedSection({
       schema?.propertyNames !== undefined);
 
   return (
-    <div className="rounded-lg border border-foreground/5 bg-foreground/5">
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-3 w-3 text-muted-foreground/60" />
+    <div className="rounded-lg border border-foreground/5 bg-foreground/5" id={`cfg-field-${path}`}>
+      <div className="flex w-full items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setExpanded(!isOpen)}
+          className="flex flex-1 items-center gap-2 text-left"
+        >
+          {isOpen ? (
+            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3 w-3 text-muted-foreground/60" />
+          )}
+          <span className="text-xs font-medium text-foreground/70">{label}</span>
+          <span className="text-xs text-muted-foreground/60">
+            {allKeys.length} field{allKeys.length !== 1 ? "s" : ""}
+          </span>
+        </button>
+        {!disabled && (
+          <button
+            type="button"
+            onClick={() => onDelete(path)}
+            aria-label={`Remove ${path}`}
+            title={`Remove ${label} from the configuration`}
+            className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-red-500/10 hover:text-red-500"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
         )}
-        <span className="text-xs font-medium text-foreground/70">{label}</span>
-        <span className="text-xs text-muted-foreground/60">
-          {allKeys.length} field{allKeys.length !== 1 ? "s" : ""}
-        </span>
-      </button>
-      {expanded && (
+      </div>
+      {isOpen && (
         <div className="border-t border-foreground/5 px-3 py-3 space-y-3">
           {help && (
             <p className="text-xs text-muted-foreground/60 leading-relaxed">{help}</p>
@@ -1319,10 +1655,9 @@ function NestedSection({
               const hint = hints[fullPath];
               const fLabel = getLabel(hints, fullPath, key);
               const fHelp = getHelp(hints, fullPath);
-              const sensitive = isSensitivePath(hints, fullPath);
+              const sensitive = isSensitivePath(hints, fullPath) && !showSensitive;
               const fieldType = inferFieldType(fieldSchema, hint);
-
-              if (fieldValue === undefined && !fieldSchema) return null;
+              const exists = key in value;
 
               // Dedicated UI for model primary/fallbacks (no raw JSON)
               if (
@@ -1372,22 +1707,19 @@ function NestedSection({
               }
 
               return (
-                <div key={key} className="space-y-1">
-                  <FieldLabel
-                    label={fLabel}
-                    help={fHelp}
-                    sensitive={sensitive && !showSensitive}
-                  />
-                  {renderField(
-                    fieldType,
-                    fieldValue,
-                    (v) => onFieldChange(fullPath, v),
-                    fieldSchema,
-                    hint,
-                    sensitive && !showSensitive,
-                    disabled
-                  )}
-                </div>
+                <ConfigField
+                  key={key}
+                  path={fullPath}
+                  label={fLabel}
+                  help={fHelp}
+                  schema={fieldSchema}
+                  hint={hint}
+                  value={fieldValue}
+                  exists={exists}
+                  sensitive={sensitive}
+                  disabled={disabled}
+                  onFieldChange={onFieldChange}
+                />
               );
             })
           )}
@@ -1406,7 +1738,7 @@ function normalizedJsonString(str: string): string | null {
   }
 }
 
-/** Redact sensitive values for display when Secrets is off (raw view). */
+/** Redact sensitive values for display when raw masking is on. */
 function redactConfigForDisplay(
   obj: unknown,
   hints: Record<string, UiHint>,
@@ -1436,11 +1768,25 @@ function redactConfigForDisplay(
    Main ConfigEditor
    ================================================================ */
 
+type PendingSave = {
+  baseDoc: JsonObject;
+  nextDoc: JsonObject;
+  hash: string;
+  replacePaths: string[];
+  fromRaw: boolean;
+  rawText: string;
+};
+
 export function ConfigEditor() {
-  const [rawConfig, setRawConfig] = useState<Record<string, unknown> | null>(null);
+  /** The document as loaded — never mutated. Every diff is measured from it. */
+  const [baseSnapshot, setBaseSnapshot] = useState<JsonObject | null>(null);
+  /** The document as edited. */
+  const [draft, setDraft] = useState<JsonObject | null>(null);
   const [baseHash, setBaseHash] = useState("");
   const [schema, setSchema] = useState<Record<string, JsonSchema>>({});
   const [hints, setHints] = useState<Record<string, UiHint>>({});
+  const [envSubstituted, setEnvSubstituted] = useState<string[]>([]);
+  const [configSource, setConfigSource] = useState<"parsed" | "resolved" | "disk">("parsed");
   const [fetchWarning, setFetchWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1449,106 +1795,177 @@ export function ConfigEditor() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showSensitive, setShowSensitive] = useState(false);
   const [search, setSearch] = useState("");
-  const [, setPendingChanges] = useState<
-    Record<string, unknown>
-  >({});
   const [showRawJson, setShowRawJson] = useState(false);
   /** Raw JSON editor content (when in raw view). Synced when entering raw view. */
   const [rawEditorValue, setRawEditorValue] = useState<string>("");
+  /** Raw masking is its own concern — the editor is editable by default. */
+  const [rawMaskSecrets, setRawMaskSecrets] = useState(false);
 
-  // Track which sections have unsaved edits
-  const [dirtyPaths, setDirtyPaths] = useState<Set<string>>(new Set());
+  // Write-flow state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [errorDetail, setErrorDetail] = useState<ConfigErrorDetail | null>(null);
+  const [conflict, setConflict] = useState<{
+    message: string;
+    currentHash: string;
+    remoteConfig: JsonObject;
+  } | null>(null);
+  const [replaceConfirm, setReplaceConfirm] = useState<{
+    paths: string[];
+    message: string;
+  } | null>(null);
+  const [saveSummary, setSaveSummary] = useState<SaveSuccess | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [doctorReport, setDoctorReport] = useState<DoctorReport | null>(null);
+  const [doctorRunning, setDoctorRunning] = useState(false);
+  const [validity, setValidity] = useState<Record<string, string>>({});
+  const [blockingErrors, setBlockingErrors] = useState<
+    Array<{ path: string; message: string }>
+  >([]);
+  const [highlightPath, setHighlightPath] = useState<string | null>(null);
+
   // Sidebar "Jump to" group expand/collapse (folder-explorer style). Set = collapsed group names.
   const [sidebarGroupsCollapsed, setSidebarGroupsCollapsed] = useState<Set<string>>(new Set());
 
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const hasInitialExpand = useRef(false);
+  const pendingSaveRef = useRef<PendingSave | null>(null);
+
+  const lookupApi = useConfigLookupSource();
+  const {
+    ensure: ensureLookups,
+    request: requestLookups,
+    reset: resetLookups,
+  } = lookupApi;
 
   const { resolvedTheme } = useTheme();
   const monacoTheme = resolvedTheme === "dark" ? "vs-dark" : "light";
 
   /* ── Fetch ─────────────────────────── */
 
-  const fetchConfig = useCallback(async (opts?: { silent?: boolean }): Promise<Record<string, unknown> | null> => {
-    if (!opts?.silent) {
-      setLoading(true);
-    }
-    setFetchWarning(null);
-    try {
-      const res = await fetch("/api/config", { cache: "no-store" });
-      const data = await res.json();
-      // Canonical payload: { config: <resolved, raw values>, meta: { baseHash, schema, uiHints, warning?, degraded? } }.
-      // Secrets arrive readable by design; the Secrets toggle redacts client-side only.
-      const config = data?.config || {};
-      const meta = data?.meta || {};
-      const hasConfigPayload = Boolean(data?.config);
-      if (!res.ok && !hasConfigPayload) {
-        throw new Error(data?.error || `HTTP ${res.status}`);
+  const fetchConfig = useCallback(
+    async (opts?: { silent?: boolean }): Promise<JsonObject | null> => {
+      if (!opts?.silent) setLoading(true);
+      setFetchWarning(null);
+      try {
+        // `config` is the gateway's `parsed` document: `${VAR}` stays literal so
+        // a round-trip cannot bake env indirection into its expansion.
+        const payload = await fetchConfigPayload();
+        setBaseSnapshot(payload.config);
+        setDraft(payload.config);
+        setBaseHash(payload.baseHash);
+        setSchema(payload.schema as Record<string, JsonSchema>);
+        setHints(payload.uiHints as Record<string, UiHint>);
+        setEnvSubstituted(payload.envSubstituted);
+        setConfigSource(payload.configSource);
+        if (payload.warning) setFetchWarning(payload.warning);
+        setLoadError(null);
+        setLoading(false);
+        setValidity({});
+        setBlockingErrors([]);
+        return payload.config;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setLoadError(msg);
+        console.warn("Config fetch error:", err);
+        setLoading(false);
+        return null;
       }
-      setRawConfig(config);
-      setBaseHash(meta.baseHash || "");
-      // Gateway config.schema returns { schema, uiHints }. schema.properties = top-level keys (agents, gateway, ...) matching openclaw.json.
-      if (meta.schema?.properties) {
-        setSchema(meta.schema.properties);
-      } else {
-        setSchema({});
-      }
-      setHints(meta.uiHints || {});
-      if (meta.warning) setFetchWarning(String(meta.warning));
-      setLoadError(null);
-      setLoading(false);
-      return typeof config === "object" && config !== null && !Array.isArray(config) ? config : null;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setLoadError(msg);
-      console.warn("Config fetch error:", err);
-      setLoading(false);
-      return null;
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
-    fetchConfig();
+    void fetchConfig();
   }, [fetchConfig]);
 
+  /* ── Diff ──────────────────────────── */
+
+  const diff = useMemo(
+    () => buildConfigDiff(baseSnapshot ?? {}, draft ?? {}),
+    [baseSnapshot, draft]
+  );
+
+  const dirtySections = useMemo(
+    () => new Set(diff.changedPaths.map((p) => p.split(".")[0])),
+    [diff.changedPaths]
+  );
+
+  const rawParsed = useMemo<JsonObject | null>(() => {
+    if (!showRawJson) return null;
+    try {
+      const parsed = JSON.parse(rawEditorValue) as unknown;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as JsonObject)
+        : null;
+    } catch {
+      return null;
+    }
+  }, [showRawJson, rawEditorValue]);
+
+  const rawViewDirty =
+    showRawJson &&
+    draft !== null &&
+    (() => {
+      const norm = normalizedJsonString(rawEditorValue);
+      return norm !== null && norm !== JSON.stringify(draft, null, 2);
+    })();
+
+  const hasDirty = diff.changed || Boolean(rawViewDirty);
+
   /* ── Section ordering ────────────── */
-  // rawConfig = /api/config `config` payload (resolved openclaw.json shape). Sections = top-level keys (agents, gateway, channels, tools, ...).
+  // Sections come from the SCHEMA unioned with the document, so a section that
+  // has never been written to disk (cron, memory, …) can still be created here
+  // instead of forcing the user into the Raw tab.
 
-  const sections = rawConfig
-    ? Object.keys(rawConfig).sort((a, b) => {
-        const aOrder = hints[a]?.order ?? 999;
-        const bOrder = hints[b]?.order ?? 999;
-        if (aOrder !== bOrder) return aOrder - bOrder;
-        return a.localeCompare(b);
-      })
-    : [];
+  const sections = useMemo(() => {
+    const keys = new Set<string>();
+    for (const key of Object.keys(schema)) {
+      if (!key.startsWith("$")) keys.add(key);
+    }
+    for (const key of Object.keys(draft ?? {})) keys.add(key);
+    return Array.from(keys).sort((a, b) => {
+      const aOrder = hints[a]?.order ?? 999;
+      const bOrder = hints[b]?.order ?? 999;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.localeCompare(b);
+    });
+  }, [schema, draft, hints]);
 
-  const filteredSections = search
-    ? sections.filter((s) => {
-        const label = hints[s]?.label || s;
-        const matchSection =
-          label.toLowerCase().includes(search.toLowerCase()) ||
-          s.toLowerCase().includes(search.toLowerCase());
-        if (matchSection) return true;
-        // Also search field labels within the section
-        return Object.keys(hints).some(
-          (k) =>
-            k.startsWith(s + ".") &&
-            (hints[k].label?.toLowerCase().includes(search.toLowerCase()) ||
-              k.toLowerCase().includes(search.toLowerCase()))
-        );
-      })
-    : sections;
+  const fieldIndex = useMemo<FieldIndexEntry[]>(
+    () =>
+      buildFieldIndex(
+        draft ?? {},
+        schema as Record<string, { properties?: Record<string, unknown> }>,
+        hints
+      ),
+    [draft, schema, hints]
+  );
+
+  const fieldMatches = useMemo(
+    () => searchFields(fieldIndex, search),
+    [fieldIndex, search]
+  );
+
+  const filteredSections = useMemo(() => {
+    if (!search) return sections;
+    const q = search.toLowerCase();
+    const matchedSections = new Set(fieldMatches.map((m) => m.section));
+    return sections.filter((s) => {
+      const label = hints[s]?.label || s;
+      if (label.toLowerCase().includes(q) || s.toLowerCase().includes(q)) return true;
+      return matchedSections.has(s);
+    });
+  }, [search, sections, hints, fieldMatches]);
 
   /** Sections grouped by hint.group for easier scanning */
-  const groupedSections = (() => {
+  const groupedSections = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const key of filteredSections) {
       const group = (hints[key]?.group as string) || "General";
       if (!map.has(group)) map.set(group, []);
       map.get(group)!.push(key);
     }
-    const sorted = Array.from(map.entries()).sort(([a], [b]) => {
+    return Array.from(map.entries()).sort(([a], [b]) => {
       const ai = GROUP_ORDER.indexOf(a);
       const bi = GROUP_ORDER.indexOf(b);
       if (ai !== -1 && bi !== -1) return ai - bi;
@@ -1556,8 +1973,7 @@ export function ConfigEditor() {
       if (bi !== -1) return 1;
       return a.localeCompare(b);
     });
-    return sorted;
-  })();
+  }, [filteredSections, hints]);
 
   // Expand first section on first load so the page isn't a wall of collapsed cards
   useEffect(() => {
@@ -1567,6 +1983,27 @@ export function ConfigEditor() {
     }
   }, [filteredSections]);
 
+  /* ── Schema lookups for everything on screen ─────────────── */
+
+  useEffect(() => {
+    if (!draft) return;
+    // Prefetch the visible sections' immediate children — the batching hook
+    // de-duplicates, caps each request at 25 paths and caches the answers.
+    const wanted: string[] = [];
+    for (const sectionKey of expanded) {
+      const value = draft[sectionKey];
+      const props = schema[sectionKey]?.properties ?? {};
+      const keys = new Set([
+        ...Object.keys(props),
+        ...(value && typeof value === "object" && !Array.isArray(value)
+          ? Object.keys(value as JsonObject)
+          : []),
+      ]);
+      for (const key of keys) wanted.push(`${sectionKey}.${key}`);
+    }
+    if (wanted.length > 0) requestLookups(wanted.slice(0, 200));
+  }, [draft, schema, expanded, requestLookups]);
+
   const jumpToSection = useCallback((sectionKey: string) => {
     setExpanded((prev) => new Set([...prev, sectionKey]));
     requestAnimationFrame(() => {
@@ -1574,110 +2011,356 @@ export function ConfigEditor() {
     });
   }, []);
 
-  /* ── Field change handler ─────────── */
+  const jumpToField = useCallback((path: string) => {
+    const sectionKey = path.split(".")[0];
+    setExpanded((prev) => new Set([...prev, sectionKey]));
+    setHighlightPath(path);
+    // Two frames: one for the section to expand, one for nested groups to open.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`cfg-field-${path}`);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        else sectionRefs.current[sectionKey]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  }, []);
 
-  const handleFieldChange = useCallback(
-    (path: string, value: unknown) => {
-      if (!rawConfig) return;
-      const newConfig = setDeep(rawConfig, path, value);
-      setRawConfig(newConfig);
-      setPendingChanges((prev) => ({
-        ...prev,
-        ...buildPatchObject(path, value),
-      }));
-      setDirtyPaths((prev) => new Set([...prev, path.split(".")[0]]));
-    },
-    [rawConfig]
+  useEffect(() => {
+    if (!highlightPath) return;
+    const t = setTimeout(() => setHighlightPath(null), 3500);
+    return () => clearTimeout(t);
+  }, [highlightPath]);
+
+  /* ── Field editing ─────────────────── */
+
+  const handleFieldChange = useCallback((path: string, value: unknown) => {
+    setDraft((prev) => (prev ? setAtPath(prev, path, value) : prev));
+  }, []);
+
+  /**
+   * Real deletion: the key is removed from the draft, so `buildConfigDiff`
+   * emits an explicit `null` and OpenClaw actually drops it. Before this, the
+   * form dropped the key locally and the whole-document merge patch simply
+   * left it in place — a silent no-op reported as "saved successfully".
+   */
+  const handleFieldDelete = useCallback((path: string) => {
+    setDraft((prev) => (prev ? deleteAtPath(prev, path) : prev));
+  }, []);
+
+  const reportValidity = useCallback((path: string, message: string | null) => {
+    setValidity((prev) => {
+      if (message === null) {
+        if (!(path in prev)) return prev;
+        const next = { ...prev };
+        delete next[path];
+        return next;
+      }
+      if (prev[path] === message) return prev;
+      return { ...prev, [path]: message };
+    });
+  }, []);
+
+  const fieldEnv = useMemo<FieldEnv>(
+    () => ({
+      hints,
+      showSensitive,
+      envSubstituted,
+      reportValidity,
+      onDelete: handleFieldDelete,
+      highlightPath,
+    }),
+    [hints, showSensitive, envSubstituted, reportValidity, handleFieldDelete, highlightPath]
   );
 
-  const rawViewDirty =
-    showRawJson &&
-    rawConfig !== null &&
-    (() => {
-      const norm = normalizedJsonString(rawEditorValue);
-      return norm !== null && norm !== JSON.stringify(rawConfig, null, 2);
-    })();
-  const hasDirty = dirtyPaths.size > 0 || rawViewDirty;
+  /* ── Preview data ──────────────────── */
+
+  const previewDoc: JsonObject | null = showRawJson ? rawParsed : draft;
+
+  const previewDiff = useMemo(() => {
+    if (!showRawJson) return diff;
+    return buildConfigDiff(baseSnapshot ?? {}, rawParsed ?? baseSnapshot ?? {});
+  }, [showRawJson, diff, baseSnapshot, rawParsed]);
+
+  const changeEntries = useMemo<ChangeEntry[]>(
+    () =>
+      describeChanges(baseSnapshot ?? {}, previewDoc ?? {}, previewDiff, {
+        hints,
+        envSubstituted,
+        lookup: (path) => lookupApi.get(path),
+      }),
+    [baseSnapshot, previewDoc, previewDiff, hints, envSubstituted, lookupApi]
+  );
+
+  const restartPlan = useMemo(() => planRestart(changeEntries), [changeEntries]);
+  const authTokenMint = useMemo(
+    () => detectAuthTokenMint(baseSnapshot ?? {}, previewDoc ?? {}),
+    [baseSnapshot, previewDoc]
+  );
 
   /* ── Save ───────────────────────────── */
 
-  const saveChanges = useCallback(async () => {
-    const savingFromRaw = showRawJson && rawViewDirty;
-    if (!savingFromRaw && !hasDirty) return;
+  const runDoctorCheck = useCallback(async () => {
+    setDoctorRunning(true);
+    try {
+      setDoctorReport(await runDoctor(true));
+    } catch (err) {
+      console.warn("Doctor check failed:", err);
+      setDoctorReport(null);
+    } finally {
+      setDoctorRunning(false);
+    }
+  }, []);
 
-    if (savingFromRaw) {
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(rawEditorValue) as Record<string, unknown>;
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-          setToast({ ok: false, msg: "Invalid JSON: root must be an object" });
-          return;
-        }
-      } catch {
-        setToast({ ok: false, msg: "Invalid JSON: check syntax" });
+  const performSave = useCallback(
+    async (params: PendingSave) => {
+      pendingSaveRef.current = params;
+      setSaving(true);
+      setErrorDetail(null);
+      setReplaceConfirm(null);
+
+      const request = params.fromRaw
+        ? // A raw save is a full document: `config.apply` is a validated full
+          // replace, so keys the user deleted really disappear and arrays can
+          // shrink without a replacePaths confirmation.
+          { raw: params.rawText, baseHash: params.hash, mode: "apply" as const }
+        : buildSaveBody(params.baseDoc, params.nextDoc, params.hash, params.replacePaths).body;
+
+      const result = await saveConfig(request);
+
+      if (result.status === "conflict") {
+        setSaving(false);
+        setPreviewOpen(false);
+        setConflict({
+          message: result.message,
+          currentHash: result.currentHash,
+          remoteConfig: result.remoteConfig,
+        });
         return;
       }
+
+      if (result.status === "needs-replace-confirm") {
+        setSaving(false);
+        setPreviewOpen(false);
+        setReplaceConfirm({ paths: result.paths, message: result.message });
+        return;
+      }
+
+      if (result.status === "rate-limited") {
+        setSaving(false);
+        setPreviewOpen(false);
+        setErrorDetail({
+          title: "Too many configuration writes",
+          message: result.message,
+          details: result.details,
+          retryAfterMs: result.retryAfterMs,
+          at: Date.now(),
+        });
+        return;
+      }
+
+      if (result.status === "error") {
+        setSaving(false);
+        setPreviewOpen(false);
+        setErrorDetail({
+          title: "The configuration was not saved",
+          message: result.message,
+          details: result.details,
+          doctorOutput: result.doctorOutput,
+          fallback: result.fallback,
+          at: Date.now(),
+        });
+        return;
+      }
+
+      // Success.
+      setSaving(false);
+      setPreviewOpen(false);
+      setSaveSummary(result);
+      setSavedAt(Date.now());
+      setToast({ ok: true, msg: "Configuration saved" });
+      // Restart only when the server says a touched path needs one — the old
+      // editor restarted on every save, against a 30s restart cooldown.
+      if (result.restartRequired) {
+        requestRestart(
+          `Configuration saved. ${
+            result.restartPaths.length > 0
+              ? `${result.restartPaths.join(", ")} needs`
+              : "A changed setting needs"
+          } a gateway restart.`
+        );
+      }
+      resetLookups();
+      // Re-read rather than trusting `result.hash` alone: the GET is also the
+      // receipt that the write landed, and its hash is the newest one even if
+      // another operator wrote in between.
+      const fresh = await fetchConfig({ silent: true });
+      if (params.fromRaw && fresh) {
+        setRawEditorValue(JSON.stringify(fresh, null, 2));
+      }
+      void runDoctorCheck();
+    },
+    [fetchConfig, resetLookups, runDoctorCheck]
+  );
+
+  /**
+   * Gate: validate every path this write touches — including fields whose
+   * section is collapsed — then show the diff preview. This is what makes the
+   * header's "checked before saving" claim true.
+   */
+  const requestSave = useCallback(async () => {
+    setErrorDetail(null);
+    setBlockingErrors([]);
+
+    if (showRawJson && rawParsed === null) {
+      setErrorDetail({
+        title: "That is not valid JSON",
+        message:
+          "The raw editor must contain a JSON object. Fix the syntax highlighted in the editor and try again.",
+        at: Date.now(),
+      });
+      return;
+    }
+
+    const nextDoc = (showRawJson ? rawParsed : draft) ?? {};
+    const activeDiff = showRawJson
+      ? buildConfigDiff(baseSnapshot ?? {}, nextDoc)
+      : diff;
+
+    if (!activeDiff.changed) {
+      setToast({ ok: true, msg: "Nothing to save — no changes yet" });
+      return;
     }
 
     setSaving(true);
     try {
-      // Form view: send full rawConfig (openclaw.json shape) so all edits are persisted; gateway merges via config.patch.
-      const body = savingFromRaw
-        ? { raw: rawEditorValue, baseHash }
-        : { patch: rawConfig ?? {}, baseHash };
-      const res = await fetch("/api/config", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setToast({ ok: true, msg: "Configuration saved successfully" });
-        setPendingChanges({});
-        setDirtyPaths(new Set());
-        requestRestart("Configuration was updated — some changes may require a restart.");
-        const newConfig = await fetchConfig();
-        if (savingFromRaw && newConfig) {
-          setRawEditorValue(JSON.stringify(newConfig, null, 2));
-        }
-      } else {
-        setToast({ ok: false, msg: data.error || "Save failed" });
-      }
-    } catch (err) {
-      setToast({ ok: false, msg: String(err) });
+      await ensureLookups(activeDiff.changedPaths.slice(0, 200));
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-  }, [hasDirty, baseHash, fetchConfig, showRawJson, rawEditorValue, rawViewDirty, rawConfig]);
 
+    const problems: Array<{ path: string; message: string }> = [];
+    for (const path of activeDiff.changedPaths) {
+      const info = lookupApi.get(path);
+      if (!info) continue;
+      const check = validateConfigValue(info, getAtPath(nextDoc, path));
+      if (!check.ok) problems.push({ path, message: check.message });
+    }
+    if (problems.length > 0) {
+      setBlockingErrors(problems);
+      return;
+    }
+
+    pendingSaveRef.current = {
+      baseDoc: baseSnapshot ?? {},
+      nextDoc,
+      hash: baseHash,
+      replacePaths: activeDiff.replacePaths,
+      fromRaw: showRawJson,
+      rawText: showRawJson ? rawEditorValue : JSON.stringify(nextDoc, null, 2),
+    };
+    setPreviewOpen(true);
+  }, [
+    showRawJson,
+    rawParsed,
+    draft,
+    diff,
+    baseSnapshot,
+    baseHash,
+    rawEditorValue,
+    ensureLookups,
+    lookupApi,
+  ]);
+
+  const confirmSave = useCallback(() => {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    void performSave(pending);
+  }, [performSave]);
+
+  const confirmReplacePaths = useCallback(() => {
+    const pending = pendingSaveRef.current;
+    if (!pending || !replaceConfirm) return;
+    void performSave({
+      ...pending,
+      replacePaths: Array.from(new Set([...pending.replacePaths, ...replaceConfirm.paths])),
+    });
+  }, [performSave, replaceConfirm]);
+
+  /* ── Conflict resolution ───────────── */
+
+  const conflictAnalysis = useMemo(
+    () =>
+      analyzeConflict(
+        baseSnapshot ?? {},
+        (showRawJson ? rawParsed : draft) ?? {},
+        conflict?.remoteConfig ?? {}
+      ),
+    [baseSnapshot, showRawJson, rawParsed, draft, conflict]
+  );
+
+  const resolveWithTheirs = useCallback(() => {
+    if (!conflict) return;
+    setBaseSnapshot(conflict.remoteConfig);
+    setDraft(conflict.remoteConfig);
+    setBaseHash(conflict.currentHash);
+    if (showRawJson) setRawEditorValue(JSON.stringify(conflict.remoteConfig, null, 2));
+    setConflict(null);
+    setValidity({});
+    setBlockingErrors([]);
+    setToast({ ok: true, msg: "Reloaded the current configuration — your edits were discarded" });
+  }, [conflict, showRawJson]);
+
+  const resolveWithRebase = useCallback(() => {
+    if (!conflict) return;
+    const mine = (showRawJson ? rawParsed : draft) ?? {};
+    const myDiff = buildConfigDiff(baseSnapshot ?? {}, mine);
+    // Replay my minimal patch on top of their document, then save against
+    // THEIR hash — the write is still guarded, it is just guarded by the base
+    // I actually rebased onto.
+    const rebased = applyMergePatch(conflict.remoteConfig, myDiff.patch) as JsonObject;
+    const rebasedDiff = buildConfigDiff(conflict.remoteConfig, rebased);
+    setBaseSnapshot(conflict.remoteConfig);
+    setDraft(rebased);
+    setBaseHash(conflict.currentHash);
+    if (showRawJson) setRawEditorValue(JSON.stringify(rebased, null, 2));
+    setConflict(null);
+    void performSave({
+      baseDoc: conflict.remoteConfig,
+      nextDoc: rebased,
+      hash: conflict.currentHash,
+      replacePaths: rebasedDiff.replacePaths,
+      fromRaw: showRawJson,
+      rawText: JSON.stringify(rebased, null, 2),
+    });
+  }, [conflict, showRawJson, rawParsed, draft, baseSnapshot, performSave]);
 
   /* ── Discard ────────────────────── */
 
   const discardChanges = useCallback(async () => {
-    setPendingChanges({});
-    setDirtyPaths(new Set());
-    const newConfig = await fetchConfig({ silent: true });
-    if (showRawJson && newConfig) {
-      setRawEditorValue(JSON.stringify(newConfig, null, 2));
-    }
+    const fresh = await fetchConfig({ silent: true });
+    if (showRawJson && fresh) setRawEditorValue(JSON.stringify(fresh, null, 2));
+    setBlockingErrors([]);
+    setErrorDetail(null);
+    setReplaceConfirm(null);
   }, [fetchConfig, showRawJson]);
 
   const toggleRawView = useCallback(() => {
     const next = !showRawJson;
-    if (next && rawConfig) {
-      setRawEditorValue(JSON.stringify(rawConfig, null, 2));
+    if (next && draft) {
+      setRawEditorValue(JSON.stringify(draft, null, 2));
     }
     if (!next && rawEditorValue) {
       try {
-        const parsed = JSON.parse(rawEditorValue) as Record<string, unknown>;
+        const parsed = JSON.parse(rawEditorValue) as JsonObject;
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          setRawConfig(parsed);
+          setDraft(parsed);
         }
       } catch {
-        // keep current rawConfig on invalid JSON when switching away
+        // keep the current draft when the raw JSON is invalid
       }
     }
     setShowRawJson(next);
-  }, [showRawJson, rawConfig, rawEditorValue]);
+  }, [showRawJson, draft, rawEditorValue]);
 
   const toggleSection = (key: string) => {
     setExpanded((prev) => {
@@ -1688,17 +2371,59 @@ export function ConfigEditor() {
     });
   };
 
+  const createSection = useCallback((sectionKey: string) => {
+    setDraft((prev) => (prev ? { ...prev, [sectionKey]: {} } : prev));
+    setExpanded((prev) => new Set([...prev, sectionKey]));
+  }, []);
+
+  const removeSection = useCallback((sectionKey: string) => {
+    setDraft((prev) => (prev ? deleteAtPath(prev, sectionKey) : prev));
+  }, []);
+
+  /* ── Unsaved-changes guard ─────────── */
+
+  useEffect(() => {
+    if (!hasDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    // Next's client router navigates via <Link> anchors; intercept in the
+    // capture phase so a stray click cannot silently discard the draft.
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      const anchor = (e.target as HTMLElement | null)?.closest?.("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const href = anchor.getAttribute("href") || "";
+      if (!href.startsWith("/") || anchor.target === "_blank") return;
+      if (href === window.location.pathname + window.location.search) return;
+      const ok = window.confirm(
+        "You have unsaved configuration changes. Leave this page and discard them?"
+      );
+      if (!ok) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [hasDirty]);
+
   /* ── Loading state ─────────────── */
 
   if (loading) {
     return (
       <SectionLayout>
-        <LoadingState label="Loading configuration..." size="lg" />
+        <ScreenLoadingState size="lg" />
       </SectionLayout>
     );
   }
 
-  if (!rawConfig) {
+  if (!draft || !baseSnapshot) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-sm text-muted-foreground">
         <div className="flex items-center">
@@ -1724,9 +2449,14 @@ export function ConfigEditor() {
     );
   }
 
+  const liveValidationAvailable = lookupApi.reason === null;
+  const inlineErrorCount = Object.keys(validity).length;
+
   /* ── Render ─────────────────────── */
 
   return (
+    <ConfigLookupContext.Provider value={lookupApi}>
+    <FieldEnvContext.Provider value={fieldEnv}>
     <SectionLayout>
       <SectionHeader
         title={
@@ -1735,12 +2465,16 @@ export function ConfigEditor() {
             Configuration
           </span>
         }
-        description="Edit your OpenClaw settings safely • Changes are validated before saving"
+        description={
+          liveValidationAvailable
+            ? "Edit your OpenClaw settings safely • Every change is checked against the gateway's schema and previewed before it is written"
+            : "Edit your OpenClaw settings • Field rules are unavailable right now, so changes are previewed but not fully checked"
+        }
         descriptionClassName="text-sm text-muted-foreground"
         actions={
           <div className="flex items-center gap-2">
             {/* Search */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 dark:border-[#2c343d] dark:bg-[#171a1d]">
+            <div className="relative flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 dark:border-[#2c343d] dark:bg-[#171a1d]">
               <Search className="h-3.5 w-3.5 text-muted-foreground/60" />
               <input
                 value={search}
@@ -1753,6 +2487,35 @@ export function ConfigEditor() {
                 <button onClick={() => setSearch("")} className="text-muted-foreground/60 hover:text-muted-foreground">
                   <X className="h-3 w-3" />
                 </button>
+              )}
+              {search && fieldMatches.length > 0 && (
+                <div className="absolute right-0 top-full z-30 mt-1 w-72 overflow-hidden rounded-lg border border-stone-200 bg-white shadow-xl dark:border-[#2c343d] dark:bg-[#171a1d]">
+                  <p className="border-b border-foreground/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {fieldMatches.length} matching field{fieldMatches.length === 1 ? "" : "s"}
+                  </p>
+                  <ul className="max-h-72 overflow-y-auto">
+                    {fieldMatches.map((match) => (
+                      <li key={match.path}>
+                        <button
+                          type="button"
+                          data-testid="field-search-result"
+                          onClick={() => {
+                            jumpToField(match.path);
+                            setSearch("");
+                          }}
+                          className="flex w-full flex-col items-start px-3 py-1.5 text-left transition-colors hover:bg-foreground/5"
+                        >
+                          <span className="text-xs font-medium text-foreground/90">
+                            {match.label}
+                          </span>
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {match.path}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
 
@@ -1789,6 +2552,7 @@ export function ConfigEditor() {
               onClick={() => {
                 void fetchConfig();
               }}
+              aria-label="Reload configuration"
               className="rounded-lg border border-stone-200 bg-white p-1.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900 dark:border-[#2c343d] dark:bg-[#171a1d] dark:text-[#a8b0ba] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]"
             >
               <RefreshCw className="h-3.5 w-3.5" />
@@ -1806,16 +2570,47 @@ export function ConfigEditor() {
         </div>
       )}
 
+      {configSource !== "parsed" && (
+        <div className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 md:px-6">
+          <p className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-200">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {configSource === "disk"
+              ? "Showing the configuration file from disk because the gateway could not be reached. Saving is not guarded against concurrent edits."
+              : "This gateway did not return the authored document, so environment references may already be expanded. Editing a value that came from ${VAR} will replace the reference."}
+          </p>
+        </div>
+      )}
+
       {/* Unsaved changes bar */}
       {hasDirty && (
-        <div className="shrink-0 flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5 md:px-6 dark:border-amber-500/20 dark:bg-amber-500/10">
+        <div className="shrink-0 flex flex-wrap items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5 md:px-6 dark:border-amber-500/20 dark:bg-amber-500/10">
           <Info className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
-          <p className="flex-1 text-xs text-amber-800 dark:text-amber-200">
-            You have unsaved changes in{" "}
-            <strong>
-              {[rawViewDirty && "raw JSON", ...Array.from(dirtyPaths)].filter(Boolean).join(", ")}
-            </strong>
+          <p className="flex-1 min-w-40 text-xs text-amber-800 dark:text-amber-200">
+            {previewDiff.changedPaths.length > 0 ? (
+              <>
+                <strong>
+                  {previewDiff.changedPaths.length} unsaved change
+                  {previewDiff.changedPaths.length === 1 ? "" : "s"}
+                </strong>
+                {previewDiff.deletedPaths.length > 0 && (
+                  <> · {previewDiff.deletedPaths.length} removal{previewDiff.deletedPaths.length === 1 ? "" : "s"}</>
+                )}
+                {dirtySections.size > 0 && <> in {Array.from(dirtySections).join(", ")}</>}
+              </>
+            ) : (
+              <>Unsaved changes in the raw editor</>
+            )}
           </p>
+          {inlineErrorCount > 0 && (
+            <button
+              type="button"
+              onClick={() => jumpToField(Object.keys(validity)[0])}
+              data-testid="config-jump-to-error"
+              className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-500/20 dark:text-red-300"
+            >
+              {inlineErrorCount} field{inlineErrorCount === 1 ? "" : "s"} need fixing — jump there
+            </button>
+          )}
           <button
             type="button"
             onClick={discardChanges}
@@ -1826,8 +2621,14 @@ export function ConfigEditor() {
           </button>
           <button
             type="button"
-            onClick={saveChanges}
-            disabled={saving}
+            onClick={() => void requestSave()}
+            disabled={saving || inlineErrorCount > 0}
+            data-testid="config-review-save"
+            title={
+              inlineErrorCount > 0
+                ? "Fix the highlighted fields before saving"
+                : "Review the exact changes before they are written"
+            }
             className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-4 py-1.5 text-xs font-medium transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {saving ? (
@@ -1839,53 +2640,223 @@ export function ConfigEditor() {
             ) : (
               <Save className="h-3.5 w-3.5" />
             )}
-            {saving ? "Saving..." : "Save Changes"}
+            {saving ? "Working…" : "Review & save"}
           </button>
         </div>
       )}
 
       {/* Content */}
       <SectionBody width="wide" padding="compact" innerClassName="space-y-2">
+        {/* Blocking validation summary */}
+        {blockingErrors.length > 0 && (
+          <div
+            data-testid="config-validation-summary"
+            className="rounded-xl border border-red-500/30 bg-red-50 px-4 py-3 dark:bg-red-950/30"
+          >
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-red-900 dark:text-red-100">
+              <AlertCircle className="h-4 w-4" />
+              {blockingErrors.length} change{blockingErrors.length === 1 ? "" : "s"} cannot be saved
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {blockingErrors.map((problem) => (
+                <li key={problem.path} className="text-xs">
+                  <button
+                    type="button"
+                    onClick={() => jumpToField(problem.path)}
+                    className="font-mono font-medium text-red-800 underline underline-offset-2 hover:no-underline dark:text-red-200"
+                  >
+                    {problem.path}
+                  </button>
+                  <span className="ml-2 text-red-900/90 dark:text-red-100/90">
+                    {problem.message}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Persistent error panel — failures never auto-dismiss */}
+        {errorDetail && (
+          <ConfigErrorPanel
+            error={errorDetail}
+            onDismiss={() => setErrorDetail(null)}
+            onRetry={
+              pendingSaveRef.current
+                ? () => {
+                    const pending = pendingSaveRef.current;
+                    if (pending) void performSave(pending);
+                  }
+                : undefined
+            }
+          />
+        )}
+
+        {/* replacePathsRequired is a confirmation prompt, not a failure */}
+        {replaceConfirm && (
+          <div
+            data-testid="config-replace-confirm"
+            className="rounded-xl border border-amber-500/30 bg-amber-50 px-4 py-3 dark:bg-amber-950/20"
+          >
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-900 dark:text-amber-100">
+              <ListMinus className="h-4 w-4" />
+              Confirm removing list entries
+            </p>
+            <p className="mt-1 text-xs text-amber-900/90 dark:text-amber-100/90">
+              This change removes entries from {replaceConfirm.paths.length} list
+              {replaceConfirm.paths.length === 1 ? "" : "s"}. OpenClaw needs an explicit
+              confirmation before it will shrink a list.
+            </p>
+            <p className="mt-1 font-mono text-xs text-amber-900/90 dark:text-amber-100/90">
+              {replaceConfirm.paths.join(", ")}
+            </p>
+            <div className="mt-2.5 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setReplaceConfirm(null)}
+                className="rounded-lg px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmReplacePaths}
+                disabled={saving}
+                data-testid="config-replace-confirm-accept"
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                Yes, remove them
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Save receipt */}
+        {saveSummary && (
+          <div
+            data-testid="config-save-receipt"
+            className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3"
+          >
+            <div className="flex items-start gap-2.5">
+              <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground/90">Configuration saved</p>
+                <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                  {saveSummary.deletedPaths.length > 0 && (
+                    <li>
+                      Removed:{" "}
+                      <code className="font-mono text-foreground/80">
+                        {saveSummary.deletedPaths.join(", ")}
+                      </code>
+                    </li>
+                  )}
+                  <li>
+                    {saveSummary.restartRequired
+                      ? `Gateway restart requested${
+                          saveSummary.restartPaths.length > 0
+                            ? ` (${saveSummary.restartPaths.join(", ")})`
+                            : ""
+                        }.`
+                      : "Applied live — no gateway restart was needed."}
+                  </li>
+                  {saveSummary.repairedConfig && (
+                    <li>An invalid configuration was repaired before the write.</li>
+                  )}
+                  {saveSummary.fallbackUsed && (
+                    <li>{saveSummary.fallbackMessage ?? "Saved in compatibility mode."}</li>
+                  )}
+                  {saveSummary.warnings.map((w) => (
+                    <li key={w} className="text-amber-700 dark:text-amber-300">
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaveSummary(null)}
+                aria-label="Dismiss save summary"
+                className="shrink-0 rounded p-1 text-muted-foreground/70 transition-colors hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Doctor: the standing safety net after every save */}
+        {(doctorReport || doctorRunning) && (
+          <ConfigDoctorPanel
+            report={doctorReport}
+            running={doctorRunning}
+            savedAt={savedAt}
+            onRecheck={() => void runDoctorCheck()}
+            onDismiss={() => setDoctorReport(null)}
+          />
+        )}
+
         {showRawJson ? (
-          /* Raw JSON view – editable when Secrets on, redacted when off */
+          /* Raw JSON view — editable by default; masking is a separate concern */
           (() => {
-            const redactedRaw =
-              rawConfig != null
-                ? JSON.stringify(redactConfigForDisplay(rawConfig, hints), null, 2)
-                : "{}";
-            const rawDisplayValue = showSensitive ? rawEditorValue : redactedRaw;
+            const redactedRaw = JSON.stringify(
+              redactConfigForDisplay(draft, hints),
+              null,
+              2
+            );
+            const rawDisplayValue = rawMaskSecrets ? redactedRaw : rawEditorValue;
             return (
               <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium text-foreground/70">
                     Raw Configuration
                   </span>
-                  <span className="text-xs text-muted-foreground/60">
-                    {showSensitive
-                      ? "Edit JSON directly; save with the button above when done"
-                      : "Secrets hidden; turn on Secrets to view and edit."}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground/60">
+                      {rawMaskSecrets
+                        ? "Masked view is read-only — masked values would overwrite the real secrets."
+                        : "Edit the JSON directly, then use Review & save. Saved as a full replacement, so removed keys are really removed."}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setRawMaskSecrets((v) => !v)}
+                      className={cn(
+                        "flex items-center gap-1 rounded border px-2 py-1 text-xs transition-colors",
+                        rawMaskSecrets
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          : "border-foreground/10 text-muted-foreground hover:bg-muted/80"
+                      )}
+                    >
+                      {rawMaskSecrets ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      {rawMaskSecrets ? "Secrets masked" : "Secrets visible"}
+                    </button>
+                  </div>
                 </div>
+                {showRawJson && rawViewDirty && rawParsed === null && (
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+                    <AlertCircle className="h-3 w-3" />
+                    This is not valid JSON yet — saving is blocked until it parses.
+                  </p>
+                )}
                 <div className="rounded-lg overflow-hidden border border-foreground/10 bg-zinc-800 dark:bg-zinc-800 min-h-96">
                   <MonacoEditor
                     height="70vh"
                     language="json"
                     value={rawDisplayValue}
-                    onChange={showSensitive ? (v) => setRawEditorValue(v ?? "") : undefined}
+                    onChange={rawMaskSecrets ? undefined : (v) => setRawEditorValue(v ?? "")}
                     theme={monacoTheme}
                     options={{
                       minimap: { enabled: false },
                       fontSize: 13,
                       lineNumbers: "on",
                       wordWrap: "on",
-                      formatOnPaste: showSensitive,
-                      formatOnType: showSensitive,
+                      formatOnPaste: !rawMaskSecrets,
+                      formatOnType: !rawMaskSecrets,
                       scrollBeyondLastLine: false,
                       padding: { top: 12, bottom: 12 },
                       bracketPairColorization: { enabled: true },
                       folding: true,
                       semanticHighlighting: { enabled: true },
-                      readOnly: !showSensitive,
+                      readOnly: rawMaskSecrets,
                     } as unknown as NonNullable<React.ComponentProps<typeof MonacoEditor>["options"]>}
                   />
                 </div>
@@ -1895,7 +2866,7 @@ export function ConfigEditor() {
         ) : (
           /* Form view: sidebar nav + grouped sections */
           <div className="flex gap-6">
-            {/* Sticky sidebar: Jump to section */}
+            {/* Sticky sidebar: Jump to section (large screens) */}
             <nav
               aria-label="Config sections"
               className="hidden lg:block shrink-0 w-48 sticky top-4 self-start rounded-xl border border-foreground/10 bg-foreground/5 p-3 max-h-screen overflow-y-auto"
@@ -1932,7 +2903,8 @@ export function ConfigEditor() {
                         {sectionKeys.map((sectionKey) => {
                           const label = hints[sectionKey]?.label || sectionKey;
                           const icon = SECTION_ICONS[sectionKey] || "📦";
-                          const isDirty = dirtyPaths.has(sectionKey);
+                          const isDirty = dirtySections.has(sectionKey);
+                          const configured = sectionKey in draft;
                           return (
                             <li key={sectionKey}>
                               <button
@@ -1942,7 +2914,9 @@ export function ConfigEditor() {
                                   "w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors",
                                   isDirty
                                     ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                                    : "text-foreground/80 hover:bg-foreground/10 hover:text-foreground"
+                                    : configured
+                                      ? "text-foreground/80 hover:bg-foreground/10 hover:text-foreground"
+                                      : "text-muted-foreground/60 hover:bg-foreground/10 hover:text-foreground/80"
                                 )}
                               >
                                 <span className="shrink-0">{icon}</span>
@@ -1960,6 +2934,37 @@ export function ConfigEditor() {
 
             {/* Main: grouped section cards */}
             <div className="flex-1 min-w-0 space-y-6">
+              {/* Small-screen section nav — the sidebar is hidden below lg */}
+              <div className="lg:hidden">
+                <label
+                  htmlFor="config-section-jump"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                >
+                  Jump to section
+                </label>
+                <select
+                  id="config-section-jump"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) jumpToSection(e.target.value);
+                  }}
+                  className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs text-foreground/90 outline-none dark:border-[#2c343d] dark:bg-[#171a1d]"
+                >
+                  <option value="">Select a section…</option>
+                  {groupedSections.map(([groupName, sectionKeys]) => (
+                    <optgroup key={groupName} label={groupName}>
+                      {sectionKeys.map((sectionKey) => (
+                        <option key={sectionKey} value={sectionKey}>
+                          {(hints[sectionKey]?.label || sectionKey) +
+                            (dirtySections.has(sectionKey) ? " • modified" : "") +
+                            (sectionKey in draft ? "" : " — not configured")}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+
               {groupedSections.map(([groupName, sectionKeys]) => (
                 <div key={groupName}>
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 px-0.5">
@@ -1968,14 +2973,15 @@ export function ConfigEditor() {
                   <div className="space-y-2">
                     {sectionKeys.map((sectionKey) => {
                       const isExpanded = expanded.has(sectionKey);
-                      const isReadonly = READONLY_SECTIONS.has(sectionKey);
+                      const isManaged = MANAGED_SECTIONS.has(sectionKey);
                       const isSensitive = SENSITIVE_SECTIONS.has(sectionKey);
-                      const isDirty = dirtyPaths.has(sectionKey);
+                      const isDirty = dirtySections.has(sectionKey);
                       const sectionHint = hints[sectionKey];
                       const label = sectionHint?.label || sectionKey;
                       const icon = SECTION_ICONS[sectionKey] || "📦";
                       const sectionSchema = schema[sectionKey];
-                      const sectionValue = rawConfig[sectionKey];
+                      const configured = sectionKey in draft;
+                      const sectionValue = draft[sectionKey];
 
                       let fieldCount = 0;
                       if (sectionValue && typeof sectionValue === "object") {
@@ -1988,11 +2994,14 @@ export function ConfigEditor() {
                           ref={(el) => {
                             sectionRefs.current[sectionKey] = el;
                           }}
+                          data-config-section={sectionKey}
                           className={cn(
-                            "rounded-xl border transition-colors",
+                            "rounded-xl border transition-colors scroll-mt-4",
                             isDirty
                               ? "border-emerald-500/30 bg-emerald-500/10"
-                              : "border-stone-200 bg-white dark:border-[#2c343d] dark:bg-[#171a1d]"
+                              : configured
+                                ? "border-stone-200 bg-white dark:border-[#2c343d] dark:bg-[#171a1d]"
+                                : "border-dashed border-stone-200 bg-white/60 dark:border-[#2c343d] dark:bg-[#171a1d]/60"
                           )}
                         >
                           <div
@@ -2006,7 +3015,7 @@ export function ConfigEditor() {
                             )}
                             <span className="text-xs">{icon}</span>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <span className="text-sm font-semibold text-foreground/90">
                                   {label}
                                 </span>
@@ -2015,9 +3024,17 @@ export function ConfigEditor() {
                                     Modified
                                   </span>
                                 )}
-                                {isReadonly && (
-                                  <span className="rounded-full bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground">
-                                    Read-only
+                                {!configured && (
+                                  <span className="rounded-full border border-foreground/10 bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground">
+                                    Not configured
+                                  </span>
+                                )}
+                                {isManaged && (
+                                  <span
+                                    title="Mission Control and the OpenClaw setup wizard write this section themselves. You can still edit it."
+                                    className="rounded-full bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground"
+                                  >
+                                    Managed automatically
                                   </span>
                                 )}
                                 {isSensitive && !showSensitive && (
@@ -2025,24 +3042,70 @@ export function ConfigEditor() {
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground/60">
-                                {sectionHint?.help || `${fieldCount} setting${fieldCount !== 1 ? "s" : ""}`}
+                                {!configured
+                                  ? "Not set up yet — open to configure it"
+                                  : sectionHint?.help ||
+                                    `${fieldCount} setting${fieldCount !== 1 ? "s" : ""}`}
                               </p>
                             </div>
+                            {configured && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeSection(sectionKey);
+                                }}
+                                aria-label={`Remove section ${sectionKey}`}
+                                title="Remove this whole section"
+                                className="shrink-0 rounded p-1 text-muted-foreground/50 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
 
                           {isExpanded && (
                             <div className="border-t border-foreground/5 px-4 py-4">
-                              <SectionFields
-                                sectionKey={sectionKey}
-                                sectionSchema={sectionSchema}
-                                sectionValue={sectionValue}
-                                hints={hints}
-                                showSensitive={showSensitive}
-                                onFieldChange={handleFieldChange}
-                                disabled={isReadonly}
-                                rawConfig={rawConfig}
-                                onJumpToSection={jumpToSection}
-                              />
+                              {isManaged && (
+                                <p className="mb-3 rounded-lg border border-foreground/10 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                                  OpenClaw writes this section itself (setup wizard, diagnostics,
+                                  bookkeeping). Editing it is allowed but rarely necessary, and your
+                                  values may be overwritten the next time OpenClaw updates them.
+                                </p>
+                              )}
+                              {!configured ? (
+                                <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-foreground/15 bg-muted/30 px-4 py-4">
+                                  <p className="flex items-center gap-1.5 text-sm font-medium text-foreground/80">
+                                    <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
+                                    {label} is not configured yet
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {sectionHint?.help ||
+                                      "Set it up here — no need to hand-edit openclaw.json."}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => createSection(sectionKey)}
+                                    data-testid={`create-section-${sectionKey}`}
+                                    className="mt-1 flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                    Set it up
+                                  </button>
+                                </div>
+                              ) : (
+                                <SectionFields
+                                  sectionKey={sectionKey}
+                                  sectionSchema={sectionSchema}
+                                  sectionValue={sectionValue}
+                                  hints={hints}
+                                  showSensitive={showSensitive}
+                                  onFieldChange={handleFieldChange}
+                                  disabled={false}
+                                  rawConfig={draft}
+                                  onJumpToSection={jumpToSection}
+                                />
+                              )}
                             </div>
                           )}
                         </div>
@@ -2069,7 +3132,34 @@ export function ConfigEditor() {
         )}
       </SectionBody>
 
+      <ConfigDiffPreview
+        open={previewOpen}
+        entries={changeEntries}
+        restart={restartPlan}
+        authTokenMint={authTokenMint}
+        replacePaths={previewDiff.replacePaths}
+        saving={saving}
+        onBack={() => setPreviewOpen(false)}
+        onConfirm={confirmSave}
+      />
+
+      <ConfigConflictDialog
+        open={conflict !== null}
+        message={conflict?.message ?? ""}
+        analysis={conflictAnalysis}
+        base={baseSnapshot}
+        mine={(showRawJson ? rawParsed : draft) ?? {}}
+        theirs={conflict?.remoteConfig ?? {}}
+        hints={hints}
+        busy={saving}
+        onReloadTheirs={resolveWithTheirs}
+        onRebase={resolveWithRebase}
+        onCancel={() => setConflict(null)}
+      />
+
       {toast && <ToastBar toast={toast} onDone={() => setToast(null)} />}
     </SectionLayout>
+    </FieldEnvContext.Provider>
+    </ConfigLookupContext.Provider>
   );
 }

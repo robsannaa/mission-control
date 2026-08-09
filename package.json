@@ -38,6 +38,9 @@
     "lint": "eslint",
     "test": "playwright test --project=CI",
     "test:live": "playwright test",
+    "test:gateway": "playwright test --project=LIVE_GATEWAY",
+    "test:ui": "playwright test --project=LIVE_UI",
+    "test:install": "playwright install chromium",
     "dashboard": "node bin/cli.mjs",
     "setup": "./setup.sh",
     "setup:dev": "./setup.sh --dev --no-service"

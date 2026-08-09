@@ -295,14 +295,22 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
                 <button
                   type="button"
                   onClick={() => setAdvancedExpanded((prev) => !prev)}
-                  className="mb-1.5 mt-5 first:mt-0 flex w-full items-center justify-between rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle transition-colors hover:bg-sidebar-accent hover:text-fg-secondary"
+                  className={cn(
+                    "mb-1.5 flex w-full items-center justify-between rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle transition-colors hover:bg-sidebar-accent hover:text-fg-secondary",
+                    index === 0 ? "mt-0" : "mt-6",
+                  )}
                   aria-expanded={advancedExpanded}
                 >
                   <span>Advanced</span>
                   <ChevronRight className={cn("h-3 w-3 transition-transform", advancedExpanded && "rotate-90")} />
                 </button>
               ) : (
-                <div className="mb-1.5 mt-5 first:mt-0 px-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle">
+                <div
+                  className={cn(
+                    "mb-1.5 px-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle",
+                    index === 0 ? "mt-0" : "mt-6",
+                  )}
+                >
                   {item.group}
                 </div>
               )

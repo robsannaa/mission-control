@@ -1518,7 +1518,7 @@ export function AudioView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading audio configuration..." size="lg" />
+        <ScreenLoadingState size="lg" />
       </SectionLayout>
     );
   }

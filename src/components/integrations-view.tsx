@@ -628,7 +628,7 @@ export function IntegrationsView() {
   );
 
   if (loading && !data) {
-    return <ScreenLoadingState label="Loading Google integrations..." />;
+    return <ScreenLoadingState />;
   }
 
   return (

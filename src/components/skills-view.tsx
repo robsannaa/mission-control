@@ -797,7 +797,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading skill..." />
+        <ScreenLoadingState />
       </SectionLayout>
     );
   }
@@ -1730,7 +1730,7 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading skills..." size="lg" />
+        <ScreenLoadingState size="lg" />
       </SectionLayout>
     );
   }

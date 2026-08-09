@@ -174,7 +174,6 @@ function ModelList({
     return (
       <div className="flex flex-col items-center gap-3 py-14">
         <Loader2 className="h-6 w-6 animate-spin text-success-fg" />
-        <p className="text-xs text-fg-subtle">Loading available models...</p>
       </div>
     );
   }
@@ -1447,7 +1446,6 @@ function AgentModelsCard({
       {loadingAgents && agents.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-10">
           <Loader2 className="h-5 w-5 animate-spin text-success-fg" />
-          <p className="text-xs text-fg-subtle">Loading agents...</p>
         </div>
       ) : agents.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-10 text-center">

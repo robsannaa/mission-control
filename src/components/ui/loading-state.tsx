@@ -3,7 +3,6 @@
 import { cn } from "@/lib/utils";
 
 type LoadingStateProps = {
-  label?: string;
   className?: string;
   size?: "sm" | "md" | "lg";
 };
@@ -38,31 +37,27 @@ export function InlineSpinner({
 }
 
 export function LoadingState({
-  label,
   className,
   size = "md",
 }: LoadingStateProps) {
   return (
     <div
       className={cn(
-        "flex flex-1 items-center justify-center gap-2.5 text-sm text-muted-foreground",
+        "flex flex-1 items-center justify-center",
         className
       )}
     >
       <InlineSpinner size={size} />
-      {label && <span>{label}</span>}
     </div>
   );
 }
 
 export function ScreenLoadingState({
-  label,
   className,
   size = "md",
 }: LoadingStateProps) {
   return (
     <LoadingState
-      label={label}
       size={size}
       className={cn("fixed inset-0 z-50", className)}
     />

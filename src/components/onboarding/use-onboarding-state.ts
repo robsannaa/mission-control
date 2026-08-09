@@ -5,6 +5,7 @@ import type { OnboardingState, OnboardingStepId, OnboardingStepState } from "./t
 
 type StatePatch = {
   currentStep?: OnboardingStepId;
+  startedAt?: string | null;
   completedAt?: string | null;
   steps?: Partial<Record<OnboardingStepId, Partial<OnboardingStepState>>>;
 };

@@ -426,7 +426,7 @@ export function ChannelsView() {
       <SectionLayout>
         <SectionHeader title="Channels" description="Manage your agents' chat channels after onboarding." bordered />
         <SectionBody>
-          <ScreenLoadingState label="Loading channels..." />
+          <ScreenLoadingState />
         </SectionBody>
       </SectionLayout>
     );
@@ -642,7 +642,7 @@ export function ChannelsView() {
                                   type="button"
                                   onClick={() => void handleApprove(req)}
                                   disabled={isApproving}
-                                  className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/88 disabled:opacity-50"
+                                  className="inline-flex items-center gap-1 rounded-control bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/88 disabled:opacity-50"
                                 >
                                   {isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
                                   Approve

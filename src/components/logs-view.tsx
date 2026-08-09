@@ -391,7 +391,7 @@ export function LogsView() {
             className="max-h-[calc(100vh-18rem)] overflow-y-auto bg-card font-mono text-xs leading-relaxed"
           >
         {loading && entries.length === 0 ? (
-          <LoadingState label="Loading logs..." className="py-12" />
+          <LoadingState className="py-12" />
         ) : displayEntries.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-fg-subtle dark:text-muted-foreground">
             <Terminal className="h-6 w-6" />

@@ -16,7 +16,8 @@
                  elevenlabs.io/docs dark: #1E1E1E / #08090A /
                  rgba(255,255,255,.133) / rgba(255,255,255,.686))
    Elevation   : borders + fills, almost no shadow.
-   Radius      : 4 / 6 / 8 / 12 / 16 / 20 px + pill for buttons.
+   Radius      : 6px functional controls; larger radii for surfaces;
+                 pills only for status, switches, avatars, and indicators.
    ═══════════════════════════════════════════════════════════════ */
 
 @theme inline {
@@ -63,6 +64,7 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+  --radius-control: var(--control-radius);
 
   /* ── Brand (single restrained accent) ──────────────────────── */
   --color-brand: var(--accent-brand);
@@ -384,6 +386,7 @@
    ══════════════════════════════════════════════════════════════ */
 :root {
   --radius: 0.5rem;
+  --control-radius: 0.375rem;
 
   /* Neutral ramp — quietest surface (50) → strongest ink (950) */
   --n-50: #f5f3f1;
@@ -665,6 +668,22 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-accent);
+}
+
+/* ── Functional controls ─────────────────────────
+   One consistent 6px corner across native and shared controls. Components
+   that are semantically circular (switches, radio controls, etc.) are kept
+   out of this rule; badges and status indicators are not controls. */
+@layer base {
+  :where(
+    button:not([role="switch"]):not([data-control-radius="pill"]),
+    [data-slot="button"]:not([data-control-radius="pill"]),
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+    select,
+    textarea
+  ) {
+    border-radius: var(--control-radius) !important;
+  }
 }
 
 /* ── Surface system — flat, hairline-bordered ───── */

@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CONFIG_WRITE_TIMEOUT_MS, gatewayCall, runCliCaptureBoth } from "@/lib/openclaw";
-import { gatewayConfigPatch, sanitizeConfigFile } from "@/lib/gateway-config";
+import {
+  gatewayConfigApply,
+  gatewayConfigPatch,
+  sanitizeConfigFile,
+} from "@/lib/gateway-config";
+import {
+  buildConfigDiff,
+  collectDeletedPaths,
+  collectEnvSubstitutedPaths,
+  collectPatchPaths,
+  normalizeArrayPath,
+  parseReplacePathsFromError,
+} from "@/lib/config-diff";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { getOpenClawHome } from "@/lib/paths";
@@ -27,6 +39,10 @@ const GATEWAY_REDACTED_SENTINEL = "__OPENCLAW_REDACTED__";
  * blanks them to a sentinel in `config.get`. Wherever the payload carries the
  * sentinel and the on-disk config has a string at the same path, serve the
  * real value. Everything else passes through untouched.
+ *
+ * This is exact now that the served surface is `parsed`: `parsed` is the
+ * on-disk document (verified live — `parsed` and `sourceConfig` are identical),
+ * so sentinel positions line up with disk positions key for key.
  */
 function restoreRedactedValues(node: unknown, diskNode: unknown): unknown {
   if (typeof node === "string") {
@@ -118,9 +134,16 @@ function lowerError(err: unknown): string {
   return String(err || "").toLowerCase();
 }
 
+/**
+ * Base-hash conflict. The live wording on OpenClaw v2026.7.1-2 (probed against
+ * both `config.patch` and `config.apply`) is
+ * "config changed since last load; re-run config.get and retry" — the older
+ * phrasings are kept so a downgraded gateway is still recognised.
+ */
 function isHashConflictError(err: unknown): boolean {
   const msg = lowerError(err);
   return (
+    msg.includes("config changed since last load") ||
     msg.includes("hash mismatch") ||
     msg.includes("stale base hash") ||
     msg.includes("base hash mismatch") ||
@@ -138,6 +161,41 @@ function isRateLimitError(err: unknown): boolean {
   return msg.includes("rate limit exceeded") || msg.includes("retry after");
 }
 
+/** The gateway refused a destructive array replacement (needs `replacePaths`). */
+function isReplacePathsError(err: unknown): boolean {
+  return lowerError(err).includes("would remove entries from array path");
+}
+
+/**
+ * Only a gateway that does not implement the method at all should fall back to
+ * the CLI. A rejection (conflict, validation, rate limit, array guard) is a
+ * real answer and must never be retried through an unguarded `config set`.
+ */
+function isUnsupportedMethodError(err: unknown): boolean {
+  const msg = lowerError(err);
+  return (
+    msg.includes("unknown method") ||
+    msg.includes("method not found") ||
+    msg.includes("unsupported method") ||
+    msg.includes("not implemented")
+  );
+}
+
+/** `retryAfterMs` from the gateway error, falling back to the message text. */
+function extractRetryAfterMs(err: unknown): number | undefined {
+  const details = (err as { details?: unknown })?.details;
+  if (isRecord(details) && typeof details.retryAfterMs === "number") {
+    return details.retryAfterMs;
+  }
+  if (isRecord(err) && typeof err.retryAfterMs === "number") {
+    return err.retryAfterMs;
+  }
+  const match = String(err || "").match(/retry after\s+(\d+(?:\.\d+)?)\s*s/i);
+  if (!match) return undefined;
+  const seconds = Number(match[1]);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds * 1000) : undefined;
+}
+
 function getByDottedPath(obj: unknown, path: string): unknown {
   if (!isRecord(obj)) return undefined;
   if (Object.prototype.hasOwnProperty.call(obj, path)) {
@@ -152,43 +210,62 @@ function getByDottedPath(obj: unknown, path: string): unknown {
   return cur;
 }
 
-function withDottedPathValue(
+/**
+ * Set a dotted path inside a patch object, creating intermediate objects.
+ *
+ * Deliberately NOT a literal `obj["a.b.c"] = v`: a merge patch with a dotted
+ * key creates a top-level key called "a.b.c" in openclaw.json instead of
+ * nesting, which is how the previous auth-token safety net could corrupt the
+ * config it was meant to protect.
+ */
+function setDottedPath(
   obj: Record<string, unknown>,
   path: string,
   value: unknown
 ): Record<string, unknown> {
-  if (Object.prototype.hasOwnProperty.call(obj, path)) {
-    return obj;
+  if (Object.prototype.hasOwnProperty.call(obj, path)) return obj;
+  const parts = path.split(".");
+  const root: Record<string, unknown> = { ...obj };
+  let cursor = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const key = parts[i];
+    const existing = cursor[key];
+    const next: Record<string, unknown> = isRecord(existing) ? { ...existing } : {};
+    cursor[key] = next;
+    cursor = next;
   }
-  return {
-    ...obj,
-    [path]: value,
-  };
+  cursor[parts[parts.length - 1]] = value;
+  return root;
 }
 
+/**
+ * Switching `gateway.auth.mode` to "token" without a token would lock every
+ * operator out, so mint one when neither the patch nor the current config has
+ * a usable value. Never overwrites an existing token.
+ */
 function ensureGatewayAuthPatchDefaults(
   patchObj: Record<string, unknown>,
   currentParsed: Record<string, unknown> | null
 ): Record<string, unknown> {
   const modeRaw = getByDottedPath(patchObj, "gateway.auth.mode");
   const mode = typeof modeRaw === "string" ? modeRaw.trim().toLowerCase() : "";
-  if (!mode) return patchObj;
+  if (mode !== "token") return patchObj;
 
-  let next = { ...patchObj };
+  const patchToken = getByDottedPath(patchObj, "gateway.auth.token");
+  const currentToken = getByDottedPath(currentParsed, "gateway.auth.token");
+  const existingToken =
+    (typeof patchToken === "string" && patchToken.trim()) ||
+    (typeof currentToken === "string" &&
+      currentToken !== GATEWAY_REDACTED_SENTINEL &&
+      currentToken.trim()) ||
+    "";
+  if (existingToken) return patchObj;
 
-  if (mode === "token") {
-    const existingToken =
-      (typeof getByDottedPath(next, "gateway.auth.token") === "string" &&
-        String(getByDottedPath(next, "gateway.auth.token"))) ||
-      (typeof getByDottedPath(currentParsed, "gateway.auth.token") === "string" &&
-        String(getByDottedPath(currentParsed, "gateway.auth.token"))) ||
-      "";
-    if (!existingToken.trim()) {
-      next = withDottedPathValue(next, "gateway.auth.token", randomBytes(24).toString("hex"));
-    }
-  }
-
-  return next;
+  return setDottedPath(
+    patchObj,
+    "gateway.auth.token",
+    randomBytes(24).toString("hex")
+  );
 }
 
 type ConfigSetEntry = {
@@ -276,9 +353,10 @@ async function applyConfigSetFallback(entries: ConfigSetEntry[]): Promise<{
   return { updatedPaths, failures };
 }
 
-async function readConfigHashAndParsed(): Promise<{
+async function readConfigSnapshot(): Promise<{
   baseHash: string;
   parsed: Record<string, unknown>;
+  resolved: Record<string, unknown>;
 }> {
   const configData = await gatewayCallWithRetry<Record<string, unknown>>(
     "config.get",
@@ -289,6 +367,9 @@ async function readConfigHashAndParsed(): Promise<{
   return {
     baseHash: String(configData.hash || "").trim(),
     parsed: isRecord(configData.parsed) ? (configData.parsed as Record<string, unknown>) : {},
+    resolved: isRecord(configData.resolved)
+      ? (configData.resolved as Record<string, unknown>)
+      : {},
   };
 }
 
@@ -312,17 +393,135 @@ function friendlyPatchError(err: unknown): string {
   if (isInvalidConfigError(err)) {
     return "OpenClaw rejected this change because the local config is invalid. Mission Control tried to repair it automatically, but the change still could not be applied.";
   }
+  if (isReplacePathsError(err)) {
+    return "This change removes entries from a list. Confirm the removal and Mission Control will resend it as an intentional replacement.";
+  }
   if (isHashConflictError(err)) {
     return "Your config changed in another session. Please retry once.";
   }
   return raw;
 }
 
+// ── Reload planning (config.schema.lookup) ───────
+
+type ReloadKind = "restart" | "hot" | "none";
+
+type SchemaLookupResult = {
+  reloadKind?: ReloadKind;
+  schema?: Record<string, unknown>;
+};
+
+/**
+ * `config.schema.lookup` answers are static for a given gateway build, and a
+ * save can touch a couple of dozen paths — memoize so a form save costs one
+ * RPC per *new* path instead of one per field, every time.
+ */
+const RELOAD_KIND_TTL_MS = 5 * 60_000;
+const reloadKindCache = new Map<string, { value: ReloadKind | null; at: number }>();
+const MAX_LOOKUP_PATHS = 40;
+const LOOKUP_CONCURRENCY = 6;
+
+/**
+ * Documented fallback (gateway/configuration.md "What hot-applies vs what
+ * needs a restart") used only when the schema lookup is unavailable.
+ * `gateway.reload` and `gateway.remote` are the documented exceptions.
+ */
+const RESTART_PREFIXES = ["gateway", "discovery", "browser", "plugins.load", "plugins.installs"];
+const RESTART_EXCEPTIONS = ["gateway.reload", "gateway.remote"];
+
+function fallbackReloadKind(path: string): ReloadKind {
+  if (RESTART_EXCEPTIONS.some((p) => path === p || path.startsWith(`${p}.`))) return "hot";
+  if (RESTART_PREFIXES.some((p) => path === p || path.startsWith(`${p}.`))) return "restart";
+  return "hot";
+}
+
+async function lookupReloadKind(path: string): Promise<ReloadKind | null> {
+  const cached = reloadKindCache.get(path);
+  if (cached && Date.now() - cached.at < RELOAD_KIND_TTL_MS) return cached.value;
+
+  // Deep leaves are not always present in the schema tree (probed live:
+  // `agents.defaults.model.primary` answers "config schema path not found"),
+  // so walk up until a node answers.
+  const segments = path.split(".");
+  for (let depth = segments.length; depth >= 1; depth -= 1) {
+    const candidate = segments.slice(0, depth).join(".");
+    try {
+      const result = await gatewayCall<SchemaLookupResult>(
+        "config.schema.lookup",
+        { path: candidate },
+        8000
+      );
+      const kind = result?.reloadKind;
+      if (kind === "restart" || kind === "hot" || kind === "none") {
+        reloadKindCache.set(path, { value: kind, at: Date.now() });
+        return kind;
+      }
+    } catch {
+      // try the parent path
+    }
+  }
+  reloadKindCache.set(path, { value: null, at: Date.now() });
+  return null;
+}
+
+/**
+ * Decide restart necessity from the schema, per touched path. This is what
+ * replaces the old "restart the gateway on every save" behaviour: most fields
+ * hot-apply, and the control plane only allows one restart cycle per 30s.
+ */
+async function planReload(paths: string[]): Promise<{
+  restartRequired: boolean;
+  restartPaths: string[];
+  warnings: string[];
+}> {
+  const warnings: string[] = [];
+  const unique = Array.from(new Set(paths.map(normalizeArrayPath))).filter(Boolean);
+  const budgeted = unique.slice(0, MAX_LOOKUP_PATHS);
+  if (unique.length > budgeted.length) {
+    warnings.push(
+      `Reload planning inspected the first ${MAX_LOOKUP_PATHS} of ${unique.length} changed paths.`
+    );
+  }
+
+  const restartPaths: string[] = [];
+  let schemaUnavailable = false;
+
+  for (let i = 0; i < budgeted.length; i += LOOKUP_CONCURRENCY) {
+    const slice = budgeted.slice(i, i + LOOKUP_CONCURRENCY);
+    const kinds = await Promise.all(
+      slice.map(async (path) => ({ path, kind: await lookupReloadKind(path) }))
+    );
+    for (const { path, kind } of kinds) {
+      const effective = kind ?? fallbackReloadKind(path);
+      if (kind === null) schemaUnavailable = true;
+      if (effective === "restart") restartPaths.push(path);
+    }
+  }
+
+  if (schemaUnavailable) {
+    warnings.push(
+      "Some paths were not found in the config schema; restart planning fell back to the documented reload table."
+    );
+  }
+
+  return { restartRequired: restartPaths.length > 0, restartPaths, warnings };
+}
+
+/** Restart delay used only when a restart is actually required. */
+const RESTART_DELAY_MS = 2000;
+
 /**
  * GET /api/config
  *
  * Returns one canonical payload:
- *   { config: <resolved config, raw values>, meta: { baseHash, schema, uiHints, warning?, degraded? } }
+ *   { config, meta: { baseHash, schema, uiHints, envSubstituted, warning?, degraded? } }
+ *
+ * `config` is the gateway's **parsed** snapshot — the authoring surface, i.e.
+ * the document as written in openclaw.json. Serving `resolved` here (the
+ * previous behaviour) baked every `${VAR}` into its literal expansion on the
+ * first save and destroyed the indirection. `meta.envSubstituted` lists the
+ * dotted paths whose authored value carries env indirection so the UI can
+ * label them.
  *
  * Secret values are intentionally served unredacted — protection comes from
  * authenticating the caller, not from hiding values (product decision). The
@@ -376,19 +575,23 @@ export async function GET(request: NextRequest) {
       console.warn("Config schema unavailable, serving config without schema:", err);
     }
 
-    // Gateway config.get returns { parsed, resolved, hash }. Both share the
-    // openclaw.json shape (top-level: agents, gateway, channels, tools, etc.);
-    // resolved additionally has env/var substitution applied. Prefer resolved,
-    // falling back to parsed for legacy gateways that omit it.
+    // `config.get` returns { parsed, resolved, hash, ... }. `parsed` is the
+    // authored document (verified live: identical to `sourceConfig`);
+    // `resolved` is the same document with `${VAR}` substitution applied.
+    // Author against `parsed`, fall back to `resolved` only if a gateway omits
+    // it. (`configData.config` is the defaults-merged effective view — never an
+    // authoring surface, it would write every default into openclaw.json.)
     const parsed = (configData.parsed || {}) as Record<string, unknown>;
     const resolved = (configData.resolved || {}) as Record<string, unknown>;
-    const gatewayConfig = Object.keys(resolved).length > 0 ? resolved : parsed;
+    const authored = Object.keys(parsed).length > 0 ? parsed : resolved;
+
+    const envSubstituted = collectEnvSubstitutedPaths(authored, resolved);
 
     // The gateway blanks secrets to a sentinel; serve the real values.
     const diskConfig = await readDiskConfig();
     const config = diskConfig
-      ? (restoreRedactedValues(gatewayConfig, diskConfig) as Record<string, unknown>)
-      : gatewayConfig;
+      ? (restoreRedactedValues(authored, diskConfig) as Record<string, unknown>)
+      : authored;
 
     logRequest("/api/config", 200, Date.now() - start, { scope });
     return NextResponse.json({
@@ -397,6 +600,8 @@ export async function GET(request: NextRequest) {
         baseHash: configData.hash || "",
         schema: schemaData?.schema || {},
         uiHints: schemaData?.uiHints || {},
+        configSource: Object.keys(parsed).length > 0 ? "parsed" : "resolved",
+        envSubstituted,
         ...(warning ? { warning } : {}),
       },
     });
@@ -411,6 +616,8 @@ export async function GET(request: NextRequest) {
           baseHash: "",
           schema: {},
           uiHints: {},
+          configSource: "disk",
+          envSubstituted: [],
           warning: formatGatewayError(err),
           degraded: true,
         },
@@ -421,12 +628,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * PATCH /api/config  — Safe partial update via config.patch
- *
- * Body: { patch: { "agents.defaults.workspace": "~/new" }, baseHash: "..." }
- *   OR: { raw: "{ agents: { defaults: { workspace: '~/new' } } }", baseHash: "..." }
- */
 /** Validate config payload before sending to gateway. */
 function validateConfigPayload(
   raw: string | undefined,
@@ -457,123 +658,233 @@ function validateConfigPayload(
   return { ok: false, error: "raw or patch required" };
 }
 
+/** Fresh snapshot + hash for a 409 body, with secrets restored for the UI diff. */
+async function buildConflictBody(message: string): Promise<Record<string, unknown>> {
+  let currentHash = "";
+  let remoteConfig: Record<string, unknown> = {};
+  try {
+    const latest = await readConfigSnapshot();
+    currentHash = latest.baseHash;
+    const disk = await readDiskConfig();
+    remoteConfig = disk
+      ? (restoreRedactedValues(latest.parsed, disk) as Record<string, unknown>)
+      : latest.parsed;
+  } catch {
+    // Serve the conflict even if the re-read fails; the UI can refetch.
+  }
+  return { error: "conflict", currentHash, remoteConfig, message };
+}
+
+/**
+ * PATCH /api/config — minimal, non-clobbering config write.
+ *
+ * Body:
+ *   {
+ *     patch?: object,        // JSON merge patch; `null` leaf = delete the key
+ *     raw?: string,          // JSON document (merge patch, or full config with mode:"apply")
+ *     baseHash: string,      // hash from GET /api/config meta.baseHash
+ *     replacePaths?: string[], // dotted array paths whose shrink/reorder is intentional
+ *     mode?: "patch" | "apply"
+ *   }
+ *
+ * Responses:
+ *   200 { ok, hash, restartRequired, restartPaths?, warnings?, deletedPaths?, result }
+ *   400 { error, details?, doctorOutput?, replacePathsRequired? }
+ *   409 { error: "conflict", currentHash, remoteConfig, message }
+ *   429 { error, retryAfterMs? }
+ *
+ * Three deliberate behaviours, each fixing an audited defect:
+ *   - deletions are forwarded verbatim, so an explicit `null` really deletes;
+ *   - a base-hash conflict is never retried with a fresh hash (that silently
+ *     clobbered whoever wrote in between) — the caller gets 409 and decides;
+ *   - a restart is requested only when `config.schema.lookup` says a touched
+ *     path needs one.
+ */
 export async function PATCH(request: NextRequest) {
+  const start = Date.now();
   try {
     const body = await request.json();
-    const { raw, patch, baseHash } = body as {
+    const { raw, patch, baseHash, replacePaths, mode } = body as {
       raw?: string;
       patch?: Record<string, unknown>;
       baseHash?: string;
+      replacePaths?: string[];
+      mode?: "patch" | "apply";
     };
 
     const validated = validateConfigPayload(raw, patch);
     if (!validated.ok) {
       return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    if (replacePaths !== undefined && !Array.isArray(replacePaths)) {
+      return NextResponse.json(
+        { error: "replacePaths must be an array of dotted config paths" },
+        { status: 400 }
+      );
+    }
+    if (mode !== undefined && mode !== "patch" && mode !== "apply") {
+      return NextResponse.json(
+        { error: 'mode must be "patch" or "apply"' },
+        { status: 400 }
+      );
+    }
+
     const rawProvided = raw !== undefined;
+    const useApply = mode === "apply";
     let workingPatchObj = validated.patchObj;
+    const requestedReplacePaths = (replacePaths ?? [])
+      .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+      .map((p) => normalizeArrayPath(p.trim()));
+
     let workingBaseHash = String(baseHash || "").trim();
+    let unguardedWrite = false;
     if (!workingBaseHash) {
       try {
-        const latest = await readConfigHashAndParsed();
+        const latest = await readConfigSnapshot();
         workingBaseHash = latest.baseHash;
+        // The caller had nothing to be stale against, but say so out loud
+        // rather than pretending the write was conflict-checked.
+        unguardedWrite = Boolean(workingBaseHash);
       } catch {
-        // Legacy gateways may not provide hash; patch flow will fall back to config.set.
+        // Legacy gateways may not provide hash; the patch flow still works.
       }
     }
 
-    const applyPatch = async (
-      patchObj: Record<string, unknown>,
-      hash: string
-    ): Promise<Record<string, unknown>> => {
-      const result = await gatewayCallWithRetry<Record<string, unknown>>(
-        "config.patch",
-        {
-          raw: JSON.stringify(patchObj),
-          baseHash: hash,
-          restartDelayMs: 2000,
-        },
-        20000,
-        1
-      );
-      // Strip leaked RPC keys the gateway may have persisted into the config.
-      await sanitizeConfigFile().catch(() => {});
-      return result;
-    };
-
-    const touchesGatewayAuthMode =
-      typeof getByDottedPath(workingPatchObj, "gateway.auth.mode") === "string";
-
-    if (touchesGatewayAuthMode) {
+    if (typeof getByDottedPath(workingPatchObj, "gateway.auth.mode") === "string") {
       try {
-        const latest = await readConfigHashAndParsed();
-        workingPatchObj = ensureGatewayAuthPatchDefaults(
-          workingPatchObj,
-          latest.parsed
-        );
+        const latest = await readConfigSnapshot();
+        workingPatchObj = ensureGatewayAuthPatchDefaults(workingPatchObj, latest.parsed);
       } catch {
         workingPatchObj = ensureGatewayAuthPatchDefaults(workingPatchObj, null);
       }
     }
 
+    // Which paths does this write touch?
+    //
+    // A merge patch says so directly. `config.apply` carries the whole
+    // document, so naming every top-level section would demand a restart on
+    // every raw save (verified: an idempotent apply reported gateway, auth,
+    // channels, ... as changed). Diff it against the current snapshot instead
+    // and plan from the paths that genuinely differ. The write is still
+    // guarded by the caller's `baseHash`, so this extra read cannot turn into
+    // a clobber.
+    let touchedPaths: string[];
+    let deletedPaths: string[] = [];
+    if (useApply) {
+      const applyDiff = await (async () => {
+        try {
+          const latest = await readConfigSnapshot();
+          const disk = await readDiskConfig();
+          const base = disk
+            ? (restoreRedactedValues(latest.parsed, disk) as Record<string, unknown>)
+            : latest.parsed;
+          return buildConfigDiff(base, workingPatchObj);
+        } catch {
+          return null;
+        }
+      })();
+      touchedPaths = applyDiff ? applyDiff.changedPaths : Object.keys(workingPatchObj);
+      deletedPaths = applyDiff ? applyDiff.deletedPaths : [];
+    } else {
+      touchedPaths = collectPatchPaths(workingPatchObj);
+      deletedPaths = collectDeletedPaths(workingPatchObj);
+    }
+    const plan = await planReload(touchedPaths).catch(() => ({
+      restartRequired: false,
+      restartPaths: [] as string[],
+      warnings: ["Restart planning was unavailable for this write."],
+    }));
+
+    const writeOnce = async (
+      patchObj: Record<string, unknown>,
+      hash: string
+    ): Promise<Record<string, unknown>> => {
+      const params: {
+        raw: string;
+        baseHash?: string;
+        restartDelayMs?: number;
+        replacePaths?: string[];
+      } = { raw: JSON.stringify(patchObj) };
+      if (hash) params.baseHash = hash;
+      // Only ask for a restart when a touched path actually needs one. The
+      // control plane enforces a 30s restart cooldown, so an unconditional
+      // restart per save burned the budget for changes that hot-apply.
+      if (plan.restartRequired) params.restartDelayMs = RESTART_DELAY_MS;
+      if (!useApply && requestedReplacePaths.length > 0) {
+        params.replacePaths = requestedReplacePaths;
+      }
+      return useApply
+        ? gatewayConfigApply<Record<string, unknown>>(params, CONFIG_WRITE_TIMEOUT_MS)
+        : gatewayConfigPatch<Record<string, unknown>>(params, CONFIG_WRITE_TIMEOUT_MS);
+    };
+
     let result: Record<string, unknown> | null = null;
     let repaired = false;
-    let finalPatchError: unknown = null;
+    let finalWriteError: unknown = null;
     let doctorOutput: string | undefined;
 
     try {
-      result = await applyPatch(workingPatchObj, workingBaseHash);
+      result = await writeOnce(workingPatchObj, workingBaseHash);
     } catch (firstErr) {
+      if (isHashConflictError(firstErr)) {
+        // NEVER re-read the hash and re-apply: that silently overwrote a
+        // concurrent operator's edit. Hand the conflict back instead.
+        const conflict = await buildConflictBody(
+          "This config changed in another session since you loaded it. Review the current values, then re-apply your change."
+        );
+        logRequest("/api/config", 409, Date.now() - start, { method: "PATCH" });
+        return NextResponse.json(conflict, { status: 409 });
+      }
+      if (isReplacePathsError(firstErr)) {
+        const required = parseReplacePathsFromError(firstErr);
+        logRequest("/api/config", 400, Date.now() - start, { method: "PATCH" });
+        return NextResponse.json(
+          {
+            error: friendlyPatchError(firstErr),
+            details: String(firstErr),
+            replacePathsRequired: required,
+          },
+          { status: 400 }
+        );
+      }
       if (isRateLimitError(firstErr)) {
-        finalPatchError = firstErr;
+        finalWriteError = firstErr;
       } else if (isInvalidConfigError(firstErr)) {
         const doctor = await runDoctorFixCapture();
         repaired = doctor.ok;
         doctorOutput = doctor.output || undefined;
         try {
-          const latest = await readConfigHashAndParsed();
-          if (latest.baseHash) {
-            workingBaseHash = latest.baseHash;
-          }
-          workingPatchObj = ensureGatewayAuthPatchDefaults(
-            workingPatchObj,
-            latest.parsed
-          );
-          result = await applyPatch(workingPatchObj, workingBaseHash);
+          // `doctor --fix` rewrites the file, so the caller's baseHash is
+          // legitimately stale — re-read it for this one repair retry only.
+          const latest = await readConfigSnapshot();
+          if (latest.baseHash) workingBaseHash = latest.baseHash;
+          result = await writeOnce(workingPatchObj, workingBaseHash);
         } catch (retryErr) {
-          finalPatchError = retryErr;
-        }
-      } else if (isHashConflictError(firstErr)) {
-        try {
-          const latest = await readConfigHashAndParsed();
-          if (!latest.baseHash) {
-            throw firstErr;
-          }
-          workingBaseHash = latest.baseHash;
-          workingPatchObj = ensureGatewayAuthPatchDefaults(
-            workingPatchObj,
-            latest.parsed
-          );
-          result = await applyPatch(workingPatchObj, workingBaseHash);
-        } catch (retryErr) {
-          finalPatchError = retryErr;
+          finalWriteError = retryErr;
         }
       } else {
-        finalPatchError = firstErr;
+        finalWriteError = firstErr;
       }
     }
 
     if (!result) {
-      const fallbackCandidate = buildConfigSetFallbackEntries(workingPatchObj, rawProvided);
+      // The CLI fallback bypasses the base-hash guard, so it is reserved for
+      // gateways that do not implement config.patch at all — never for a
+      // gateway that answered "no".
+      const fallbackCandidate = isUnsupportedMethodError(finalWriteError)
+        ? buildConfigSetFallbackEntries(workingPatchObj, rawProvided || useApply)
+        : { entries: null, reason: "gateway rejected the write; fallback not attempted" };
+
       if (fallbackCandidate.entries && fallbackCandidate.entries.length > 0) {
         const fallback = await applyConfigSetFallback(fallbackCandidate.entries);
         if (fallback.failures.length === 0) {
+          logRequest("/api/config", 200, Date.now() - start, { method: "PATCH" });
           return NextResponse.json({
             ok: true,
-            result: {
-              method: "config.set",
-              updatedPaths: fallback.updatedPaths,
-            },
+            hash: (await readConfigSnapshot().catch(() => ({ baseHash: "" }))).baseHash,
+            restartRequired: plan.restartRequired,
+            ...(plan.restartPaths.length ? { restartPaths: plan.restartPaths } : {}),
+            result: { method: "config.set", updatedPaths: fallback.updatedPaths },
             repairedConfig: repaired || undefined,
             fallbackUsed: true,
             fallbackMessage:
@@ -582,25 +893,53 @@ export async function PATCH(request: NextRequest) {
         }
       }
 
-      const details = String(finalPatchError || "Unknown config.patch failure");
+      const details = String(finalWriteError || "Unknown config write failure");
       const responseBody: Record<string, unknown> = {
-        error: friendlyPatchError(finalPatchError || details),
+        error: friendlyPatchError(finalWriteError || details),
         details,
       };
-      if (doctorOutput) {
-        responseBody.doctorOutput = doctorOutput;
+      if (doctorOutput) responseBody.doctorOutput = doctorOutput;
+      if (fallbackCandidate.reason) responseBody.fallback = fallbackCandidate.reason;
+
+      if (isRateLimitError(finalWriteError)) {
+        const retryAfterMs = extractRetryAfterMs(finalWriteError);
+        if (retryAfterMs) responseBody.retryAfterMs = retryAfterMs;
+        logError("/api/config", finalWriteError, { method: "PATCH", status: 429 });
+        return NextResponse.json(responseBody, { status: 429 });
       }
-      if (fallbackCandidate.reason) {
-        responseBody.fallback = fallbackCandidate.reason;
-      }
-      return NextResponse.json(
-        responseBody,
-        { status: isRateLimitError(finalPatchError) ? 429 : 400 }
+      logError("/api/config", finalWriteError, { method: "PATCH", status: 400 });
+      return NextResponse.json(responseBody, { status: 400 });
+    }
+
+    // config.patch/apply do not return the new hash — re-read it so the client
+    // can chain another write without a round trip through GET.
+    const after = await readConfigSnapshot().catch(() => null);
+
+    // The gateway reports its own restart decision in the write sentinel;
+    // trust it over our schema prediction when the two disagree.
+    const sentinelStats = isRecord(result.sentinel)
+      ? (isRecord((result.sentinel as Record<string, unknown>).payload)
+          ? ((result.sentinel as Record<string, unknown>).payload as Record<string, unknown>)
+          : {})
+      : {};
+    const stats = isRecord(sentinelStats.stats) ? sentinelStats.stats : {};
+    const gatewaySaysRestart = stats.requiresRestart === true;
+
+    const warnings = [...plan.warnings];
+    if (unguardedWrite) {
+      warnings.push(
+        "This write was sent without a base hash, so it was not checked against concurrent edits."
       );
     }
 
+    logRequest("/api/config", 200, Date.now() - start, { method: "PATCH" });
     return NextResponse.json({
       ok: true,
+      hash: after?.baseHash ?? "",
+      restartRequired: plan.restartRequired || gatewaySaysRestart,
+      ...(plan.restartPaths.length ? { restartPaths: plan.restartPaths } : {}),
+      ...(deletedPaths.length ? { deletedPaths } : {}),
+      ...(warnings.length ? { warnings } : {}),
       result,
       repairedConfig: repaired || undefined,
     });
@@ -612,7 +951,13 @@ export async function PATCH(request: NextRequest) {
 }
 
 /**
- * PUT /api/config  — Legacy full-config save (kept for backwards compat)
+ * PUT /api/config — legacy full-config save.
+ *
+ * Kept for backwards compatibility, now routed through `config.apply`, the
+ * documented full-replace-with-validation method: the caller is handing over a
+ * complete document, and `config.patch` would silently ignore every key they
+ * removed. Conflicts surface as 409 like PATCH — never re-applied over a
+ * concurrent edit.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -622,26 +967,28 @@ export async function PUT(request: NextRequest) {
       baseHash?: string;
     };
 
-    if (!config || typeof config !== "object") {
-      return NextResponse.json(
-        { error: "config object required" },
-        { status: 400 }
-      );
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      return NextResponse.json({ error: "config object required" }, { status: 400 });
     }
 
-    const params: { raw: string; baseHash?: string; restartDelayMs: number } = {
+    const params: { raw: string; baseHash?: string } = {
       raw: JSON.stringify(config),
-      restartDelayMs: 2000,
     };
     if (baseHash) params.baseHash = baseHash;
 
-    const result = await gatewayConfigPatch<Record<string, unknown>>(
+    const result = await gatewayConfigApply<Record<string, unknown>>(
       params,
-      20000,
+      CONFIG_WRITE_TIMEOUT_MS
     );
-
-    return NextResponse.json({ ok: true, result });
+    const after = await readConfigSnapshot().catch(() => null);
+    return NextResponse.json({ ok: true, hash: after?.baseHash ?? "", result });
   } catch (err) {
+    if (isHashConflictError(err)) {
+      const conflict = await buildConflictBody(
+        "This config changed in another session since you loaded it."
+      );
+      return NextResponse.json(conflict, { status: 409 });
+    }
     const msg = String(err);
     const validationMatch = msg.match(/invalid.*?:(.*)/i);
     return NextResponse.json(

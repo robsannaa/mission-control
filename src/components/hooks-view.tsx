@@ -531,7 +531,7 @@ export function HooksView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading hooks..." size="lg" />
+        <ScreenLoadingState size="lg" />
       </SectionLayout>
     );
   }
@@ -714,7 +714,7 @@ export function HooksView() {
             <div className="xl:col-span-5">
               {detailLoading ? (
                 <div className="glass rounded-lg p-8">
-                  <LoadingState label="Loading hook details..." size="sm" />
+                  <LoadingState size="sm" />
                 </div>
               ) : hookDetail ? (
                 <HookDetailPanel

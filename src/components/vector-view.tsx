@@ -798,7 +798,7 @@ export function VectorView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading vector memory..." size="lg" />
+        <ScreenLoadingState size="lg" />
       </SectionLayout>
     );
   }

@@ -1285,7 +1285,7 @@ export function MemoryView() {
             </div>
 
             {loading ? (
-              <LoadingState label="Loading memory files..." className="mt-4 px-1 justify-start text-sm" />
+              <LoadingState className="mt-4 px-1 justify-start" />
             ) : (
               <div className="mt-2 space-y-0">
                 {periodGroups.map(({ key, entries: entriesInGroup }) => {

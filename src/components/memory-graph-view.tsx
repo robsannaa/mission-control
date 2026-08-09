@@ -1768,7 +1768,7 @@ export function MemoryGraphView() {
   if (loading || !graph) {
     return (
       <div className="flex flex-1 flex-col">
-        <ScreenLoadingState label="Building memory graph..." />
+        <ScreenLoadingState />
       </div>
     );
   }

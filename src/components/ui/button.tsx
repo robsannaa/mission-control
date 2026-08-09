@@ -4,13 +4,9 @@ import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
-/**
- * ElevenLabs buttons are pills: `rounded-full`, 36px tall, 14px label at
- * regular/medium weight, and a solid near-black (light) / near-white (dark)
- * primary. Secondary actions are hairline-outlined pills on the page tone.
- */
+/** Functional controls use the shared 6px control radius. */
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-control text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
