@@ -147,7 +147,7 @@ export function OpenClawUpdateBanner() {
                 href={info.releaseUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="flex items-center gap-1.5 rounded-control px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <ExternalLink className="h-3 w-3" />
                 Release
@@ -220,7 +220,7 @@ export function OpenClawUpdateBanner() {
                     href={info.releaseUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1 rounded-lg bg-[var(--accent-brand)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                    className="flex items-center gap-1 rounded-control bg-[var(--accent-brand)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
                   >
                     <ExternalLink className="h-3 w-3" />
                     Open release page

@@ -176,7 +176,7 @@ const components: React.ComponentProps<typeof ReactMarkdown>["components"] = {
           ? children[0]
           : null;
     const kind = raw ? classifyInlineToken(raw) : null;
-    if (raw && (kind === "file" || kind === "memory")) {
+    if (raw && (kind === "file" || kind === "memory" || kind === "command")) {
       return <EntityPill kind={kind} label={raw.trim()} />;
     }
     return (
@@ -238,20 +238,49 @@ const components: React.ComponentProps<typeof ReactMarkdown>["components"] = {
 
 
 /**
- * Agent output names tools inline as plain prose — "Built-in tools apply_patch,
- * create_goal, exec, ...". Backtick identifier-shaped tokens so they render as
- * monospace chips instead of dissolving into the sentence. Existing code spans
- * and fenced blocks are left exactly as authored.
+ * The gateway writes chat output as loosely-formatted prose: tool names appear
+ * bare ("Built-in tools apply_patch, create_goal, ..."), slash commands appear
+ * bare ("/session - Manage session-level settings"), and lines are separated by
+ * single newlines. Markdown collapses single newlines into spaces, which turned
+ * a readable command list into one run-on paragraph.
+ *
+ * This pass restores intent without touching anything the author marked up:
+ *   - identifier tokens  -> code spans  (monospace chips)
+ *   - bare /commands     -> code spans  (rendered as pills downstream)
+ *   - single newlines    -> hard breaks (two trailing spaces)
+ * Fenced blocks and existing inline code are passed through untouched.
  */
 const IDENTIFIER_RE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g;
 
-function markUpIdentifiers(text: string): string {
+// A slash command: not preceded by a word character or slash (so URLs and
+// paths are skipped) and not followed by one (so "/tmp/openclaw" is skipped).
+const SLASH_COMMAND_RE = /(^|[^\w/])(\/[a-z][a-z0-9-]*)(?![\w/-])/g;
+
+// Bare filenames and paths in prose ("view/edit MEMORY.md") are references
+// too — mark them up so they render as pills instead of vanishing into the
+// sentence. The trailing lookahead keeps URLs and sentence punctuation intact.
+const FILE_TOKEN_RE =
+  /(^|[\s(\[])((?:[\w.-]+\/)*[\w.-]+\.(?:md|markdown|txt|json|ya?ml|toml|csv|log|tsx?|jsx?|py|sh|rs|go|sql|css|html|pdf|xlsx?|docx?|png|jpe?g|gif|svg))(?=$|[\s),.:;\]])/g;
+
+function markUpProse(segment: string): string {
+  return segment
+    .replace(FILE_TOKEN_RE, (_m, before, file) => `${before}\`${file}\``)
+    .replace(IDENTIFIER_RE, (match) => `\`${match}\``)
+    .replace(SLASH_COMMAND_RE, (_m, before, cmd) => `${before}\`${cmd}\``);
+}
+
+/** Single newlines become hard breaks; blank-line paragraph breaks are kept. */
+function preserveLineBreaks(segment: string): string {
+  return segment.replace(/([^\n])\n(?!\n)/g, "$1  \n");
+}
+
+function prepareMarkdown(text: string): string {
   const segments = text.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
   return segments
     .map((segment, i) => {
-      // Odd indices are the captured code spans/blocks — never touch them.
+      // Odd indices are captured code spans/blocks — never touch them.
       if (i % 2 === 1) return segment;
-      return segment.replace(IDENTIFIER_RE, (match) => `\`${match}\``);
+      return preserveLineBreaks(markUpProse(segment));
     })
     .join("");
 }
@@ -260,7 +289,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="text-sm text-foreground">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {markUpIdentifiers(text)}
+        {prepareMarkdown(text)}
       </ReactMarkdown>
     </div>
   );

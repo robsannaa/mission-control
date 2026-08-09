@@ -59,9 +59,8 @@ function shortenPath(path: string, maxSegments = 2): string {
 }
 
 const TONE: Record<EntityKind, string> = {
-  // Brand tint for user-authored context (files, memories) — these are "things
-  // of yours" and deserve the accent.
-  file: "bg-brand-subtle text-brand-text",
+  // Files get their tone from the format instead (see fileTone).
+  file: "bg-muted text-fg-secondary",
   memory: "bg-brand-subtle text-brand-text",
   // Machine references stay neutral: they are what the agent did, not what
   // the user brought.
@@ -70,6 +69,29 @@ const TONE: Record<EntityKind, string> = {
   agent: "bg-muted text-fg-secondary",
 };
 
+/**
+ * Format families, coloured the way desktop apps colour their icons —
+ * spreadsheets green, documents blue, data amber. Tints are kept low so a
+ * paragraph of references still reads as text, not as confetti.
+ */
+const FILE_TONES: Array<{ exts: string[]; tone: string }> = [
+  { exts: ["xlsx", "xls", "csv", "tsv", "numbers"], tone: "bg-success-bg text-success-fg" },
+  { exts: ["doc", "docx", "rtf", "pages", "odt"], tone: "bg-info-bg text-info-fg" },
+  { exts: ["pdf"], tone: "bg-danger-bg text-danger-fg" },
+  { exts: ["md", "markdown", "txt"], tone: "bg-brand-subtle text-brand-text" },
+  { exts: ["json", "yaml", "yml", "toml", "xml"], tone: "bg-warning-bg text-warning-fg" },
+  { exts: ["png", "jpg", "jpeg", "gif", "svg", "webp", "heic"], tone: "bg-info-bg text-info-fg" },
+];
+
+function fileTone(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  for (const entry of FILE_TONES) {
+    if (entry.exts.includes(ext)) return entry.tone;
+  }
+  // Code and everything unrecognised stay neutral.
+  return "bg-muted text-fg-secondary";
+}
+
 type Props = {
   kind: EntityKind;
   label: string;
@@ -77,9 +99,46 @@ type Props = {
   className?: string;
 };
 
+/**
+ * Clicking a command in a reply loads it into the composer, ready to send.
+ * A DOM event keeps the pill decoupled from the composer — the markdown
+ * renderer has no reference to it, and the composer owns its own state.
+ */
+export const INSERT_COMMAND_EVENT = "mc:insert-command";
+
+export function emitInsertCommand(command: string) {
+  window.dispatchEvent(
+    new CustomEvent(INSERT_COMMAND_EVENT, { detail: command }),
+  );
+}
+
 export function EntityPill({ kind, label, title, className }: Props) {
   const display =
     kind === "file" && label.includes("/") ? shortenPath(label) : label;
+
+  const classes = cn(
+    "mx-0.5 inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5",
+    "align-baseline text-[12.5px] font-medium leading-5",
+    kind === "file" ? fileTone(label) : TONE[kind],
+    className,
+  );
+
+  if (kind === "command") {
+    return (
+      <button
+        type="button"
+        title={`Use ${label}`}
+        onClick={() => emitInsertCommand(label)}
+        className={cn(
+          classes,
+          "cursor-pointer transition-colors hover:bg-secondary hover:text-foreground",
+        )}
+      >
+        <EntityIcon kind={kind} path={label} />
+        <span className="truncate">{display}</span>
+      </button>
+    );
+  }
 
   return (
     <span
@@ -87,7 +146,7 @@ export function EntityPill({ kind, label, title, className }: Props) {
       className={cn(
         "mx-0.5 inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5",
         "align-baseline text-[12.5px] font-medium leading-5",
-        TONE[kind],
+        kind === "file" ? fileTone(label) : TONE[kind],
         className,
       )}
     >

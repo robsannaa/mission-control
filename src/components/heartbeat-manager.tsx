@@ -1188,7 +1188,7 @@ export function HeartbeatManager() {
               href={data.docsUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-lg border border-foreground/10 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+              className="inline-flex items-center gap-1 rounded-control border border-foreground/10 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
             >
               Docs
               <ExternalLink className="h-3 w-3" />

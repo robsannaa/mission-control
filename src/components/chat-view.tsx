@@ -848,11 +848,18 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
 
           {historyLoading && (
             <div className="mx-auto w-full max-w-3xl px-5 py-8" aria-hidden>
-              {[0, 1, 2].map((index) => (
-                <div key={index} className="mb-8 space-y-2">
-                  <div className="h-3 w-2/3 animate-pulse rounded-full bg-muted" />
-                  <div className="h-3 w-full animate-pulse rounded-full bg-muted" />
-                  <div className="h-3 w-4/5 animate-pulse rounded-full bg-muted" />
+              {[0, 1].map((index) => (
+                <div key={index}>
+                  {/* user turn: short, right-aligned, bubble-shaped */}
+                  <div className="mb-7 flex justify-end">
+                    <div className="h-9 w-2/5 animate-pulse rounded-2xl bg-muted" />
+                  </div>
+                  {/* assistant turn: full-width card with lines of prose */}
+                  <div className="mb-9 space-y-2.5 rounded-2xl bg-card/60 px-4 py-3 ring-1 ring-border/60">
+                    <div className="h-3 w-full animate-pulse rounded-full bg-muted" />
+                    <div className="h-3 w-11/12 animate-pulse rounded-full bg-muted" />
+                    <div className="h-3 w-3/4 animate-pulse rounded-full bg-muted" />
+                  </div>
                 </div>
               ))}
             </div>

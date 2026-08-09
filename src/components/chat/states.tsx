@@ -98,7 +98,7 @@ export function InlineNotice({
           {shape.action?.href && (
             <a
               href={shape.action.href}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
+              className="inline-flex items-center gap-1.5 rounded-control border border-border px-3 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
             >
               <ArrowRight className="h-3 w-3" aria-hidden />
               {shape.action.label}
@@ -178,7 +178,7 @@ export function AgentsUnavailable({
           </button>
           <a
             href="/doctor"
-            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-control border border-border px-3.5 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             Run Doctor
           </a>

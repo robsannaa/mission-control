@@ -1004,7 +1004,7 @@ export function IntegrationsView() {
                             href={selectedAccount.pendingAuthUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-2 rounded-lg border border-info-border bg-info-bg px-4 py-2 text-sm font-medium text-info-fg transition-colors hover:bg-info-bg"
+                            className="inline-flex items-center gap-2 rounded-control border border-info-border bg-info-bg px-4 py-2 text-sm font-medium text-info-fg transition-colors hover:bg-info-bg"
                           >
                             Open Google Sign-In <ExternalLink className="h-4 w-4" />
                           </a>

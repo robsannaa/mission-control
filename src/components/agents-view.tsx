@@ -2550,7 +2550,7 @@ function ChannelBindingPicker({
                   <div className="flex items-center gap-2">
                     <Link
                       href="/terminal"
-                      className="rounded-lg bg-primary text-primary-foreground px-3 py-2 text-xs font-medium transition-colors hover:bg-primary/90 inline-flex items-center gap-1.5"
+                      className="rounded-control bg-primary text-primary-foreground px-3 py-2 text-xs font-medium transition-colors hover:bg-primary/90 inline-flex items-center gap-1.5"
                     >
                       Open Terminal
                     </Link>
@@ -2589,7 +2589,7 @@ function ChannelBindingPicker({
                     {selectedChannel.setupCommand ? (
                       <Link
                         href="/terminal"
-                        className="rounded-lg bg-primary text-primary-foreground px-3 py-2 text-xs font-medium transition-colors hover:bg-primary/90 inline-flex items-center gap-1.5"
+                        className="rounded-control bg-primary text-primary-foreground px-3 py-2 text-xs font-medium transition-colors hover:bg-primary/90 inline-flex items-center gap-1.5"
                       >
                         Open Terminal
                       </Link>

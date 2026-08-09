@@ -253,7 +253,7 @@ function MessageRow({
   const isCommandReply = meta.source === "command";
 
   return (
-    <div className="group/msg mb-8">
+    <div className="group/msg mb-8 rounded-2xl bg-card/60 px-4 py-3 ring-1 ring-border/60">
       {isCommandReply && (
         <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
           Gateway

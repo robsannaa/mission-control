@@ -756,7 +756,7 @@ export function WebSearchView() {
                 href="https://docs.openclaw.ai/tools/web#setting-up-perplexity-search"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-info-fg transition-colors hover:bg-foreground/10"
+                className="mt-2 inline-flex items-center gap-1.5 rounded-control border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-info-fg transition-colors hover:bg-foreground/10"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 OpenClaw Web Search Docs

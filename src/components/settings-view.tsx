@@ -877,7 +877,7 @@ export function SettingsView() {
               href="https://docs.openclaw.ai"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted/80 hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-control border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted/80 hover:text-foreground"
             >
               Documentation
               <ExternalLink className="h-3 w-3" />
@@ -886,7 +886,7 @@ export function SettingsView() {
               href="https://github.com/robsannaa/openclaw-mission-control/issues"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted/80 hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-control border border-foreground/10 bg-card px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted/80 hover:text-foreground"
             >
               Report an issue
               <ExternalLink className="h-3 w-3" />

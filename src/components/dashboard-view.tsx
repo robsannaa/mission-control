@@ -1019,7 +1019,7 @@ export function DashboardView() {
                       {issue.fixLabel && issue.fixHref && (
                         <a
                           href={issue.fixHref}
-                          className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground dark:bg-secondary dark:hover:bg-secondary"
+                          className="flex shrink-0 items-center gap-1 rounded-control border border-border bg-muted px-2.5 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground dark:bg-secondary dark:hover:bg-secondary"
                         >
                           {issue.fixLabel}
                           <ArrowRight className="h-3 w-3" />
@@ -1428,4 +1428,3 @@ function StatCard({
     </div>
   );
 }
-

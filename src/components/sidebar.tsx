@@ -8,7 +8,6 @@ import {
   Activity,
   LayoutDashboard,
   ListChecks,
-  Clock,
   Calendar,
   MessageSquare,
   Brain,
@@ -44,6 +43,65 @@ import {
 } from "lucide-react";
 import { getChatUnreadCount, subscribeChatStore } from "@/lib/chat-store";
 
+function TickingClockIcon({ className }: { className?: string }) {
+  const [now, setNow] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const tick = () => setNow(new Date());
+    tick();
+    const interval = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const seconds = now?.getSeconds() ?? 0;
+  const minutes = (now?.getMinutes() ?? 0) + seconds / 60;
+  const hours = (now?.getHours() ?? 0) + minutes / 60;
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+      data-live-clock
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.75" />
+      <line
+        x1="12"
+        y1="12"
+        x2="12"
+        y2="8.25"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        transform={`rotate(${hours * 30} 12 12)`}
+      />
+      <line
+        x1="12"
+        y1="12"
+        x2="12"
+        y2="6.25"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        transform={`rotate(${minutes * 6} 12 12)`}
+      />
+      <line
+        x1="12"
+        y1="13"
+        x2="12"
+        y2="5"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeLinecap="round"
+        opacity="0.72"
+        transform={`rotate(${seconds * 6} 12 12)`}
+      />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
 type NavItem = {
   section: string;
   label: string;
@@ -73,7 +131,7 @@ const defaultNavItems: NavItem[] = [
   { group: "Work", section: "tasks", label: "Tasks", icon: ListChecks, href: "/tasks" },
   ...(!isAgentbayHosting ? [{ section: "calendar", label: "Calendar", icon: Calendar, href: "/calendar", beta: true } as NavItem] : []),
   ...(!isAgentbayHosting ? [{ section: "integrations", label: "Integrations", icon: Puzzle, href: "/integrations", beta: true } as NavItem] : []),
-  { section: "cron", label: "Cron Jobs", icon: Clock, href: "/cron" },
+  { section: "cron", label: "Cron Jobs", icon: TickingClockIcon, href: "/cron" },
   { section: "cron", label: "Heartbeat", icon: Heart, href: "/heartbeat", tab: "heartbeat", isSubItem: true },
   { section: "skills", label: "Skills", icon: Wrench, href: "/skills" },
   { section: "skills", label: "ClawHub", icon: Package, href: "/skills?tab=clawhub", tab: "clawhub", isSubItem: true },
@@ -115,7 +173,7 @@ const hostedNavItems: NavItem[] = [
   { section: "agents", label: "Models", icon: Cpu, href: "/agents?tab=models", tab: "models", isSubItem: true },
   { section: "sessions", label: "Sessions", icon: MessageSquare, href: "/sessions" },
   // ── Work ──
-  { group: "Work", section: "cron", label: "Cron Jobs", icon: Clock, href: "/cron" },
+  { group: "Work", section: "cron", label: "Cron Jobs", icon: TickingClockIcon, href: "/cron" },
   // ── Knowledge ──
   { group: "Knowledge", section: "memory", label: "Memory", icon: Brain, href: "/memory" },
   { section: "docs", label: "Documents", icon: FolderOpen, href: "/documents" },
@@ -277,9 +335,9 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
         const showBadge = item.section === "chat" && chatUnread > 0;
         const isDisabled = item.comingSoon;
         const linkClass = cn(
-          // ElevenLabs nav row: 34px tall, 8px radius, quiet label that
-          // resolves to full ink when active.
-          "group relative flex items-center gap-2.5 rounded-lg py-2 text-sm font-medium transition-colors duration-150",
+          // Navigation is an interactive control, so it uses the shared 6px
+          // radius and resolves to full ink when active.
+          "group relative flex items-center gap-2.5 rounded-control py-2 text-sm font-medium transition-colors duration-150",
           collapsed ? "justify-center px-2" : "px-2.5",
           item.isSubItem && !collapsed && "ml-6 py-1.5",
           isDisabled

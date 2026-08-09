@@ -34,6 +34,7 @@ import type {
   Mention,
   SlashCommand,
 } from "@/components/chat/types";
+import { INSERT_COMMAND_EVENT } from "@/components/chat/entity-pill";
 import { useSlashCommands } from "@/hooks/use-slash-commands";
 import { useWorkspaceFiles } from "@/hooks/use-workspace-files";
 
@@ -255,7 +256,9 @@ export function Composer({
   const applyCommand = useCallback(
     (command: SlashCommand, keepOpen: boolean) => {
       if (trigger.kind !== "slash") return;
-      const end = trigger.start + 1 + trigger.query.length;
+      // Measure the leading token now — never trust a range captured earlier.
+      const leading = /^\/[^\s]*/.exec(value);
+      const end = leading ? leading[0].length : 0;
       // acceptsArgs → leave a trailing space so the caret is already where the
       // argument goes; otherwise the command is complete as typed.
       const insert = command.acceptsArgs
@@ -264,7 +267,7 @@ export function Composer({
       replaceTrigger(trigger.start, end, insert);
       if (!keepOpen) setDismissedAt(trigger.start);
     },
-    [replaceTrigger, trigger],
+    [replaceTrigger, trigger, value],
   );
 
   const applyMention = useCallback(
@@ -295,6 +298,62 @@ export function Composer({
     },
     [replaceTrigger, trigger],
   );
+
+  /**
+   * The footer affordances are real controls: they put the trigger character
+   * into the composer and focus it, which is exactly what typing "/" or "@"
+   * does — so the same menu opens by the same code path.
+   */
+  // A command pill in a reply loads that command into the composer, so the
+  // user can review or add arguments before sending rather than firing blind.
+  useEffect(() => {
+    const onInsert = (event: Event) => {
+      const command = (event as CustomEvent<string>).detail;
+      if (typeof command !== "string" || !command.startsWith("/")) return;
+      const next = `${command} `;
+      setValue(next);
+      setDismissedAt(0);
+      requestAnimationFrame(() => {
+        const node = textareaRef.current;
+        if (!node) return;
+        node.focus();
+        node.setSelectionRange(next.length, next.length);
+        setCaret(next.length);
+      });
+    };
+    window.addEventListener(INSERT_COMMAND_EVENT, onInsert);
+    return () => window.removeEventListener(INSERT_COMMAND_EVENT, onInsert);
+  }, []);
+
+  const openCommandMenu = useCallback(() => {
+    const next = value.startsWith("/") ? value : `/${value}`;
+    setValue(next);
+    setDismissedAt(null);
+    setActiveIndex(0);
+    requestAnimationFrame(() => {
+      const node = textareaRef.current;
+      if (!node) return;
+      node.focus();
+      const position = 1;
+      node.setSelectionRange(position, position);
+      setCaret(position);
+    });
+  }, [value]);
+
+  const openFileMenu = useCallback(() => {
+    const needsSpace = value.length > 0 && !/\s$/.test(value);
+    const next = `${value}${needsSpace ? " " : ""}@`;
+    setValue(next);
+    setDismissedAt(null);
+    setActiveIndex(0);
+    requestAnimationFrame(() => {
+      const node = textareaRef.current;
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(next.length, next.length);
+      setCaret(next.length);
+    });
+  }, [value]);
 
   const removeMention = useCallback((token: string) => {
     setMentions((current) => current.filter((entry) => entry.token !== token));
@@ -643,14 +702,26 @@ export function Composer({
 
             {modelLabel && <span className="truncate">{modelLabel}</span>}
 
-            <span className="hidden items-center gap-1.5 sm:inline-flex">
-              <Slash className="h-3 w-3" aria-hidden />
+            <button
+              type="button"
+              onClick={openCommandMenu}
+              disabled={disabled}
+              className="hidden items-center gap-1.5 rounded-full px-2 py-1 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 sm:inline-flex"
+            >
+              <span className="font-mono text-[13px] leading-none" aria-hidden>
+                /
+              </span>
               commands
-            </span>
-            <span className="hidden items-center gap-1.5 sm:inline-flex">
+            </button>
+            <button
+              type="button"
+              onClick={openFileMenu}
+              disabled={disabled}
+              className="hidden items-center gap-1.5 rounded-full px-2 py-1 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 sm:inline-flex"
+            >
               <AtSign className="h-3 w-3" aria-hidden />
               files
-            </span>
+            </button>
           </div>
 
           <div className="flex shrink-0 items-center gap-3">
