@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { gatewayCall, runCliCaptureBoth } from "@/lib/openclaw";
+import { CONFIG_WRITE_TIMEOUT_MS, gatewayCall, runCliCaptureBoth } from "@/lib/openclaw";
 import { gatewayConfigPatch, sanitizeConfigFile } from "@/lib/gateway-config";
 import { readFile } from "fs/promises";
 import { join } from "path";
@@ -241,7 +241,7 @@ async function applyConfigSetFallback(entries: ConfigSetEntry[]): Promise<{
       }
       const setResult = await runCliCaptureBoth(
         ["config", "set", "--strict-json", entry.path, encoded],
-        20000
+        CONFIG_WRITE_TIMEOUT_MS
       );
       if (setResult.code !== 0) {
         const details = String(setResult.stderr || setResult.stdout || "").trim();

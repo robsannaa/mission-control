@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runCli, runCliJson } from "@/lib/openclaw";
+import { CONFIG_WRITE_TIMEOUT_MS, runCli, runCliJson } from "@/lib/openclaw";
 
 const GITHUB_RELEASES_URL =
   "https://api.github.com/repos/openclaw/openclaw/releases/latest";
@@ -181,8 +181,10 @@ export async function POST(request: NextRequest) {
       if (normalizedInstalledVersion) {
         try {
           await runCli(
+            // Runs right after an update, when the new version still has to
+            // rebuild its plugin cache — the slowest `config set` there is.
             ["config", "set", "wizard.lastRunVersion", normalizedInstalledVersion],
-            8000,
+            CONFIG_WRITE_TIMEOUT_MS,
           );
           wizardLastRunVersionSynced = true;
         } catch (err) {

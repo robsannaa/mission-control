@@ -15,6 +15,18 @@ import type { RunCliResult } from "./openclaw-cli";
 export type { RunCliResult } from "./openclaw-cli";
 export { parseJsonFromCliOutput } from "./openclaw-cli";
 
+/**
+ * Budget for a CLI *write* to the config.
+ *
+ * `openclaw config set` is not a cheap file edit: the subprocess initialises the
+ * full plugin loader and runs doctor checks first, so on a cold cache — a large
+ * plugin set, slow disk, or the first call after an update rebuilds it — it can
+ * take far longer than a read. The default 15s produced the worst possible
+ * outcome, aborting mid-write and reporting "This operation was aborted" for a
+ * change that may already have landed (#82). Prefer waiting to that ambiguity.
+ */
+export const CONFIG_WRITE_TIMEOUT_MS = 60_000;
+
 export async function runCli(
   args: string[],
   timeout = 15000,
