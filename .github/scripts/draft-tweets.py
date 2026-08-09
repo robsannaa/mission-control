@@ -2,6 +2,7 @@
 """Draft tweets from a git diff/commit context using OpenRouter, then send to Telegram."""
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -74,7 +75,7 @@ def draft_tweets(context: str) -> str:
     return data["choices"][0]["message"]["content"].strip()
 
 
-def send_telegram(text: str) -> None:
+def send_telegram_message(text: str) -> None:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -86,6 +87,61 @@ def send_telegram(text: str) -> None:
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         print(resp.read().decode())
+
+
+TWEET_CHAR_LIMIT = 280
+
+
+def parse_tweets(raw: str) -> list[str]:
+    """Split the model's numbered-list output into individual tweet strings.
+
+    Each tweet starts with a line like "1. " / "2. " etc. Everything up to
+    the next numbered marker (or end of text) belongs to that tweet.
+    """
+    lines = raw.strip().splitlines()
+    tweets: list[str] = []
+    current: list[str] = []
+
+    def flush():
+        if current:
+            tweet = "\n".join(current).strip()
+            if tweet:
+                tweets.append(tweet)
+
+    marker_re = re.compile(r"^\s*(\d+)[.)]\s+(.*)$")
+    for line in lines:
+        m = marker_re.match(line)
+        if m:
+            flush()
+            current = [m.group(2)]
+        else:
+            current.append(line)
+    flush()
+    return tweets
+
+
+def enforce_limit(tweet: str) -> str:
+    """Hard-enforce the character limit. Never trust the model alone."""
+    if len(tweet) <= TWEET_CHAR_LIMIT:
+        return tweet
+    # Trim to the limit minus an ellipsis, breaking on the last whitespace
+    # before the cutoff so we do not chop a word or emoji in half.
+    cutoff = TWEET_CHAR_LIMIT - 1
+    trimmed = tweet[:cutoff]
+    last_space = trimmed.rfind(" ")
+    if last_space > 0:
+        trimmed = trimmed[:last_space]
+    return trimmed.rstrip() + "\u2026"
+
+
+def send_telegram_tweets(tweets: list[str], commit_url: str) -> None:
+    """Send an intro line, then each tweet as its own separate message so
+    it is immediately obvious where one tweet ends and the next begins."""
+    intro = f"New Mission Control tweet drafts ({len(tweets)})\nPushed: {commit_url}"
+    send_telegram_message(intro)
+    for i, tweet in enumerate(tweets, start=1):
+        clean = enforce_limit(tweet)
+        send_telegram_message(f"{i}/{len(tweets)} ({len(clean)} chars)\n\n{clean}")
 
 
 def main() -> None:
