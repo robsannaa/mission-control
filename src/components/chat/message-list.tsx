@@ -214,17 +214,23 @@ function MessageRow({
   const { body: userBody, paths: referencedPaths } = isUser
     ? splitReferenceFooter(text)
     : { body: text, paths: [] as string[] };
+  // A reference the author never typed inline still deserves to be visible.
+  const unmentionedPaths = referencedPaths.filter(
+    (path) => !mentionTokensFor(path).some((token) => userBody.includes(token)),
+  );
 
   if (isUser) {
     return (
       <div className="group/msg mb-7 flex flex-col items-end">
         <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-sm leading-7 text-foreground">
           {userBody ? (
-            <span className="whitespace-pre-wrap">{userBody}</span>
+            <span className="whitespace-pre-wrap">
+              {renderUserBody(userBody, referencedPaths)}
+            </span>
           ) : null}
-          {referencedPaths.length > 0 && (
+          {unmentionedPaths.length > 0 && (
             <span className="mt-1.5 flex flex-wrap items-center gap-1">
-              {referencedPaths.map((referenced) => (
+              {unmentionedPaths.map((referenced) => (
                 <FileHoverCard key={referenced} path={referenced}>
                   <EntityPill kind="file" label={referenced} />
                 </FileHoverCard>
@@ -326,6 +332,53 @@ function splitReferenceFooter(text: string): { body: string; paths: string[] } {
     if (match) paths.push(match[1]);
   }
   return { body, paths };
+}
+
+
+/** The composer writes a mention as `@path`, or `@"path with spaces"`. */
+function mentionTokensFor(path: string): string[] {
+  return [`@"${path}"`, `@${path}`];
+}
+
+/**
+ * Renders the typed message with its "@path" mentions swapped for file pills.
+ * The reference then appears exactly once — in the sentence where it was
+ * written — instead of once as text and again as a chip below.
+ */
+function renderUserBody(body: string, paths: string[]): React.ReactNode {
+  if (paths.length === 0) return body;
+
+  const tokens = paths
+    .flatMap((path) => mentionTokensFor(path).map((token) => ({ token, path })))
+    .sort((a, b) => b.token.length - a.token.length); // longest first
+
+  const nodes: React.ReactNode[] = [];
+  let rest = body;
+  let guard = 0;
+
+  while (rest.length > 0 && guard++ < 200) {
+    let bestIndex = -1;
+    let best: { token: string; path: string } | null = null;
+    for (const entry of tokens) {
+      const at = rest.indexOf(entry.token);
+      if (at >= 0 && (bestIndex < 0 || at < bestIndex)) {
+        bestIndex = at;
+        best = entry;
+      }
+    }
+    if (!best || bestIndex < 0) break;
+
+    if (bestIndex > 0) nodes.push(rest.slice(0, bestIndex));
+    nodes.push(
+      <FileHoverCard key={`${best.path}-${nodes.length}`} path={best.path}>
+        <EntityPill kind="file" label={best.path} />
+      </FileHoverCard>,
+    );
+    rest = rest.slice(bestIndex + best.token.length);
+  }
+
+  if (rest.length > 0) nodes.push(rest);
+  return nodes;
 }
 
 export function MessageList({
