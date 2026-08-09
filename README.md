@@ -2,17 +2,14 @@
 
 # Mission Control
 
+**English** | [中文](README.zh-CN.md) | [日本語](README.ja.md)
+
 **Your command center for [OpenClaw](https://github.com/openclaw). See everything, control everything, from one screen.**
 
 Monitor your AI agents in real time. Chat with them. Schedule jobs. Track costs. Manage memory. All from your browser, all running on your machine.
 
 ## Please, consider supporting me and buy me a Claude Code Subscription!
 [![Buy Me a Claude Code Subscription!](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
-
-
-**你的 [OpenClaw](https://github.com/openclaw) 指挥中心。一屏总览，一键掌控。**
-
-实时监控你的 AI 智能体、对话、调度任务、追踪费用、管理记忆 —— 一切在浏览器中完成，一切在你的设备上运行。
 
 [![OpenClaw GUI](https://img.shields.io/badge/OpenClaw-GUI-7c3aed?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCI+PHRleHQgeT0iMjAiIGZvbnQtc2l6ZT0iMjAiPjwvdGV4dD48L3N2Zz4=)](https://github.com/openclaw) ![AI Dashboard](https://img.shields.io/badge/AI_Agent-Dashboard-22c55e?style=flat-square) ![Self-Hosted](https://img.shields.io/badge/Self--Hosted-Local_AI-f59e0b?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
@@ -32,7 +29,7 @@ Monitor your AI agents in real time. Chat with them. Schedule jobs. Track costs.
 
 Mission Control is **not** a separate platform. It doesn't store your data, doesn't run its own database, and doesn't try to be the source of truth.
 
-Instead, it's a **transparent window** into OpenClaw. Every screen, every number, every status you see comes directly from your running OpenClaw system in real time. When you make a change in Mission Control, it goes straight to OpenClaw — no sync delays, no stale caches, no "refresh to see updates."
+Instead, it's a **transparent window** into OpenClaw. Screens, numbers, and statuses come directly from your running OpenClaw system in real time. When you make a change in Mission Control, it goes straight to OpenClaw — no sync delays, no stale caches, no "refresh to see updates." (Mission Control keeps only a few small local files of its own — usage history and the Kanban board — never a copy of your OpenClaw data.)
 
 **Why this matters to you:**
 - **Always accurate** — what you see is what's actually happening, right now
@@ -195,7 +192,7 @@ If `openclaw` isn't installed, [get it here](https://docs.openclaw.ai/install).
 <details>
 <summary><strong>Does this send my data anywhere?</strong></summary>
 
-No. Everything runs on your machine. Mission Control talks to your local OpenClaw installation and nothing else. No analytics, no tracking, no cloud calls.
+Mission Control itself sends nothing anywhere — no analytics, no tracking, no phoning home. The only network calls are the ones you configure: your OpenClaw gateway, and whichever AI model providers you set up (which you pick, including fully local models).
 </details>
 
 <details>
@@ -222,7 +219,7 @@ npm run dev -- --port 8080
 
 ## Contributing
 
-Pull requests welcome. Found a bug or have an idea? [Open an issue](https://github.com/openclaw/dashboard/issues).
+Pull requests welcome. Found a bug or have an idea? [Open an issue](https://github.com/robsannaa/openclaw-mission-control/issues).
 
 ---
 

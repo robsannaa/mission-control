@@ -46,6 +46,10 @@ next-env.d.ts
 
 # Others
 *.md
+!README.md
+!README.*.md
+!LICENSE.md
+!docs/**/*.md
 .claude/
 *.png
 /e2e/
