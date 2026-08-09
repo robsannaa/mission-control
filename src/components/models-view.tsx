@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -34,14 +34,40 @@ type Provider = {
   url: string;
 };
 
-const PROVIDERS: Provider[] = [
+// Static setup metadata (key prefixes, console URLs). This is an enrichment
+// map and OFFLINE FALLBACK only — the provider list shown in the UI is
+// derived from the gateway's models.authStatus whenever it is reachable.
+const FALLBACK_PROVIDERS: Provider[] = [
   { id: "anthropic", name: "Anthropic", hint: "Claude models", keyPrefix: "sk-ant-", url: "https://console.anthropic.com/settings/keys" },
   { id: "openai", name: "OpenAI", hint: "GPT & o-series", keyPrefix: "sk-", url: "https://platform.openai.com/api-keys" },
   { id: "openrouter", name: "OpenRouter", hint: "200+ models", keyPrefix: "sk-or-", url: "https://openrouter.ai/keys" },
 ];
 
-function findProvider(id: string): Provider | undefined {
-  return PROVIDERS.find((p) => p.id === id);
+type LiveAuthProvider = {
+  provider: string;
+  displayName: string;
+  authenticated: boolean;
+};
+
+function findProvider(id: string, providers: Provider[] = FALLBACK_PROVIDERS): Provider | undefined {
+  return providers.find((p) => p.id === id) ?? FALLBACK_PROVIDERS.find((p) => p.id === id);
+}
+
+/** Gateway-reported providers merged over the static catalog. */
+function buildProviderList(live: LiveAuthProvider[] | null): Provider[] {
+  if (!live || live.length === 0) return FALLBACK_PROVIDERS;
+  const out = [...FALLBACK_PROVIDERS];
+  for (const row of live) {
+    if (out.some((p) => p.id === row.provider)) continue;
+    out.push({
+      id: row.provider,
+      name: row.displayName || row.provider,
+      hint: "Reported by the gateway",
+      keyPrefix: "",
+      url: "",
+    });
+  }
+  return out;
 }
 
 /* ── Types ──────────────────────────────────────── */
@@ -409,12 +435,14 @@ function AddProviderWizard({
   onClose,
   onDone,
   initialProviderId,
+  providers,
 }: {
   onClose: () => void;
   onDone: () => void;
   initialProviderId?: string | null;
+  providers: Provider[];
 }) {
-  const initialProvider = initialProviderId ? findProvider(initialProviderId) : undefined;
+  const initialProvider = initialProviderId ? findProvider(initialProviderId, providers) : undefined;
   const [wizard, setWizard] = useState<WizardState>({
     step: initialProvider ? "key" : "pick",
     providerId: initialProvider?.id ?? null,
@@ -425,7 +453,7 @@ function AddProviderWizard({
   });
 
   const keyInputRef = useRef<HTMLInputElement>(null);
-  const provider = wizard.providerId ? findProvider(wizard.providerId) : null;
+  const provider = wizard.providerId ? findProvider(wizard.providerId, providers) : null;
 
   const stepTitle: Record<WizardStep, string> = {
     pick: "Add an AI provider",
@@ -544,7 +572,7 @@ function AddProviderWizard({
           {/* Step: pick provider */}
           {wizard.step === "pick" && (
             <div className="grid grid-cols-1 gap-3 p-5">
-              {PROVIDERS.map((p) => (
+              {providers.map((p) => (
                 <button
                   key={p.id}
                   type="button"
@@ -1450,17 +1478,19 @@ function AgentModelsCard({
 function ProvidersCard({
   configuredProviders,
   agents,
+  providers,
   onAddProvider,
   onManageProvider,
   onRemoveProvider,
 }: {
   configuredProviders: string[];
   agents: AgentFull[];
+  providers: Provider[];
   onAddProvider: (providerId?: string) => void;
   onManageProvider: (providerId: string) => void;
   onRemoveProvider: (providerId: string) => void;
 }) {
-  const unconnectedProviders = PROVIDERS.filter((p) => !configuredProviders.includes(p.id));
+  const unconnectedProviders = providers.filter((p) => !configuredProviders.includes(p.id));
 
   // Count how many agent models reference each provider
   function modelsInUseCount(providerId: string): number {
@@ -1504,7 +1534,7 @@ function ProvidersCard({
         <div className="divide-y divide-[#2c343d]">
           {/* Connected providers */}
           {configuredProviders.map((pid) => {
-            const providerMeta = findProvider(pid);
+            const providerMeta = findProvider(pid, providers);
             const displayName = providerMeta?.name ?? getProviderDisplayName(pid);
             const inUse = modelsInUseCount(pid);
 
@@ -1593,6 +1623,8 @@ export function ModelsView() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [agentsData, setAgentsData] = useState<AgentsResponse | null>(null);
   const [groupedModels, setGroupedModels] = useState<GroupedModel[]>([]);
+  const [liveAuthProviders, setLiveAuthProviders] = useState<LiveAuthProvider[] | null>(null);
+  const [gatewayOffline, setGatewayOffline] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(false);
 
@@ -1611,6 +1643,31 @@ export function ModelsView() {
       setSummary(data);
     } catch {
       // Next poll will retry
+    }
+  }, []);
+
+  // Live provider/auth state from the gateway (models.authStatus via
+  // /api/models). The static catalog is only used while this is unavailable.
+  const fetchLiveProviders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/models", {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setGatewayOffline(data?.gatewayOffline === true);
+      const rows = Array.isArray(data?.authProviders) ? data.authProviders : [];
+      setLiveAuthProviders(
+        rows
+          .filter((row: Record<string, unknown>) => typeof row?.provider === "string")
+          .map((row: Record<string, unknown>): LiveAuthProvider => ({
+            provider: String(row.provider),
+            displayName: typeof row.displayName === "string" ? row.displayName : String(row.provider),
+            authenticated: row.authenticated === true,
+          }))
+      );
+    } catch {
+      // Next poll will retry; static fallback stays in place meanwhile.
     }
   }, []);
 
@@ -1671,13 +1728,17 @@ export function ModelsView() {
     }
   }, []);
 
-  // Fetch summary on mount and poll every 30s
+  // Fetch summary + live provider data on mount and poll every 30s
   useEffect(() => {
     console.log("[ModelsView] CLIENT mount effect — calling fetchSummary");
     void fetchSummary();
-    const timer = setInterval(() => void fetchSummary(), 30000);
+    void fetchLiveProviders();
+    const timer = setInterval(() => {
+      void fetchSummary();
+      void fetchLiveProviders();
+    }, 30000);
     return () => clearInterval(timer);
-  }, [fetchSummary]);
+  }, [fetchSummary, fetchLiveProviders]);
 
   // Fetch agents once on mount, then refresh on demand
   useEffect(() => {
@@ -1737,7 +1798,17 @@ export function ModelsView() {
     void fetchAgents();
   }
 
-  const configuredProviders = summary?.configuredProviders ?? [];
+  const providerList = useMemo(
+    () => buildProviderList(liveAuthProviders),
+    [liveAuthProviders]
+  );
+  const configuredProviders = useMemo(() => {
+    const base = summary?.configuredProviders ?? [];
+    const authed = (liveAuthProviders ?? [])
+      .filter((p) => p.authenticated)
+      .map((p) => p.provider);
+    return [...new Set([...base, ...authed])];
+  }, [summary?.configuredProviders, liveAuthProviders]);
   const primaryModel = summary?.defaults?.primary ?? null;
   const fallbacks = summary?.defaults?.fallbacks ?? [];
   const agents = agentsData?.agents ?? [];
@@ -1767,6 +1838,15 @@ export function ModelsView() {
             </div>
           ) : (
             <div className="space-y-5">
+              {gatewayOffline && (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                  <p className="text-xs text-amber-300">
+                    The gateway is unreachable — showing cached config data. Provider and model
+                    status may be stale until the gateway comes back.
+                  </p>
+                </div>
+              )}
               {/* No providers at all — show big empty state */}
               {configuredProviders.length === 0 && (
                 <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-[#2c343d] py-16 text-center">
@@ -1820,6 +1900,7 @@ export function ModelsView() {
               <ProvidersCard
                 configuredProviders={configuredProviders}
                 agents={agents}
+                providers={providerList}
                 onAddProvider={(pid) => openProviderWizard(pid)}
                 onManageProvider={(pid) => openProviderWizard(pid)}
                 onRemoveProvider={(pid) => void handleRemoveProvider(pid)}
@@ -1833,6 +1914,7 @@ export function ModelsView() {
       {showWizard && (
         <AddProviderWizard
           initialProviderId={wizardProviderId}
+          providers={providerList}
           onClose={closeProviderWizard}
           onDone={handleWizardDone}
         />

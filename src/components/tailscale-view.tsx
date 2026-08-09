@@ -93,7 +93,7 @@ export function TailscaleView() {
       }
 
       const data = await configRes.json();
-      const rawConfig = asRecord(data?.rawConfig);
+      const rawConfig = asRecord(data?.config);
       const gateway = asRecord(rawConfig.gateway);
       const tailscale = asRecord(gateway.tailscale);
       const auth = asRecord(gateway.auth);
@@ -111,7 +111,7 @@ export function TailscaleView() {
       setAllowTailscaleAuth(parsedAllowTailscale);
       setLoadedAllowTailscaleAuth(parsedAllowTailscale);
       setAuthMode(String(auth.mode || "token"));
-      setBaseHash(String(data?.baseHash || ""));
+      setBaseHash(String(data?.meta?.baseHash || ""));
 
       if (gatewayRes?.ok) {
         setGatewayStatus((await gatewayRes.json()) as GatewaySnapshot);

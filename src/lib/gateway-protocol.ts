@@ -55,6 +55,49 @@ export const GATEWAY_CONNECT_CHALLENGE_TIMEOUT_MS = 15_000;
 export const GATEWAY_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
+ * OpenClaw versions this Mission Control build was developed and verified
+ * against. OpenClaw uses calendar versioning ("2026.7.1-2"); anything outside
+ * this window may expose different RPC shapes, so the dashboard shows a
+ * version-skew warning instead of failing silently.
+ */
+export const SUPPORTED_OPENCLAW_MIN = "2026.7.0";
+export const SUPPORTED_OPENCLAW_MAX_EXCLUSIVE = "2026.9.0";
+export const SUPPORTED_OPENCLAW_RANGE =
+  `>=${SUPPORTED_OPENCLAW_MIN} <${SUPPORTED_OPENCLAW_MAX_EXCLUSIVE}`;
+
+/** Parse a calver-ish "2026.7.1-2" / "v2026.7.1" into numeric parts, or null. */
+function parseOpenClawVersion(version: string): number[] | null {
+  const core = version.trim().replace(/^v/i, "").split("-")[0];
+  if (!core) return null;
+  const parts = core.split(".").map((part) => Number.parseInt(part, 10));
+  if (parts.length === 0 || parts.some((part) => Number.isNaN(part))) return null;
+  return parts;
+}
+
+function compareVersionParts(a: number[], b: number[]): number {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * Whether a gateway-reported version falls inside SUPPORTED_OPENCLAW_RANGE.
+ * Returns null when the version string cannot be parsed (unknown, not unsafe).
+ */
+export function isOpenClawVersionSupported(version: string): boolean | null {
+  const parsed = parseOpenClawVersion(version);
+  if (!parsed) return null;
+  const min = parseOpenClawVersion(SUPPORTED_OPENCLAW_MIN)!;
+  const max = parseOpenClawVersion(SUPPORTED_OPENCLAW_MAX_EXCLUSIVE)!;
+  return (
+    compareVersionParts(parsed, min) >= 0 && compareVersionParts(parsed, max) < 0
+  );
+}
+
+/**
  * Version Mission Control reports at handshake. The gateway logs it against
  * connection diagnostics, so report the real package version when readable.
  */

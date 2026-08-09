@@ -1685,7 +1685,10 @@ const PROVIDER_META: Record<string, { label: string; icon: string; color: string
   ollama: { label: "Ollama (local)", icon: "🦙", color: "lime", keyHint: "Local — no key needed" },
 };
 
-const RECOMMENDED_MODELS = [
+// Offline fallback ordering only — the "Recommended" section is derived from
+// the models the gateway actually reports (see recommendedModels in
+// ModelPicker); this list just ranks well-known keys when they are present.
+const FALLBACK_RECOMMENDED_MODELS = [
   "anthropic/claude-opus-4-6",
   "anthropic/claude-sonnet-4-5",
   "openai/gpt-5.2",
@@ -1755,6 +1758,19 @@ function ModelPicker({
     () => new Set(authProviders.filter((p) => p.authenticated).map((p) => p.provider)),
     [authProviders]
   );
+
+  // Recommended = models the gateway actually reports, with the well-known
+  // fallback keys ranked first when present. Never invents models the
+  // installation does not have.
+  const recommendedModels = useMemo(() => {
+    const known = new Set(models.map((m) => m.key));
+    const ranked = FALLBACK_RECOMMENDED_MODELS.filter((key) => known.has(key));
+    const rankedSet = new Set(ranked);
+    const live = models
+      .filter((m) => (m.available || m.local) && !rankedSet.has(m.key))
+      .map((m) => m.key);
+    return [...ranked, ...live].slice(0, 8);
+  }, [models]);
 
   // Split models: available (authed) vs unavailable
   const { availableModels, groupedAvailable, unauthProviders } = useMemo(() => {
@@ -1936,7 +1952,7 @@ function ModelPicker({
                 <div className="px-3 pt-2.5 pb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground/40">
                   Recommended
                 </div>
-                {RECOMMENDED_MODELS.map((key) => {
+                {recommendedModels.map((key) => {
                   const m = models.find((x) => x.key === key);
                   if (!m) return null;
                   const provider = key.split("/")[0];
@@ -2016,7 +2032,7 @@ function ModelPicker({
                       {m.local && (
                         <span className="rounded-full bg-lime-500/10 px-1.5 py-0.5 text-xs font-medium text-lime-400">LOCAL</span>
                       )}
-                      {RECOMMENDED_MODELS.includes(m.key) && (
+                      {recommendedModels.includes(m.key) && (
                         <Star className="h-2.5 w-2.5 text-amber-400" />
                       )}
                     </button>

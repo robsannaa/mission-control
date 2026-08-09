@@ -1477,21 +1477,24 @@ export function ConfigEditor() {
     try {
       const res = await fetch("/api/config", { cache: "no-store" });
       const data = await res.json();
-      const config = data?.rawConfig || data?.config || {};
-      const hasConfigPayload = Boolean(data?.rawConfig || data?.config);
+      // Canonical payload: { config: <resolved, raw values>, meta: { baseHash, schema, uiHints, warning?, degraded? } }.
+      // Secrets arrive readable by design; the Secrets toggle redacts client-side only.
+      const config = data?.config || {};
+      const meta = data?.meta || {};
+      const hasConfigPayload = Boolean(data?.config);
       if (!res.ok && !hasConfigPayload) {
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
       setRawConfig(config);
-      setBaseHash(data.baseHash || "");
+      setBaseHash(meta.baseHash || "");
       // Gateway config.schema returns { schema, uiHints }. schema.properties = top-level keys (agents, gateway, ...) matching openclaw.json.
-      if (data.schema?.properties) {
-        setSchema(data.schema.properties);
+      if (meta.schema?.properties) {
+        setSchema(meta.schema.properties);
       } else {
         setSchema({});
       }
-      setHints(data.uiHints || {});
-      if (data.warning) setFetchWarning(String(data.warning));
+      setHints(meta.uiHints || {});
+      if (meta.warning) setFetchWarning(String(meta.warning));
       setLoadError(null);
       setLoading(false);
       return typeof config === "object" && config !== null && !Array.isArray(config) ? config : null;
@@ -1509,7 +1512,7 @@ export function ConfigEditor() {
   }, [fetchConfig]);
 
   /* ── Section ordering ────────────── */
-  // rawConfig = gateway config.get.parsed (openclaw.json shape). Sections = top-level keys (agents, gateway, channels, tools, ...).
+  // rawConfig = /api/config `config` payload (resolved openclaw.json shape). Sections = top-level keys (agents, gateway, channels, tools, ...).
 
   const sections = rawConfig
     ? Object.keys(rawConfig).sort((a, b) => {

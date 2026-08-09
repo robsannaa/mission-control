@@ -4,6 +4,7 @@ import { join } from "path";
 import { getOpenClawHome } from "@/lib/paths";
 import { fetchGatewaySessions } from "@/lib/gateway-sessions";
 import { gatewayCall } from "@/lib/openclaw";
+import { isPairingRequiredError, pairingRequiredResponse } from "@/lib/gateway-errors";
 
 // OpenClaw v2026.3.23+ writes tslog JSON to /tmp/openclaw/openclaw-YYYY-MM-DD.log.
 const TMP_LOG_CANDIDATES = [
@@ -97,7 +98,12 @@ function cronEntryToEvent(entry: CronRunEntry): ActivityEvent | null {
   };
 }
 
-async function aggregateCronEvents(): Promise<ActivityEvent[]> {
+async function aggregateCronEvents(): Promise<{
+  events: ActivityEvent[];
+  pairingRequired: boolean;
+}> {
+  let pairingRequired = false;
+
   // Primary: the gateway's cron.runs RPC (cron history moved into the gateway's
   // SQLite store in OpenClaw 6.x — the ~/.openclaw/cron/runs/*.jsonl files are
   // no longer written).
@@ -108,12 +114,18 @@ async function aggregateCronEvents(): Promise<ActivityEvent[]> {
       10000,
     );
     const entries = Array.isArray(data.entries) ? data.entries : [];
-    return entries
-      .map(cronEntryToEvent)
-      .filter((e): e is ActivityEvent => e !== null);
-  } catch {
-    // Gateway unreachable — fall through to the legacy file layout below so
-    // pre-6.x installs still get their history.
+    return {
+      events: entries
+        .map(cronEntryToEvent)
+        .filter((e): e is ActivityEvent => e !== null),
+      pairingRequired: false,
+    };
+  } catch (err) {
+    // A pairing refusal must not silently blank the feed — surface it to the
+    // route so the response can carry the X-Pairing-Required signal.
+    if (isPairingRequiredError(err)) pairingRequired = true;
+    // Otherwise gateway unreachable — fall through to the legacy file layout
+    // below so pre-6.x installs still get their history.
   }
 
   const home = getOpenClawHome();
@@ -142,7 +154,7 @@ async function aggregateCronEvents(): Promise<ActivityEvent[]> {
     // The runs directory may not exist yet — return an empty list.
   }
 
-  return events;
+  return { events, pairingRequired };
 }
 
 type TslogLine = {
@@ -248,8 +260,12 @@ async function aggregateLogEvents(): Promise<ActivityEvent[]> {
   return events;
 }
 
-async function aggregateSessionEvents(): Promise<ActivityEvent[]> {
+async function aggregateSessionEvents(): Promise<{
+  events: ActivityEvent[];
+  pairingRequired: boolean;
+}> {
   const events: ActivityEvent[] = [];
+  let pairingRequired = false;
 
   try {
     const sessions = await fetchGatewaySessions(5000);
@@ -270,12 +286,14 @@ async function aggregateSessionEvents(): Promise<ActivityEvent[]> {
         source: key,
       });
     }
-  } catch {
+  } catch (err) {
     // Gateway may be offline — return an empty list rather than failing the
-    // entire activity response.
+    // entire activity response. A pairing refusal is still surfaced so the
+    // route can set the X-Pairing-Required signal.
+    if (isPairingRequiredError(err)) pairingRequired = true;
   }
 
-  return events;
+  return { events, pairingRequired };
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
@@ -286,16 +304,19 @@ export async function GET(request: NextRequest) {
     const typeFilter = searchParams.get("type") as ActivityEventType | null;
 
     // Gather all sources in parallel.
-    const [cronEvents, logEvents, sessionEvents] = await Promise.all([
+    const [cronResult, logEvents, sessionResult] = await Promise.all([
       aggregateCronEvents(),
       aggregateLogEvents(),
       aggregateSessionEvents(),
     ]);
 
+    const pairingRequired =
+      cronResult.pairingRequired || sessionResult.pairingRequired;
+
     let events: ActivityEvent[] = [
-      ...cronEvents,
+      ...cronResult.events,
       ...logEvents,
-      ...sessionEvents,
+      ...sessionResult.events,
     ];
 
     // Apply optional type filter.
@@ -307,8 +328,16 @@ export async function GET(request: NextRequest) {
     events.sort((a, b) => b.timestamp - a.timestamp);
     events = events.slice(0, 50);
 
-    return NextResponse.json(events);
+    // Backward compat: the body stays a plain array. A pairing refusal in an
+    // aggregator is signalled out-of-band via the X-Pairing-Required header so
+    // existing consumers keep working while the UI can offer the approve flow.
+    return NextResponse.json(
+      events,
+      pairingRequired ? { headers: { "X-Pairing-Required": "1" } } : undefined,
+    );
   } catch (err) {
+    const pairing = pairingRequiredResponse(err);
+    if (pairing) return pairing;
     console.error("Activity API error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

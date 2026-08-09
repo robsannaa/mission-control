@@ -17,32 +17,85 @@ function toStr(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-/* ── Channel catalog (Mission Control supports Telegram + Discord) ── */
+/* ── Channel setup enrichment (static metadata only — the channel LIST comes
+      from the gateway + config; this map only decorates known channels with
+      setup instructions. Channels the gateway reports that are missing here
+      still render as a generic config card, never hidden). ── */
 
-const CHANNELS = [
-  {
-    id: "telegram",
+type ChannelSetupMeta = {
+  label: string;
+  icon: string;
+  setup: "token" | "qr" | "cli";
+  /** openclaw.json key that stores the credential for token channels. */
+  tokenKey?: string;
+  tokenLabel?: string;
+  tokenPlaceholder?: string;
+  hint: string;
+  docsUrl: string;
+};
+
+const CHANNEL_SETUP: Record<string, ChannelSetupMeta> = {
+  telegram: {
     label: "Telegram",
     icon: "✈️",
-    setup: "token" as const,
+    setup: "token",
+    tokenKey: "botToken",
     tokenLabel: "Bot Token",
     tokenPlaceholder: "123456:ABC-DEF1234ghIkl...",
     hint: "Create a bot with @BotFather in Telegram, then paste the token here.",
     docsUrl: "https://docs.openclaw.ai/channels/telegram",
   },
-  {
-    id: "discord",
+  discord: {
     label: "Discord",
     icon: "💬",
-    setup: "token" as const,
+    setup: "token",
+    tokenKey: "token",
     tokenLabel: "Bot Token",
     tokenPlaceholder: "MTIzNDU2Nzg5MDEyMzQ1...",
     hint: "Create a bot in the Discord Developer Portal, enable Message Content Intent, then paste the token.",
     docsUrl: "https://docs.openclaw.ai/channels/discord",
   },
-] as const;
+  whatsapp: {
+    label: "WhatsApp",
+    icon: "📱",
+    setup: "qr",
+    hint: "WhatsApp links via QR code — start the login flow and scan the code from WhatsApp > Linked devices.",
+    docsUrl: "https://docs.openclaw.ai/channels/whatsapp",
+  },
+  signal: {
+    label: "Signal",
+    icon: "🔒",
+    setup: "cli",
+    hint: "Signal runs through signal-cli. Link an existing account by scanning a QR, or register a dedicated bot number.",
+    docsUrl: "https://docs.openclaw.ai/channels/signal",
+  },
+  slack: {
+    label: "Slack",
+    icon: "💼",
+    setup: "token",
+    tokenKey: "botToken",
+    tokenLabel: "Bot Token (xoxb-...)",
+    tokenPlaceholder: "xoxb-...",
+    hint: "Create a Slack app in Socket Mode, then paste the bot token (an app token xapp-... is also required in config).",
+    docsUrl: "https://docs.openclaw.ai/channels/slack",
+  },
+};
 
-const SUPPORTED_CHANNELS = new Set(CHANNELS.map((c) => c.id));
+function genericSetupMeta(id: string, label?: string): ChannelSetupMeta {
+  const display = label || id.charAt(0).toUpperCase() + id.slice(1);
+  return {
+    label: display,
+    icon: "🔌",
+    setup: "token",
+    tokenKey: "token",
+    tokenLabel: "Token",
+    tokenPlaceholder: "Paste the channel credential",
+    hint: `${display} was reported by the gateway. Configure it under channels.${id} in openclaw.json or via the setup command below.`,
+    docsUrl: `https://docs.openclaw.ai/channels/${id}`,
+  };
+}
+
+const VALID_CHANNEL_ID = /^[a-z][a-z0-9_-]*$/;
 
 /* ── Read config from disk (fallback when gateway RPC unavailable) ── */
 
@@ -63,7 +116,7 @@ type ChannelStatus = {
   channel: string;
   label: string;
   icon: string;
-  setup: "token" | "qr";
+  setup: "token" | "qr" | "cli";
   setupType: "qr" | "token" | "cli" | "auto";
   setupCommand: string;
   setupHint: string;
@@ -72,6 +125,7 @@ type ChannelStatus = {
   tokenPlaceholder?: string;
   hint: string;
   docsUrl: string;
+  managed: boolean;
   enabled: boolean;
   configured: boolean;
   connected: boolean;
@@ -90,13 +144,31 @@ type ChannelStatus = {
   }[];
 };
 
-async function buildChannelStatuses(): Promise<ChannelStatus[]> {
-  // Fetch gateway status + config in parallel (5s timeout — keep UI snappy)
+type ChannelsPayload = {
+  channels: ChannelStatus[];
+  gatewayOffline: boolean;
+  gatewayError?: string;
+};
+
+async function buildChannelStatuses(): Promise<ChannelsPayload> {
+  // Fetch gateway status + config in parallel (5s timeout — keep UI snappy).
+  // Failures are captured, not swallowed: a dead gateway must surface as
+  // gatewayOffline, never masquerade as "nothing is configured".
+  let statusError: unknown = null;
+  let configError: unknown = null;
   const [statusResult, configResult, diskConfig] = await Promise.all([
-    gatewayCall<Record<string, unknown>>("channels.status", {}, 5000).catch(() => ({})),
-    gatewayCall<Record<string, unknown>>("config.get", undefined, 5000).catch(() => null),
+    gatewayCall<Record<string, unknown>>("channels.status", {}, 5000).catch((err) => {
+      statusError = err;
+      return null;
+    }),
+    gatewayCall<Record<string, unknown>>("config.get", undefined, 5000).catch((err) => {
+      configError = err;
+      return null;
+    }),
     readChannelsConfig(),
   ]);
+
+  const gatewayOffline = statusResult === null && configResult === null;
 
   // Extract channel config from gateway or disk
   const resolved = isRecord(configResult?.resolved) ? configResult.resolved : {};
@@ -111,13 +183,43 @@ async function buildChannelStatuses(): Promise<ChannelStatus[]> {
   const statusChannels = isRecord(statusResult)
     ? (isRecord(statusResult.channels) ? statusResult.channels : {})
     : {};
+  const channelMeta = isRecord(statusResult) && Array.isArray(statusResult.channelMeta)
+    ? statusResult.channelMeta.filter(isRecord)
+    : [];
+  const gatewayLabels = new Map<string, string>();
+  for (const meta of channelMeta) {
+    const id = toStr(meta.id);
+    const label = toStr(meta.label);
+    if (id && label) gatewayLabels.set(id, label);
+  }
 
-  return CHANNELS.map((ch) => {
-    const conf = isRecord(channelsConfig[ch.id]) ? (channelsConfig[ch.id] as Record<string, unknown>) : null;
-    const accountRows = Array.isArray(statusAccounts[ch.id])
-      ? (statusAccounts[ch.id] as unknown[]).filter(isRecord)
+  // The channel list is derived, not hardcoded: everything the gateway reports
+  // (channelMeta + runtime status), everything present in config, plus the
+  // channels Mission Control ships setup metadata for.
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: unknown) => {
+    const id = toStr(raw)?.trim().toLowerCase();
+    if (!id || !VALID_CHANNEL_ID.test(id) || seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  };
+  for (const id of Object.keys(CHANNEL_SETUP)) push(id);
+  for (const meta of channelMeta) push(meta.id);
+  for (const id of Object.keys(statusChannels)) push(id);
+  for (const id of Object.keys(statusAccounts)) push(id);
+  for (const id of Object.keys(channelsConfig)) {
+    if (isRecord(channelsConfig[id])) push(id);
+  }
+
+  const channels = ids.map((id) => {
+    const managed = id in CHANNEL_SETUP;
+    const ch = CHANNEL_SETUP[id] ?? genericSetupMeta(id, gatewayLabels.get(id));
+    const conf = isRecord(channelsConfig[id]) ? (channelsConfig[id] as Record<string, unknown>) : null;
+    const accountRows = Array.isArray(statusAccounts[id])
+      ? (statusAccounts[id] as unknown[]).filter(isRecord)
       : [];
-    const chStatus = isRecord(statusChannels[ch.id]) ? (statusChannels[ch.id] as Record<string, unknown>) : null;
+    const chStatus = isRecord(statusChannels[id]) ? (statusChannels[id] as Record<string, unknown>) : null;
 
     const statuses = accountRows.map((r) => {
       const account = toStr(r.accountId) || "default";
@@ -127,7 +229,7 @@ async function buildChannelStatuses(): Promise<ChannelStatus[]> {
         (connected ? "connected" : r.configured === true ? "configured" : "stopped");
       const error = toStr(r.lastError);
       return {
-        channel: ch.id,
+        channel: id,
         account,
         status,
         linked: r.linked === true ? true : undefined,
@@ -139,7 +241,7 @@ async function buildChannelStatuses(): Promise<ChannelStatus[]> {
     if (statuses.length === 0 && isRecord(chStatus)) {
       const connected = chStatus.running === true || chStatus.connected === true;
       statuses.push({
-        channel: ch.id,
+        channel: id,
         account: "default",
         status: connected ? "connected" : chStatus.configured === true ? "configured" : "stopped",
         linked: undefined,
@@ -166,13 +268,25 @@ async function buildChannelStatuses(): Promise<ChannelStatus[]> {
         .find((value) => Boolean(value && value.trim())) ||
       undefined;
 
+    const setupCommand = ch.setup === "token"
+      ? `openclaw channels add --channel ${id} --token <TOKEN>`
+      : `openclaw channels login --channel ${id}`;
+
     return {
-      ...ch,
-      channel: ch.id,
+      id,
+      channel: id,
+      label: gatewayLabels.get(id) || ch.label,
+      icon: ch.icon,
+      setup: ch.setup,
       setupType: ch.setup,
-      setupCommand: `openclaw channels add --channel ${ch.id} --token <TOKEN>`,
+      setupCommand,
       setupHint: ch.hint,
       configHint: "You can reconnect, disconnect, or delete this channel anytime from the Channels page.",
+      tokenLabel: ch.tokenLabel,
+      tokenPlaceholder: ch.tokenPlaceholder,
+      hint: ch.hint,
+      docsUrl: ch.docsUrl,
+      managed,
       enabled,
       configured,
       connected,
@@ -182,16 +296,22 @@ async function buildChannelStatuses(): Promise<ChannelStatus[]> {
       accounts: accounts.length > 0 ? accounts : configured ? ["default"] : [],
       botUsername,
       statuses,
-    };
+    } satisfies ChannelStatus;
   });
+
+  const payload: ChannelsPayload = { channels, gatewayOffline };
+  if (gatewayOffline) {
+    payload.gatewayError = String(statusError || configError || "Gateway unreachable");
+  }
+  return payload;
 }
 
 /* ── GET /api/channels ── */
 
 export async function GET() {
   try {
-    const channels = await buildChannelStatuses();
-    return NextResponse.json({ channels });
+    const payload = await buildChannelStatuses();
+    return NextResponse.json(payload);
   } catch (err) {
     console.error("Channels GET error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
@@ -204,25 +324,33 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const action = String(body.action || "").trim();
-    const channel = String(body.channel || "").trim();
+    const channel = String(body.channel || "").trim().toLowerCase();
 
     if (!channel) {
       return NextResponse.json({ error: "channel is required" }, { status: 400 });
     }
-    if (!SUPPORTED_CHANNELS.has(channel as (typeof CHANNELS)[number]["id"])) {
-      return NextResponse.json({ error: `Unsupported channel: ${channel}` }, { status: 400 });
+    if (!VALID_CHANNEL_ID.test(channel)) {
+      return NextResponse.json({ error: `Invalid channel id: ${channel}` }, { status: 400 });
     }
+
+    const meta = CHANNEL_SETUP[channel];
+    const tokenKey = meta?.tokenKey || "token";
 
     switch (action) {
       /* ── Connect (add token) ── */
       case "add":
       case "connect": {
+        if (meta && meta.setup !== "token") {
+          return NextResponse.json(
+            { error: `${meta.label} does not use token setup — follow the ${meta.setup === "qr" ? "QR link" : "CLI"} flow instead.` },
+            { status: 400 },
+          );
+        }
         const token = (body.token as string || "").trim();
         if (!token) {
           return NextResponse.json({ error: "token is required" }, { status: 400 });
         }
 
-        const tokenKey = channel === "telegram" ? "botToken" : "token";
         await patchConfig(
           {
             channels: {
@@ -244,8 +372,7 @@ export async function POST(request: NextRequest) {
       case "disconnect": {
         // Disable and clear credentials
         const clearPatch: Record<string, unknown> = { enabled: false, dmPolicy: "", groupPolicy: "" };
-        if (channel === "telegram") clearPatch.botToken = "";
-        if (channel === "discord") clearPatch.token = "";
+        if (!meta || meta.setup === "token") clearPatch[tokenKey] = "";
 
         await patchConfig(
           { channels: { [channel]: clearPatch } },

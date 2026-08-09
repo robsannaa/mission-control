@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Loader2,
   Plug,
+  PlugZap,
   RefreshCw,
   ShieldCheck,
   Trash2,
@@ -18,16 +19,17 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { cn } from "@/lib/utils";
 
-type ManagedChannel = "telegram" | "discord";
-
 type ChannelStatus = {
   channel: string;
   label: string;
   icon: string;
+  setupType: "token" | "qr" | "cli" | "auto";
+  setupCommand?: string;
   tokenLabel?: string;
   tokenPlaceholder?: string;
   docsUrl: string;
   setupHint?: string;
+  managed: boolean;
   enabled: boolean;
   configured: boolean;
   connected: boolean;
@@ -65,15 +67,10 @@ type PairingRequest = {
   createdAt?: string;
 };
 
-const MANAGED_CHANNELS: ManagedChannel[] = ["telegram", "discord"];
-
-function normalizeChannel(value: string): ManagedChannel | null {
+function normalizeChannel(value: string): string | null {
   const text = String(value || "").trim().toLowerCase();
   if (!text) return null;
-  if (text.includes("telegram")) return "telegram";
-  if (text.includes("discord")) return "discord";
-  if (text === "telegram" || text === "discord") return text;
-  return null;
+  return text;
 }
 
 function splitBinding(binding: string): { channel: string; account: string } {
@@ -84,12 +81,12 @@ function splitBinding(binding: string): { channel: string; account: string } {
   };
 }
 
-function isDefaultBindingForChannel(binding: string, channel: ManagedChannel): boolean {
+function isDefaultBindingForChannel(binding: string, channel: string): boolean {
   const parsed = splitBinding(binding);
   return parsed.channel === channel && parsed.account === "default";
 }
 
-function defaultAgentForChannel(agents: AgentRow[], channel: ManagedChannel): string {
+function defaultAgentForChannel(agents: AgentRow[], channel: string): string {
   const owner = agents.find((agent) =>
     (agent.bindings || []).some((binding) => isDefaultBindingForChannel(binding, channel))
   );
@@ -122,12 +119,10 @@ function getChannelBadge(channel: ChannelStatus): { label: string; className: st
 
 export function ChannelsView() {
   const [channels, setChannels] = useState<ChannelStatus[]>([]);
+  const [gatewayOffline, setGatewayOffline] = useState(false);
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [pairingRequests, setPairingRequests] = useState<PairingRequest[]>([]);
-  const [botHandles, setBotHandles] = useState<Record<ManagedChannel, string>>({
-    telegram: "",
-    discord: "",
-  });
+  const [botHandles, setBotHandles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +131,7 @@ export function ChannelsView() {
   const [tokenDrafts, setTokenDrafts] = useState<Record<string, string>>({});
   const [routeDrafts, setRouteDrafts] = useState<Record<string, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [routeBusyChannel, setRouteBusyChannel] = useState<ManagedChannel | null>(null);
+  const [routeBusyChannel, setRouteBusyChannel] = useState<string | null>(null);
   const [approvingKey, setApprovingKey] = useState<string | null>(null);
 
   const fetchChannels = useCallback(async () => {
@@ -145,6 +140,7 @@ export function ChannelsView() {
     if (!res.ok) {
       throw new Error(data?.error || `Channels request failed (${res.status})`);
     }
+    setGatewayOffline(data?.gatewayOffline === true);
     const rows = Array.isArray(data?.channels) ? data.channels : [];
     const next: ChannelStatus[] = rows
       .map((row: Record<string, unknown>): ChannelStatus | null => {
@@ -153,14 +149,20 @@ export function ChannelsView() {
         const statuses = Array.isArray(row.statuses)
           ? row.statuses.filter((s): s is ChannelStatus["statuses"][number] => Boolean(s) && typeof s === "object")
           : [];
+        const setupType = row.setupType === "qr" || row.setupType === "cli" || row.setupType === "auto"
+          ? row.setupType
+          : "token";
         return {
           channel,
           label: String(row.label || channel),
           icon: String(row.icon || "💬"),
+          setupType,
+          setupCommand: typeof row.setupCommand === "string" ? row.setupCommand : undefined,
           tokenLabel: typeof row.tokenLabel === "string" ? row.tokenLabel : undefined,
           tokenPlaceholder: typeof row.tokenPlaceholder === "string" ? row.tokenPlaceholder : undefined,
           docsUrl: String(row.docsUrl || ""),
           setupHint: typeof row.setupHint === "string" ? row.setupHint : undefined,
+          managed: row.managed === true,
           enabled: row.enabled === true,
           configured: row.configured === true,
           connected: row.connected === true || statuses.some((s) => s.connected === true || s.linked === true),
@@ -178,7 +180,7 @@ export function ChannelsView() {
       for (const channel of next) {
         const normalized = channel.botUsername?.trim() || "";
         if (normalized) {
-          merged[channel.channel as ManagedChannel] = normalized;
+          merged[channel.channel] = normalized;
         }
       }
       return merged;
@@ -261,21 +263,16 @@ export function ChannelsView() {
 
   useEffect(() => {
     const next: Record<string, string> = {};
-    for (const channel of MANAGED_CHANNELS) {
-      next[channel] = defaultAgentForChannel(agents, channel);
+    for (const channel of channels) {
+      next[channel.channel] = defaultAgentForChannel(agents, channel.channel);
     }
     setRouteDrafts(next);
-  }, [agents]);
+  }, [agents, channels]);
 
   const pairingByChannel = useMemo(() => {
-    const groups: Record<ManagedChannel, PairingRequest[]> = {
-      telegram: [],
-      discord: [],
-    };
+    const groups: Record<string, PairingRequest[]> = {};
     for (const req of pairingRequests) {
-      if (req.channel === "telegram" || req.channel === "discord") {
-        groups[req.channel].push(req);
-      }
+      (groups[req.channel] ||= []).push(req);
     }
     return groups;
   }, [pairingRequests]);
@@ -292,7 +289,7 @@ export function ChannelsView() {
     }
   }, []);
 
-  const resolveBotHandle = useCallback(async (channel: ManagedChannel, token: string) => {
+  const resolveBotHandle = useCallback(async (channel: string, token: string) => {
     const clean = token.trim();
     if (!clean) return;
     try {
@@ -311,7 +308,7 @@ export function ChannelsView() {
   }, []);
 
   const setDefaultRoute = useCallback(
-    async (channel: ManagedChannel, nextAgentId: string, opts?: { silent?: boolean }) => {
+    async (channel: string, nextAgentId: string, opts?: { silent?: boolean }) => {
       setRouteBusyChannel(channel);
       setError(null);
       try {
@@ -347,7 +344,7 @@ export function ChannelsView() {
   );
 
   const mutateChannel = useCallback(
-    async (channel: ManagedChannel, action: "connect" | "disconnect" | "delete", token?: string) => {
+    async (channel: string, action: "connect" | "disconnect" | "delete", token?: string) => {
       setBusyKey(`${action}:${channel}`);
       setError(null);
       setNotice(null);
@@ -393,7 +390,7 @@ export function ChannelsView() {
         setBusyKey(null);
       }
     },
-    [fetchChannels, fetchPairing, setDefaultRoute]
+    [agents, fetchChannels, fetchPairing, resolveBotHandle, setDefaultRoute]
   );
 
   const handleApprove = useCallback(async (request: PairingRequest) => {
@@ -427,7 +424,7 @@ export function ChannelsView() {
   if (loading) {
     return (
       <SectionLayout>
-        <SectionHeader title="Channels" description="Manage Telegram and Discord after onboarding." bordered />
+        <SectionHeader title="Channels" description="Manage your agents' chat channels after onboarding." bordered />
         <SectionBody>
           <LoadingState label="Loading channels..." />
         </SectionBody>
@@ -439,7 +436,7 @@ export function ChannelsView() {
     <SectionLayout>
       <SectionHeader
         title="Channels"
-        description="Connect Telegram/Discord, approve pairing requests, and choose which agent receives each channel."
+        description="Connect chat channels, approve pairing requests, and choose which agent receives each channel."
         bordered
         actions={(
           <button
@@ -467,25 +464,39 @@ export function ChannelsView() {
           </div>
         )}
 
-        {MANAGED_CHANNELS.map((channel) => {
-          const state = channels.find((item) => item.channel === channel) || {
-            channel,
-            label: channel[0].toUpperCase() + channel.slice(1),
-            icon: "💬",
-            docsUrl: "",
-            enabled: false,
-            configured: false,
-            connected: false,
-            accounts: [],
-            statuses: [],
-          };
+        {gatewayOffline ? (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-10 text-center">
+            <PlugZap className="h-8 w-8 text-amber-400" />
+            <div>
+              <p className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">Gateway offline</p>
+              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-stone-500 dark:text-[#9aa3ad]">
+                Mission Control could not reach the OpenClaw gateway, so channel status is unknown.
+                Your channels may still be configured — this is not the same as &quot;not connected&quot;.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAgentsLoading(true);
+                void refreshAll().finally(() => setAgentsLoading(false));
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 px-3 py-2 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/10"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Retry
+            </button>
+          </div>
+        ) : (
+        channels.map((state) => {
+          const channel = state.channel;
           const badge = getChannelBadge(state);
-          const pending = pairingByChannel[channel];
+          const pending = pairingByChannel[channel] || [];
           const tokenDraft = tokenDrafts[channel] || "";
           const connectBusy = busyKey === `connect:${channel}`;
           const disconnectBusy = busyKey === `disconnect:${channel}`;
           const deleteBusy = busyKey === `delete:${channel}`;
           const saveRouteBusy = routeBusyChannel === channel;
+          const tokenSetup = state.setupType === "token";
 
           return (
             <section key={channel} className="space-y-3 rounded-xl border border-stone-200 bg-white/85 p-4 dark:border-[#232a32] dark:bg-[#11161c]">
@@ -521,27 +532,42 @@ export function ChannelsView() {
               )}
 
               <div className="flex flex-wrap items-end gap-2 rounded-lg border border-stone-200/80 bg-stone-50/70 p-3 dark:border-[#27303a] dark:bg-[#0f141a]">
-                <label className="min-w-[220px] flex-1">
-                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-400 dark:text-[#7d8793]">
-                    {state.tokenLabel || "Bot Token"}
-                  </span>
-                  <input
-                    type="password"
-                    value={tokenDraft}
-                    onChange={(e) => setTokenDrafts((prev) => ({ ...prev, [channel]: e.target.value }))}
-                    placeholder={state.tokenPlaceholder || "Paste bot token"}
-                    className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs text-stone-900 outline-none focus:border-stone-400 dark:border-[#2d3640] dark:bg-[#0d1116] dark:text-[#f5f7fa] dark:focus:border-[#566474]"
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={!tokenDraft.trim() || connectBusy || disconnectBusy || deleteBusy}
-                  onClick={() => void mutateChannel(channel, "connect", tokenDraft.trim())}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-                >
-                  {connectBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plug className="h-3.5 w-3.5" />}
-                  Connect
-                </button>
+                {tokenSetup ? (
+                  <>
+                    <label className="min-w-[220px] flex-1">
+                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-400 dark:text-[#7d8793]">
+                        {state.tokenLabel || "Bot Token"}
+                      </span>
+                      <input
+                        type="password"
+                        value={tokenDraft}
+                        onChange={(e) => setTokenDrafts((prev) => ({ ...prev, [channel]: e.target.value }))}
+                        placeholder={state.tokenPlaceholder || "Paste bot token"}
+                        className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs text-stone-900 outline-none focus:border-stone-400 dark:border-[#2d3640] dark:bg-[#0d1116] dark:text-[#f5f7fa] dark:focus:border-[#566474]"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!tokenDraft.trim() || connectBusy || disconnectBusy || deleteBusy}
+                      onClick={() => void mutateChannel(channel, "connect", tokenDraft.trim())}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+                    >
+                      {connectBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plug className="h-3.5 w-3.5" />}
+                      Connect
+                    </button>
+                  </>
+                ) : (
+                  <div className="min-w-[220px] flex-1">
+                    <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-400 dark:text-[#7d8793]">
+                      {state.setupType === "qr" ? "QR link setup" : "CLI setup"}
+                    </span>
+                    {state.setupCommand ? (
+                      <code className="block w-full truncate rounded-lg border border-stone-200 bg-white px-3 py-2 font-mono text-[11px] text-stone-700 dark:border-[#2d3640] dark:bg-[#0d1116] dark:text-[#d6dce3]">
+                        {state.setupCommand}
+                      </code>
+                    ) : null}
+                  </div>
+                )}
                 <button
                   type="button"
                   disabled={(!state.enabled && !state.configured) || connectBusy || disconnectBusy || deleteBusy}
@@ -624,7 +650,7 @@ export function ChannelsView() {
                               </div>
                               {req.message ? (
                                 <p className="mt-1 line-clamp-1 text-[11px] italic text-stone-500 dark:text-[#8f9aa6]">
-                                  "{req.message}"
+                                  &quot;{req.message}&quot;
                                 </p>
                               ) : null}
                             </div>
@@ -673,7 +699,8 @@ export function ChannelsView() {
               </div>
             </section>
           );
-        })}
+        })
+        )}
       </SectionBody>
     </SectionLayout>
   );

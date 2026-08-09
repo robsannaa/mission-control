@@ -127,10 +127,12 @@ export function SessionsView() {
     [],
   );
 
-  // Clear stale confirmDelete if the session disappeared
+  // Clear stale confirmDelete if the session disappeared (deferred to avoid
+  // a synchronous setState cascade inside the effect)
   useEffect(() => {
     if (confirmDelete && !sessions.some((s) => s.key === confirmDelete)) {
-      setConfirmDelete(null);
+      const t = setTimeout(() => setConfirmDelete(null), 0);
+      return () => clearTimeout(t);
     }
   }, [confirmDelete, sessions]);
 

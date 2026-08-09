@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFile, readdir, stat, open } from "fs/promises";
 import { join } from "path";
-import { getOpenClawHome, getGatewayUrl, getGatewayPort, readConfigFile } from "@/lib/paths";
+import { getOpenClawHome, getGatewayUrl, getGatewayPort, getDefaultAgentId, readConfigFile } from "@/lib/paths";
 import { fetchGatewaySessions, summarizeSessionsByAgent } from "@/lib/gateway-sessions";
 import { gatewayCall } from "@/lib/openclaw";
 
@@ -301,6 +301,10 @@ type AgentSessionRow = {
 };
 
 async function readAgentSessions(): Promise<AgentSessionRow[]> {
+  // "main" is `agents.list`'s mainKey, not a guaranteed agent id (see
+  // getDefaultAgent in lib/paths.ts) — ask the gateway for the real default
+  // instead of synthesizing a row for an agent that may not exist.
+  const defaultAgentId = await getDefaultAgentId();
   const configuredAgentIds = new Set<string>();
   const identityByAgentId = new Map<string, { name: string; emoji: string }>();
   try {
@@ -337,7 +341,7 @@ async function readAgentSessions(): Promise<AgentSessionRow[]> {
   ): AgentSessionRow {
     const identity = identityByAgentId.get(id) || {
       name: id,
-      emoji: id === "main" ? "🦞" : "🤖",
+      emoji: id === defaultAgentId ? "🦞" : "🤖",
     };
     return { id, name: identity.name, emoji: identity.emoji, sessionCount, totalTokens, lastActivity };
   }
@@ -356,13 +360,15 @@ async function readAgentSessions(): Promise<AgentSessionRow[]> {
         byId.set(id, row(id, 0, 0, 0));
       }
     }
-    if (!byId.has("main")) {
-      byId.set("main", row("main", 0, 0, 0));
+    if (defaultAgentId && !byId.has(defaultAgentId)) {
+      byId.set(defaultAgentId, row(defaultAgentId, 0, 0, 0));
     }
     return [...byId.values()].sort((a, b) => b.lastActivity - a.lastActivity);
   } catch {
-    const fallbackIds = configuredAgentIds.size > 0 ? [...configuredAgentIds] : ["main"];
-    if (!fallbackIds.includes("main")) fallbackIds.unshift("main");
+    const fallbackIds = [...configuredAgentIds];
+    if (defaultAgentId && !fallbackIds.includes(defaultAgentId)) {
+      fallbackIds.unshift(defaultAgentId);
+    }
     return fallbackIds.map((id) => row(id, 0, 0, 0));
   }
 }

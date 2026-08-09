@@ -464,10 +464,10 @@ export function SecurityView({ initialTab }: { initialTab?: SecurityTab } = {}) 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setConfigData({
-        rawConfig: data.rawConfig || {},
-        baseHash: data.baseHash || "",
-        warning: data.warning,
-        degraded: data.degraded,
+        rawConfig: data.config || {},
+        baseHash: data.meta?.baseHash || "",
+        warning: data.meta?.warning,
+        degraded: data.meta?.degraded,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

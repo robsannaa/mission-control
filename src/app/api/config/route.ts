@@ -10,34 +10,54 @@ import { randomBytes } from "crypto";
 export const dynamic = "force-dynamic";
 const OPENCLAW_HOME = getOpenClawHome();
 
-const SENSITIVE_PATTERNS = [
-  /api[_-]?key/i,
-  /secret/i,
-  /password/i,
-  /token/i,
-  /credential/i,
-];
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-function redactSensitive(obj: unknown, depth = 0): unknown {
-  if (depth > 10) return obj;
-  if (typeof obj === "string") return obj;
-  if (Array.isArray(obj)) return obj.map((v) => redactSensitive(v, depth + 1));
-  if (obj && typeof obj === "object") {
+/**
+ * Sentinel the gateway substitutes for secret values in `config.get` output.
+ */
+const GATEWAY_REDACTED_SENTINEL = "__OPENCLAW_REDACTED__";
+
+/**
+ * Restore gateway-redacted values from the config file on disk.
+ *
+ * Secrets are intentionally readable in Mission Control — protection comes
+ * from authenticating the caller, not from hiding values — but the gateway
+ * blanks them to a sentinel in `config.get`. Wherever the payload carries the
+ * sentinel and the on-disk config has a string at the same path, serve the
+ * real value. Everything else passes through untouched.
+ */
+function restoreRedactedValues(node: unknown, diskNode: unknown): unknown {
+  if (typeof node === "string") {
+    return node === GATEWAY_REDACTED_SENTINEL && typeof diskNode === "string"
+      ? diskNode
+      : node;
+  }
+  if (Array.isArray(node)) {
+    const diskArray = Array.isArray(diskNode) ? diskNode : [];
+    return node.map((item, i) => restoreRedactedValues(item, diskArray[i]));
+  }
+  if (node && typeof node === "object") {
+    const diskRecord = isRecord(diskNode) ? diskNode : {};
     const result: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      if (SENSITIVE_PATTERNS.some((p) => p.test(k)) && typeof v === "string") {
-        result[k] = v.length > 8 ? v.slice(0, 4) + "..." + v.slice(-4) : "••••";
-      } else {
-        result[k] = redactSensitive(v, depth + 1);
-      }
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      result[k] = restoreRedactedValues(v, diskRecord[k]);
     }
     return result;
   }
-  return obj;
+  return node;
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** Best-effort read of ~/.openclaw/openclaw.json (null when unreadable). */
+async function readDiskConfig(): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = await readFile(join(OPENCLAW_HOME, "openclaw.json"), "utf-8");
+    const parsed = JSON.parse(raw) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function isTransientGatewayError(err: unknown): boolean {
@@ -301,7 +321,13 @@ function friendlyPatchError(err: unknown): string {
 /**
  * GET /api/config
  *
- * Returns config + schema + UI hints.
+ * Returns one canonical payload:
+ *   { config: <resolved config, raw values>, meta: { baseHash, schema, uiHints, warning?, degraded? } }
+ *
+ * Secret values are intentionally served unredacted — protection comes from
+ * authenticating the caller, not from hiding values (product decision). The
+ * client's show/hide-secrets toggle is purely cosmetic.
+ *
  * Query: scope=config (default) | schema
  */
 export async function GET(request: NextRequest) {
@@ -350,36 +376,44 @@ export async function GET(request: NextRequest) {
       console.warn("Config schema unavailable, serving config without schema:", err);
     }
 
-    // Gateway config.get returns { parsed, resolved, hash }. parsed = openclaw.json shape (top-level: agents, gateway, channels, tools, etc.).
+    // Gateway config.get returns { parsed, resolved, hash }. Both share the
+    // openclaw.json shape (top-level: agents, gateway, channels, tools, etc.);
+    // resolved additionally has env/var substitution applied. Prefer resolved,
+    // falling back to parsed for legacy gateways that omit it.
     const parsed = (configData.parsed || {}) as Record<string, unknown>;
     const resolved = (configData.resolved || {}) as Record<string, unknown>;
-    const redacted = redactSensitive(resolved) as Record<string, unknown>;
+    const gatewayConfig = Object.keys(resolved).length > 0 ? resolved : parsed;
+
+    // The gateway blanks secrets to a sentinel; serve the real values.
+    const diskConfig = await readDiskConfig();
+    const config = diskConfig
+      ? (restoreRedactedValues(gatewayConfig, diskConfig) as Record<string, unknown>)
+      : gatewayConfig;
 
     logRequest("/api/config", 200, Date.now() - start, { scope });
     return NextResponse.json({
-      config: redacted,
-      rawConfig: parsed, // same structure as ~/.openclaw/openclaw.json for form + raw editor
-      resolvedConfig: resolved,
-      baseHash: configData.hash || "",
-      schema: schemaData?.schema || {},
-      uiHints: schemaData?.uiHints || {},
-      warning,
+      config,
+      meta: {
+        baseHash: configData.hash || "",
+        schema: schemaData?.schema || {},
+        uiHints: schemaData?.uiHints || {},
+        ...(warning ? { warning } : {}),
+      },
     });
   } catch (err) {
     logError("/api/config", err, { scope });
     try {
       const raw = await readFile(join(OPENCLAW_HOME, "openclaw.json"), "utf-8");
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const redacted = redactSensitive(parsed) as Record<string, unknown>;
       return NextResponse.json({
-        config: redacted,
-        rawConfig: parsed,
-        resolvedConfig: parsed,
-        baseHash: "",
-        schema: {},
-        uiHints: {},
-        warning: formatGatewayError(err),
-        degraded: true,
+        config: parsed,
+        meta: {
+          baseHash: "",
+          schema: {},
+          uiHints: {},
+          warning: formatGatewayError(err),
+          degraded: true,
+        },
       });
     } catch {
       return NextResponse.json({ error: formatGatewayError(err) }, { status: 500 });

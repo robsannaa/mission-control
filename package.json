@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/dashboard",
-  "version": "0.4.10",
+  "version": "0.5.0",
   "description": "Mission Control — open-source OpenClaw GUI and AI agent dashboard for managing local AI agents, models, memory, and skills",
   "keywords": [
     "openclaw",
@@ -28,13 +28,16 @@
   "bin": {
     "openclaw-dashboard": "./bin/cli.mjs"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 3000 --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed",
+    "test": "playwright test --project=CI",
+    "test:live": "playwright test",
     "dashboard": "node bin/cli.mjs",
     "setup": "./setup.sh",
     "setup:dev": "./setup.sh --dev --no-service"

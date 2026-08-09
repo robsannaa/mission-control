@@ -258,7 +258,7 @@ export function SubagentsManagerView({
       const data = await res.json();
       if (!res.ok) throw new Error(String(data?.error || `HTTP ${res.status}`));
 
-      const raw = asRecord(data?.rawConfig);
+      const raw = asRecord(data?.config);
       const agentsCfg = asRecord(raw.agents);
       const defaultsCfg = asRecord(agentsCfg.defaults);
       const subagentsCfg = asRecord(defaultsCfg.subagents);
@@ -286,7 +286,7 @@ export function SubagentsManagerView({
         discordMaxAgeHours: readNumber(discordThreadCfg.maxAgeHours, 168),
         spawnSubagentSessions: Boolean(discordThreadCfg.spawnSubagentSessions),
       });
-      setBaseHash(String(data?.baseHash || ""));
+      setBaseHash(String(data?.meta?.baseHash || ""));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

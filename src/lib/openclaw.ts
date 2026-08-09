@@ -11,9 +11,11 @@
 
 import { getClient, type TransportMode } from "./openclaw-client";
 import type { RunCliResult } from "./openclaw-cli";
+import { toPairingRequiredError } from "./gateway-errors";
 
 export type { RunCliResult } from "./openclaw-cli";
 export { parseJsonFromCliOutput } from "./openclaw-cli";
+export { getClient } from "./openclaw-client";
 
 /**
  * Budget for a CLI *write* to the config.
@@ -58,7 +60,14 @@ export async function gatewayCall<T>(
   timeout = 15000,
 ): Promise<T> {
   const client = await getClient();
-  return client.gatewayRpc<T>(method, params, timeout);
+  try {
+    return await client.gatewayRpc<T>(method, params, timeout);
+  } catch (err) {
+    // A pairing/scope refusal is an actionable approval moment, not a generic
+    // failure: rethrow it typed so routes can answer 428 and the UI can offer
+    // the approve flow instead of rendering an empty page.
+    throw toPairingRequiredError(err) ?? err;
+  }
 }
 
 export async function resolveTransport(): Promise<TransportMode> {

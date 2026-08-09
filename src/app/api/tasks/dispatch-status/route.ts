@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { join } from "path";
 import { getDefaultWorkspace } from "@/lib/paths";
-import { getClient } from "@/lib/openclaw-client";
+import { getClient } from "@/lib/openclaw";
 
 export async function GET(request: NextRequest) {
   try {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
+import { pairingRequiredResponse } from "@/lib/gateway-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -376,6 +377,8 @@ export async function GET(request: NextRequest) {
     const data = await listCronJobs();
     return NextResponse.json(filterUserVisibleCronJobs(data));
   } catch (err) {
+    const pairing = pairingRequiredResponse(err);
+    if (pairing) return pairing;
     console.error("Cron GET error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
@@ -575,6 +578,8 @@ export async function POST(request: NextRequest) {
         );
     }
   } catch (err) {
+    const pairing = pairingRequiredResponse(err);
+    if (pairing) return pairing;
     console.error("Cron POST error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

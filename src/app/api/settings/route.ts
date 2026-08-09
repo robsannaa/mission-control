@@ -172,24 +172,10 @@ export async function POST(request: NextRequest) {
       /* ── Restart gateway ────────────────────────── */
       case "restart-gateway": {
         try {
-          const res = await fetch(
-            `${process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:18789"}/api/gateway`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "restart" }),
-            },
-          );
-          if (!res.ok) throw new Error(`Gateway restart returned ${res.status}`);
+          await gatewayCall("gateway.restart", undefined, 15000);
           return NextResponse.json({ ok: true, action });
-        } catch {
-          // Fallback: try via internal API
-          try {
-            await gatewayCall("gateway.restart", undefined, 15000);
-            return NextResponse.json({ ok: true, action, viaCli: true });
-          } catch (err) {
-            return NextResponse.json({ error: String(err) }, { status: 500 });
-          }
+        } catch (err) {
+          return NextResponse.json({ error: String(err) }, { status: 500 });
         }
       }
 

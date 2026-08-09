@@ -3,10 +3,15 @@ import { mkdir, readFile, readdir, stat, writeFile } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { basename, join } from "path";
-import { getDefaultWorkspaceSync, getOpenClawHome } from "@/lib/paths";
+import { getDefaultWorkspaceSync } from "@/lib/paths";
 import { gatewayCall, runCliJson } from "@/lib/openclaw";
 import { fetchConfig, extractAgentsList } from "@/lib/gateway-config";
 import { gatewayMemoryIndex } from "@/lib/gateway-tools";
+import {
+  extractKnowledge,
+  readExtractionSettings,
+  type MemoryExtractionSettings,
+} from "@/lib/memory-extraction";
 
 export const dynamic = "force-dynamic";
 
@@ -56,12 +61,24 @@ function safeAgentName(agent: CliAgentRow): string {
 const SNAPSHOT_START = "<!-- KNOWLEDGE_GRAPH:START -->";
 const SNAPSHOT_END = "<!-- KNOWLEDGE_GRAPH:END -->";
 
+/**
+ * How a node's confidence value came to be:
+ *   "explicit"  — deterministic fact (wikilink, heading, live agent config).
+ *   "heuristic" — a rule-of-thumb value we chose; labeled so the UI never
+ *                 presents it as computed certainty.
+ *   "user"      — the user confirmed/deprecated the node in the UI.
+ * LLM-extracted nodes carry NO confidence at all — models do not produce
+ * calibrated probabilities, so we do not invent one.
+ */
+type ConfidenceSource = "explicit" | "heuristic" | "user";
+
 type GraphNode = {
   id: string;
   label: string;
   kind: string;
   summary: string;
-  confidence: number;
+  confidence?: number;
+  confidenceSource?: ConfidenceSource;
   source: string;
   tags: string[];
   x: number;
@@ -73,7 +90,8 @@ type GraphEdge = {
   source: string;
   target: string;
   relation: string;
-  weight: number;
+  /** Present only for deterministic edges (1.0) or user-weighted ones. */
+  weight?: number;
   evidence: string;
   fact?: string;
 };
@@ -179,12 +197,21 @@ function sanitizeText(input: unknown, fallback = ""): string {
   return input.replace(/\s+/g, " ").trim();
 }
 
-function clamp01(n: unknown, fallback: number): number {
-  const value = typeof n === "number" ? n : Number(n);
-  if (!Number.isFinite(value)) return fallback;
+/** Clamp to [0,1] — undefined stays undefined (no fabricated defaults). */
+function clamp01(n: unknown): number | undefined {
+  const value = typeof n === "number" ? n : n === undefined || n === null ? NaN : Number(n);
+  if (!Number.isFinite(value)) return undefined;
   if (value < 0) return 0;
   if (value > 1) return 1;
   return Number(value.toFixed(2));
+}
+
+const CONFIDENCE_SOURCES = new Set<ConfidenceSource>(["explicit", "heuristic", "user"]);
+
+function sanitizeConfidenceSource(value: unknown): ConfidenceSource | undefined {
+  return CONFIDENCE_SOURCES.has(value as ConfidenceSource)
+    ? (value as ConfidenceSource)
+    : undefined;
 }
 
 function buildGraphNode(
@@ -205,12 +232,19 @@ function buildGraphNode(
   const rawSummary = sanitizeText(partial.summary);
   const summary =
     rawSummary.length > 240 ? `${rawSummary.slice(0, 237).trimEnd()}...` : rawSummary;
+  const confidence = clamp01(partial.confidence);
+  // Legacy saved graphs carry numbers that were never computed — label them
+  // "heuristic" rather than letting them masquerade as measured certainty.
+  const confidenceSource =
+    confidence === undefined
+      ? undefined
+      : sanitizeConfidenceSource(partial.confidenceSource) ?? "heuristic";
   return {
     id,
     label,
     kind: sanitizeText(partial.kind, "fact"),
     summary,
-    confidence: clamp01(partial.confidence, 0.75),
+    ...(confidence !== undefined ? { confidence, confidenceSource } : {}),
     source: sanitizeText(partial.source, "manual"),
     tags: Array.isArray(partial.tags)
       ? partial.tags
@@ -243,12 +277,13 @@ function normalizeGraph(input: unknown): KnowledgeGraph {
     let suffix = 2;
     while (edgeIdSet.has(id)) id = `${id}-${suffix++}`;
     edgeIdSet.add(id);
+    const weight = clamp01(e.weight);
     const edgeEntry: GraphEdge = {
       id,
       source,
       target,
       relation: sanitizeText(e.relation, "related_to"),
-      weight: clamp01(e.weight, 0.7),
+      ...(weight !== undefined ? { weight } : {}),
       evidence: sanitizeText(e.evidence),
     };
     if (typeof (e as Partial<GraphEdge>).fact === "string") {
@@ -301,130 +336,39 @@ function canonicalizeFact(text: string): string {
     .slice(0, 120);
 }
 
-// ── LLM Knowledge Extraction ─────────────────────────────────────────────────
+// ── Deterministic (link-based) extraction ────────────────────────────────────
+//
+// Builds graph structure from what the markdown explicitly says: files,
+// headings, and [[wikilinks]]. No model involved, so every node/edge here is
+// confidence 1.0 with confidenceSource "explicit".
 
-type LLMEntity = { name: string; type: string; summary: string };
-type LLMRelation = {
-  subject: string;
-  predicate: string;
-  object: string;
-  fact: string;
-  confidence: number;
+type DeterministicHit = {
+  files: Array<{ name: string; headings: Array<{ text: string; line: number }>; links: Array<{ target: string; line: number }> }>;
 };
-type LLMExtractionResult = { entities: LLMEntity[]; relations: LLMRelation[] };
 
-const VALID_ENTITY_TYPES = new Set(["person", "project", "tool", "concept", "preference"]);
-
-const EXTRACTION_SYSTEM_PROMPT = `Extract a rich knowledge graph from text. Return ONLY a JSON object with this exact schema:
-{
-  "entities": [{"name": "string", "type": "person|project|tool|concept|preference", "summary": "string"}],
-  "relations": [{"subject": "string", "predicate": "string", "object": "string", "fact": "string", "confidence": 0.0}]
-}
-
-Rules:
-- Extract ALL meaningful named entities — be thorough, not just the most obvious ones
-- subject and object must be entity names from your entities list
-- Skip bare markdown formatting artifacts and meaningless placeholders
-- person: named humans, roles, contacts (use "User" for the person writing these notes)
-- project: software projects, apps, products, stores, businesses, brands, repositories
-- tool: libraries, frameworks, CLIs, APIs, databases, services, platforms, skills, integrations
-- concept: ideas, patterns, methodologies, markets, locations, business domains, strategies
-- preference: explicit rules, constraints, or strong preferences ("always use X", "never do Y")
-- predicates should be short action verbs: uses, prefers, owns, maintains, built_with, integrates, targets, sells_to, located_in, depends_on, manages
-
-Example input: "User prefers TypeScript. The second-brain project uses Next.js and SQLite."
-Example output: {"entities":[{"name":"User","type":"person","summary":"The developer"},{"name":"second-brain","type":"project","summary":"Next.js knowledge management app"},{"name":"TypeScript","type":"tool","summary":"Programming language"},{"name":"Next.js","type":"tool","summary":"React framework"},{"name":"SQLite","type":"tool","summary":"Embedded database"}],"relations":[{"subject":"User","predicate":"prefers","object":"TypeScript","fact":"User prefers TypeScript","confidence":0.95},{"subject":"second-brain","predicate":"uses","object":"Next.js","fact":"second-brain uses Next.js","confidence":0.9},{"subject":"second-brain","predicate":"uses","object":"SQLite","fact":"second-brain uses SQLite","confidence":0.9}]}`;
-
-function validateExtractionResult(data: unknown): LLMExtractionResult {
-  if (!data || typeof data !== "object") return { entities: [], relations: [] };
-  const d = data as Record<string, unknown>;
-
-  const entities: LLMEntity[] = Array.isArray(d.entities)
-    ? (d.entities as unknown[])
-        .filter((e): e is Record<string, unknown> => !!e && typeof e === "object")
-        .filter((e) => typeof e.name === "string" && e.name.length > 0)
-        .map((e) => ({
-          name: String(e.name).trim(),
-          type: VALID_ENTITY_TYPES.has(String(e.type)) ? String(e.type) : "concept",
-          summary: typeof e.summary === "string" ? e.summary.trim().slice(0, 200) : "",
-        }))
-    : [];
-
-  const relations: LLMRelation[] = Array.isArray(d.relations)
-    ? (d.relations as unknown[])
-        .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
-        .filter(
-          (r) =>
-            typeof r.subject === "string" && r.subject.length > 0 &&
-            typeof r.predicate === "string" && r.predicate.length > 0 &&
-            typeof r.object === "string" && r.object.length > 0
-        )
-        .map((r) => ({
-          subject: String(r.subject).trim(),
-          predicate: String(r.predicate).trim(),
-          object: String(r.object).trim(),
-          fact:
-            typeof r.fact === "string" && r.fact.trim()
-              ? r.fact.trim().slice(0, 300)
-              : `${r.subject} ${r.predicate} ${r.object}`,
-          confidence:
-            typeof r.confidence === "number"
-              ? Math.min(1, Math.max(0, r.confidence))
-              : 0.75,
-        }))
-    : [];
-
-  return { entities, relations };
-}
-
-async function resolveOpenAiKey(): Promise<string | undefined> {
-  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
-  try {
-    const envPath = join(getOpenClawHome(), ".env");
-    const raw = await readFile(envPath, "utf-8");
-    const match = raw.match(/^OPENAI_API_KEY=(.+)$/m);
-    return match?.[1]?.trim() || undefined;
-  } catch {
-    return undefined;
+function parseDeterministicStructure(files: BootstrapFile[]): DeterministicHit {
+  const out: DeterministicHit = { files: [] };
+  for (const file of files) {
+    const headings: Array<{ text: string; line: number }> = [];
+    const links: Array<{ target: string; line: number }> = [];
+    const lines = file.content.replace(/\r\n?/g, "\n").split("\n");
+    for (let idx = 0; idx < lines.length; idx += 1) {
+      const line = lines[idx] || "";
+      const heading = line.match(/^#{1,2}\s+(.+)/);
+      if (heading?.[1]) {
+        const text = normalizeTopic(heading[1]);
+        if (text && text !== "General") headings.push({ text, line: idx + 1 });
+      }
+      const linkRe = /\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g;
+      let match: RegExpExecArray | null;
+      while ((match = linkRe.exec(line)) !== null) {
+        const target = cleanMarkdownInline(match[1]);
+        if (target) links.push({ target, line: idx + 1 });
+      }
+    }
+    out.files.push({ name: file.name, headings: headings.slice(0, 12), links: links.slice(0, 40) });
   }
-}
-
-async function extractEntitiesFromFile(
-  content: string
-): Promise<LLMExtractionResult> {
-  const apiKey = await resolveOpenAiKey();
-  if (!apiKey) return { entities: [], relations: [] };
-
-  const truncated = content.slice(0, 8000);
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-          { role: "user", content: truncated },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0,
-        max_tokens: 4000,
-      }),
-      signal: AbortSignal.timeout(25000),
-    });
-    if (!response.ok) return { entities: [], relations: [] };
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const raw = data.choices?.[0]?.message?.content;
-    if (!raw) return { entities: [], relations: [] };
-    return validateExtractionResult(JSON.parse(raw) as unknown);
-  } catch {
-    return { entities: [], relations: [] };
-  }
+  return out;
 }
 
 function canonicalEntityName(name: string): string {
@@ -435,10 +379,14 @@ function canonicalEntityName(name: string): string {
     .trim();
 }
 
-async function buildLlmGraph(
+/** Cap LLM calls per rebuild — one request per file. */
+const EXTRACTION_FILE_LIMIT = 8;
+
+async function buildKnowledgeGraph(
   files: BootstrapFile[],
-  agents: CliAgentRow[]
-): Promise<KnowledgeGraph & { extractionError?: string }> {
+  agents: CliAgentRow[],
+  settings: MemoryExtractionSettings
+): Promise<{ graph: KnowledgeGraph; warning?: string }> {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const ids = new Set<string>();
@@ -452,14 +400,18 @@ async function buildLlmGraph(
     edges.push({ id, ...partial });
   };
 
-  // Root node
+  // Root node — a structural anchor, not an extracted claim.
   const root = buildGraphNode(
     {
       id: "memory-core",
       label: "OpenClaw Memory Core",
       kind: "system",
-      summary: "Knowledge graph extracted from memory files via LLM.",
+      summary:
+        settings.mode === "off"
+          ? "Knowledge graph built from wikilinks and markdown structure (extraction off)."
+          : `Knowledge graph extracted from memory files (${settings.mode} mode).`,
       confidence: 1,
+      confidenceSource: "explicit",
       source: "bootstrap",
       tags: ["memory", "core"],
       x: 40,
@@ -470,14 +422,6 @@ async function buildLlmGraph(
   );
   nodes.push(root);
 
-  const openAiKey = await resolveOpenAiKey();
-  const hasApiKey = Boolean(openAiKey);
-  let extractionError: string | undefined;
-  if (!hasApiKey) {
-    extractionError =
-      "OPENAI_API_KEY not configured. Set it to enable LLM knowledge extraction.";
-  }
-
   // Entity dedup map: canonicalName → nodeId
   const entityMap = new Map<string, string>();
 
@@ -485,7 +429,8 @@ async function buildLlmGraph(
     name: string,
     type: string,
     summary: string,
-    sourceFile: string
+    sourceFile: string,
+    explicit: boolean
   ): string | null => {
     if (!name) return null;
     const canon = canonicalEntityName(name);
@@ -498,7 +443,8 @@ async function buildLlmGraph(
         label: name,
         kind: type,
         summary: summary.slice(0, 200),
-        confidence: 0.85,
+        // Explicit structure gets confidence 1; LLM guesses get none.
+        ...(explicit ? { confidence: 1, confidenceSource: "explicit" as const } : {}),
         source: sourceFile,
         tags: [type],
         x: 400 + (nodes.length % 5) * 240,
@@ -512,36 +458,95 @@ async function buildLlmGraph(
     return entityNode.id;
   };
 
-  // Process files
-  if (hasApiKey) {
-    for (const file of files) {
-      const result = await extractEntitiesFromFile(file.content);
-
-      for (const entity of result.entities) {
-        ensureEntity(entity.name, entity.type, entity.summary, file.name);
-      }
-
-      for (const rel of result.relations) {
-        const sourceId = entityMap.get(canonicalEntityName(rel.subject));
-        const targetId = entityMap.get(canonicalEntityName(rel.object));
-        if (!sourceId || !targetId || sourceId === targetId) continue;
-
-        pushEdge(
-          {
-            source: sourceId,
-            target: targetId,
-            relation: rel.predicate,
-            weight: clamp01(rel.confidence, 0.75),
-            evidence: file.name,
-            fact: rel.fact,
-          },
-          `edge-${slug(rel.subject)}-${slug(rel.predicate)}-${slug(rel.object)}`
-        );
-      }
+  // ── Deterministic layer: files, headings, wikilinks (always built) ──
+  const structure = parseDeterministicStructure(files);
+  for (const file of structure.files) {
+    const fileId = ensureEntity(
+      file.name,
+      "project",
+      "Memory source file.",
+      file.name,
+      true
+    );
+    if (!fileId) continue;
+    pushEdge(
+      { source: root.id, target: fileId, relation: "contains", weight: 1, evidence: file.name },
+      `edge-root-${slug(file.name)}`
+    );
+    for (const heading of file.headings) {
+      const topicId = ensureEntity(heading.text, "concept", "", file.name, true);
+      if (!topicId || topicId === fileId) continue;
+      pushEdge(
+        {
+          source: fileId,
+          target: topicId,
+          relation: "contains_topic",
+          weight: 1,
+          evidence: `${file.name}:L${heading.line}`,
+        },
+        `edge-${slug(file.name)}-topic-${slug(heading.text)}`
+      );
+    }
+    for (const link of file.links) {
+      const linkId = ensureEntity(link.target, "concept", "", file.name, true);
+      if (!linkId || linkId === fileId) continue;
+      pushEdge(
+        {
+          source: fileId,
+          target: linkId,
+          relation: "links_to",
+          weight: 1,
+          evidence: `${file.name}:L${link.line}`,
+        },
+        `edge-${slug(file.name)}-links-${slug(link.target)}`
+      );
     }
   }
 
-  // Agent nodes
+  // ── LLM layer: only through the user's chosen route ──
+  let warning: string | undefined;
+  if (settings.mode === "openai" && !settings.openaiApiKey) {
+    warning = "no model configured — showing link-based graph";
+  } else if (settings.mode !== "off") {
+    const toExtract = files.slice(0, EXTRACTION_FILE_LIMIT);
+    let firstError: string | undefined;
+    let failures = 0;
+    for (const file of toExtract) {
+      try {
+        const result = await extractKnowledge(file.content, settings);
+        for (const entity of result.entities) {
+          ensureEntity(entity.name, entity.type, entity.summary, file.name, false);
+        }
+        for (const rel of result.relations) {
+          const sourceId = entityMap.get(canonicalEntityName(rel.subject));
+          const targetId = entityMap.get(canonicalEntityName(rel.object));
+          if (!sourceId || !targetId || sourceId === targetId) continue;
+          // No weight: the model's "confidence" is not a calibrated number.
+          pushEdge(
+            {
+              source: sourceId,
+              target: targetId,
+              relation: rel.predicate,
+              evidence: file.name,
+              fact: rel.fact,
+            },
+            `edge-${slug(rel.subject)}-${slug(rel.predicate)}-${slug(rel.object)}`
+          );
+        }
+      } catch (err) {
+        failures += 1;
+        if (!firstError) firstError = err instanceof Error ? err.message : String(err);
+      }
+    }
+    if (failures > 0 && firstError) {
+      warning =
+        failures === toExtract.length
+          ? `extraction failed: ${firstError} — showing link-based graph`
+          : `extraction failed for ${failures}/${toExtract.length} files: ${firstError}`;
+    }
+  }
+
+  // Agent nodes — read live from gateway config, so they are facts.
   agents.forEach((agent, agentIdx) => {
     const agentId = String(agent.id || `agent-${agentIdx}`);
     const agentLabel = safeAgentName(agent);
@@ -552,7 +557,8 @@ async function buildLlmGraph(
         label: agentLabel,
         kind: "agent",
         summary: isDefault ? "Default OpenClaw agent." : `OpenClaw agent: ${agentId}`,
-        confidence: 0.95,
+        confidence: 1,
+        confidenceSource: "explicit",
         source: "agents",
         tags: ["agent", ...(isDefault ? ["default"] : [])],
         x: 40,
@@ -563,12 +569,12 @@ async function buildLlmGraph(
     );
     nodes.push(agentNode);
     pushEdge(
-      { source: root.id, target: agentNode.id, relation: "managed_by", weight: 0.9, evidence: agentId },
+      { source: root.id, target: agentNode.id, relation: "managed_by", weight: 1, evidence: agentId },
       `edge-${root.id}-${agentNode.id}`
     );
   });
 
-  // Template if nothing was extracted
+  // Template if nothing was extracted — placeholders, labeled as such.
   if (nodes.length <= 1 + agents.length) {
     const sampleA = buildGraphNode(
       {
@@ -577,7 +583,6 @@ async function buildLlmGraph(
         kind: "preference",
         summary: "Store stable preferences, style, constraints, and important context.",
         source: "template",
-        confidence: 0.9,
         x: 360,
         y: 120,
       },
@@ -591,7 +596,6 @@ async function buildLlmGraph(
         kind: "project",
         summary: "Active tasks, architecture notes, and key decisions.",
         source: "template",
-        confidence: 0.85,
         x: 680,
         y: 260,
       },
@@ -600,13 +604,12 @@ async function buildLlmGraph(
     );
     nodes.push(sampleA, sampleB);
     edges.push(
-      { id: "edge-root-sample-a", source: root.id, target: sampleA.id, relation: "tracks", weight: 0.8, evidence: "" },
-      { id: "edge-root-sample-b", source: root.id, target: sampleB.id, relation: "tracks", weight: 0.8, evidence: "" }
+      { id: "edge-root-sample-a", source: root.id, target: sampleA.id, relation: "tracks", weight: 1, evidence: "" },
+      { id: "edge-root-sample-b", source: root.id, target: sampleB.id, relation: "tracks", weight: 1, evidence: "" }
     );
   }
 
-  const graph = normalizeGraph({ nodes, edges });
-  return extractionError ? { ...graph, extractionError } : graph;
+  return { graph: normalizeGraph({ nodes, edges }), warning };
 }
 
 function graphToMarkdown(graph: KnowledgeGraph): string {
@@ -623,7 +626,8 @@ function graphToMarkdown(graph: KnowledgeGraph): string {
     .map((e) => {
       const from = nodeById.get(e.source)?.label || e.source;
       const to = nodeById.get(e.target)?.label || e.target;
-      const weight = Number.isFinite(e.weight) ? ` (${Math.round(e.weight * 100)}%)` : "";
+      const weight =
+        typeof e.weight === "number" ? ` (${Math.round(e.weight * 100)}%)` : "";
       const evidence = e.evidence ? ` — evidence: ${e.evidence}` : "";
       return `- **${from}** --\`${e.relation}\`--> **${to}**${weight}${evidence}`;
     })
@@ -659,12 +663,12 @@ function graphToMarkdown(graph: KnowledgeGraph): string {
 function buildSnapshotSection(graph: KnowledgeGraph): string {
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   const topNodes = [...graph.nodes]
-    .sort((a, b) => b.confidence - a.confidence)
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
     .slice(0, 12)
     .map((n) => `- **${n.label}** (\`${n.kind}\`)${n.summary ? ` — ${n.summary}` : ""}`);
 
   const topEdges = [...graph.edges]
-    .sort((a, b) => b.weight - a.weight)
+    .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
     .slice(0, 20)
     .map((e) => {
       const from = nodeById.get(e.source)?.label || e.source;
@@ -730,25 +734,63 @@ async function readRecentJournalFiles(limit = 8): Promise<BootstrapFile[]> {
   }
 }
 
-async function readIndexedMemoryFiles(limit = 12): Promise<BootstrapFile[]> {
+type IndexedFilesResult = {
+  files: BootstrapFile[];
+  /** Set when the indexed path was expected to work but did not. */
+  warning?: string;
+};
+
+async function readIndexedMemoryFiles(limit = 12): Promise<IndexedFilesResult> {
+  let dbPath: string | undefined;
   try {
     const statuses = await runCliJson<MemoryStatusRow[]>(["memory", "status"], 12000);
     const match = statuses.find((s) => s.status?.workspaceDir === WORKSPACE);
-    const dbPath = match?.status?.dbPath;
-    if (!dbPath) return [];
+    // SCHEMA COUPLING: the query below reads OpenClaw's private vector-index
+    // SQLite schema (tables `chunks` and `files`), which is an internal
+    // implementation detail of the "builtin" memory backend — no gateway RPC or
+    // tool exposes raw indexed chunk contents (memory_search only returns
+    // query-scoped snippets; `memory status` only returns counts), so this is
+    // the only way to read them. Any other backend, or a future schema change,
+    // lands in the catch below and we degrade to reading files from disk.
+    const backend = (match?.status as { backend?: unknown } | undefined)?.backend;
+    if (backend !== undefined && backend !== "builtin") {
+      return {
+        files: [],
+        warning: `memory backend "${String(backend)}" is not the builtin index — reading files from disk instead`,
+      };
+    }
+    dbPath = match?.status?.dbPath;
+    if (!dbPath) return { files: [] };
+  } catch {
+    // memory status unavailable (gateway/CLI down) — filesystem fallback.
+    return { files: [] };
+  }
 
+  try {
     // Query all indexed markdown chunks regardless of source so workspace
     // reference files (VERSA_BRAND_PROFILE.md, AGENTS.md, etc.) are included.
-    const sql = [
+    // Current builtin-backend schema (openclaw >= 2026.7): memory_index_chunks.
+    const currentSql = [
+      "select path, start_line, text, updated_at as mtime",
+      "from memory_index_chunks",
+      "order by updated_at desc, path asc, start_line asc;",
+    ].join(" ");
+    // Legacy schema (pre-2026.7): chunks + files.
+    const legacySql = [
       "select c.path as path, c.start_line as start_line, c.text as text, f.mtime as mtime",
       "from chunks c",
       "join files f on c.path = f.path and c.source = f.source",
       "order by f.mtime desc, c.path asc, c.start_line asc;",
     ].join(" ");
 
-    const { stdout } = await exec("sqlite3", ["-json", dbPath, sql], { timeout: 15000 });
+    let stdout: string;
+    try {
+      ({ stdout } = await exec("sqlite3", ["-json", dbPath, currentSql], { timeout: 15000 }));
+    } catch {
+      ({ stdout } = await exec("sqlite3", ["-json", dbPath, legacySql], { timeout: 15000 }));
+    }
     const rows = JSON.parse(stdout || "[]") as IndexedChunkRow[];
-    if (!Array.isArray(rows) || rows.length === 0) return [];
+    if (!Array.isArray(rows) || rows.length === 0) return { files: [] };
 
     const grouped = new Map<string, { name: string; parts: string[]; chars: number }>();
     for (const row of rows) {
@@ -768,11 +810,18 @@ async function readIndexedMemoryFiles(limit = 12): Promise<BootstrapFile[]> {
       entry.chars += chunk.length;
     }
 
-    return [...grouped.values()]
-      .filter((f) => f.parts.length > 0)
-      .map((f) => ({ name: f.name, content: f.parts.join("\n\n"), source: "indexed" as const }));
-  } catch {
-    return [];
+    return {
+      files: [...grouped.values()]
+        .filter((f) => f.parts.length > 0)
+        .map((f) => ({ name: f.name, content: f.parts.join("\n\n"), source: "indexed" as const })),
+    };
+  } catch (err) {
+    // sqlite3 missing, db locked, or schema drift — degrade to filesystem
+    // reads and say so instead of pretending the index was empty.
+    return {
+      files: [],
+      warning: `indexed memory unavailable (${err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120)}) — reading files from disk instead`,
+    };
   }
 }
 
@@ -1040,7 +1089,8 @@ export async function GET(request: NextRequest) {
     // Fire-and-forget: ensure workspace root files are in the vector index
     void gatewayMemoryIndex().catch(() => {});
 
-    let extractionError: string | undefined;
+    const extractionSettings = await readExtractionSettings();
+    let warning: string | undefined;
 
     if (raw && !forceBootstrap) {
       graph = normalizeGraph(JSON.parse(raw));
@@ -1057,12 +1107,12 @@ export async function GET(request: NextRequest) {
         existingIds.add(nodeId);
         injectNodes.push({
           id: nodeId, label: safeAgentName(agent), kind: "agent",
-          summary: "OpenClaw agent.", confidence: 0.95, source: "agents",
+          summary: "OpenClaw agent.", confidence: 1, confidenceSource: "explicit", source: "agents",
           tags: ["agent"], x: 40, y: 280 + idx * 120,
         });
         const edgeId = `edge-root-agent-${nodeId}`;
         if (!existingEdgeIds.has(edgeId)) {
-          injectEdges.push({ id: edgeId, source: rootId, target: nodeId, relation: "managed_by", weight: 0.9, evidence: String(agent.id || "") });
+          injectEdges.push({ id: edgeId, source: rootId, target: nodeId, relation: "managed_by", weight: 1, evidence: String(agent.id || "") });
         }
       });
 
@@ -1071,7 +1121,8 @@ export async function GET(request: NextRequest) {
       }
     } else {
       const memoryMd = (await readOptional(MEMORY_MD_PATH)) || "";
-      const indexed = await readIndexedMemoryFiles(30);
+      const indexedResult = await readIndexedMemoryFiles(30);
+      const indexed = indexedResult.files;
       const fallbackFiles = indexed.length ? [] : await readRecentJournalFiles(10);
       const indexedOrFallback = indexed.length ? indexed : fallbackFiles;
       // Include MEMORY.md as seed if not already indexed
@@ -1086,9 +1137,9 @@ export async function GET(request: NextRequest) {
       const extraWorkspace = workspaceRootFiles.filter((f) => !indexedNames.has(f.name));
       for (const f of extraWorkspace) seedFiles.push(f);
 
-      const llmResult = await buildLlmGraph(seedFiles, agents);
-      extractionError = llmResult.extractionError;
-      graph = llmResult;
+      const built = await buildKnowledgeGraph(seedFiles, agents, extractionSettings);
+      graph = built.graph;
+      warning = built.warning || indexedResult.warning;
       bootstrapInfo = {
         source: indexed.length ? "indexed" : "filesystem",
         files: seedFiles.map((f) => f.name),
@@ -1103,8 +1154,17 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       graph,
+      // Structured warning the UI renders as a banner — never silently an
+      // empty graph ("extraction failed: ..." / "no model configured — ...").
+      ...(warning ? { warning } : {}),
+      extraction: {
+        mode: extractionSettings.mode,
+        model: extractionSettings.model,
+        configured:
+          extractionSettings.mode !== "openai" || Boolean(extractionSettings.openaiApiKey),
+      },
       bootstrap: bootstrapInfo
-        ? { ...bootstrapInfo, ...(extractionError ? { error: extractionError } : {}) }
+        ? { ...bootstrapInfo, ...(warning ? { error: warning } : {}) }
         : undefined,
       telemetry,
       workspace: WORKSPACE,

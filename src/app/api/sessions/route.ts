@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
+import { pairingRequiredResponse } from "@/lib/gateway-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,8 @@ export async function GET() {
       sessions,
     });
   } catch (err) {
+    const pairing = pairingRequiredResponse(err);
+    if (pairing) return pairing;
     console.error("Sessions GET error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
@@ -89,6 +92,8 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (err) {
+    const pairing = pairingRequiredResponse(err);
+    if (pairing) return pairing;
     console.error("Sessions DELETE error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

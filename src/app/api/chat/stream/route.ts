@@ -1,4 +1,4 @@
-import { getGatewayUrl, getGatewayToken } from "@/lib/paths";
+import { getGatewayUrl, getGatewayToken, getDefaultAgentId } from "@/lib/paths";
 import { guessMime } from "@/lib/openresponses";
 import { logRequest, logError } from "@/lib/request-log";
 import { triggerResponsesEndpointSetup, waitForResponsesEndpoint } from "@/lib/responses-endpoint";
@@ -22,7 +22,25 @@ export async function POST(req: Request) {
       parts?: { type: string; text?: string; url?: string; filename?: string; mimeType?: string }[];
       content?: string;
     }[] = body.messages || [];
-    const agentId: string = body.agentId || body.agent || "main";
+    // "main" is `agents.list`'s mainKey, not necessarily a real agent id — the
+    // RPC rejects unknown ids and the CLI silently resolves them to the wrong
+    // workspace (see getDefaultAgent in lib/paths.ts). When the request does
+    // not name an agent, ask the gateway which agent is actually the default.
+    const requestedAgent: string =
+      (typeof body.agentId === "string" && body.agentId.trim()) ||
+      (typeof body.agent === "string" && body.agent.trim()) ||
+      "";
+    const agentId = requestedAgent || (await getDefaultAgentId()) || "";
+    if (!agentId) {
+      logRequest("/api/chat/stream", 502, Date.now() - start, { error: "no_default_agent" });
+      return new Response(
+        JSON.stringify({
+          error: "gateway_unreachable",
+          message: "Could not resolve the default agent — is the gateway running?",
+        }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
+      );
+    }
     const model: string | undefined = body.model?.trim() || undefined;
     const sessionKey: string | undefined = typeof body.sessionKey === "string" && body.sessionKey.trim()
       ? body.sessionKey.trim()
@@ -84,7 +102,10 @@ export async function POST(req: Request) {
     if (!input || (typeof input === "string" && !input.trim())) {
       return new Response("Please send a message or attach a file.", {
         status: 400,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "x-openclaw-agent-id": agentId,
+        },
       });
     }
 
@@ -187,6 +208,7 @@ export async function POST(req: Request) {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
+        "x-openclaw-agent-id": agentId,
       },
     });
   } catch (err) {

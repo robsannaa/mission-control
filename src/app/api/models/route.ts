@@ -10,6 +10,7 @@ import {
   fetchModelsFromProvider,
 } from "@/lib/provider-auth";
 import { patchConfig } from "@/lib/gateway-config";
+import { gatewayCall } from "@/lib/openclaw";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +24,96 @@ function json(body: unknown, status = 200) {
 }
 
 // ── GET /api/models ─────────────────────────────
-// Returns current model config + summary for the UI.
+// Returns current model config + summary for the UI, enriched with the
+// gateway's live model catalog (models.list) and provider auth state
+// (models.authStatus). The config-derived summary is only the offline
+// fallback — never the primary source when the gateway is up.
+
+type GatewayModelRow = {
+  id?: string;
+  name?: string;
+  provider?: string;
+  contextWindow?: number;
+  input?: unknown;
+  available?: boolean;
+};
+
+type GatewayAuthProviderRow = {
+  provider?: string;
+  displayName?: string;
+  status?: string;
+  profiles?: Array<{ profileId?: string; type?: string; status?: string }>;
+};
+
+const LOCAL_PROVIDERS = new Set(["ollama", "vllm", "lmstudio"]);
+
+function modelKeyFor(provider: string, id: string): string {
+  return id === provider || id.startsWith(`${provider}/`) ? id : `${provider}/${id}`;
+}
 
 export async function GET() {
   try {
     const summary = await buildModelsSummary();
-    return json(summary);
+
+    const gatewayErrors: string[] = [];
+    const [liveModels, liveAuth] = await Promise.all([
+      gatewayCall<{ models?: GatewayModelRow[] }>("models.list", {}, 8000).catch((err) => {
+        gatewayErrors.push(`models.list: ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+      }),
+      gatewayCall<{ providers?: GatewayAuthProviderRow[] }>("models.authStatus", {}, 8000).catch((err) => {
+        gatewayErrors.push(`models.authStatus: ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+      }),
+    ]);
+    const gatewayOffline = liveModels === null && liveAuth === null;
+
+    // Live model catalog → the ModelInfo shape the views already consume.
+    const models = Array.isArray(liveModels?.models) && liveModels.models.length > 0
+      ? liveModels.models
+          .filter((m): m is GatewayModelRow & { id: string; provider: string } =>
+            typeof m?.id === "string" && typeof m?.provider === "string")
+          .map((m) => ({
+            key: modelKeyFor(m.provider, m.id),
+            name: m.name || m.id,
+            input: Array.isArray(m.input) ? m.input.map((v) => String(v)).join(",") : "",
+            contextWindow: typeof m.contextWindow === "number" ? m.contextWindow : 0,
+            local: LOCAL_PROVIDERS.has(m.provider),
+            available: m.available !== false,
+            tags: ["gateway"],
+            missing: false,
+          }))
+      : summary.models;
+
+    // Live auth state → per-provider authentication rows. Falls back to the
+    // config-derived auth summary when the RPC is unavailable.
+    const authProviders = Array.isArray(liveAuth?.providers)
+      ? liveAuth.providers
+          .filter((p): p is GatewayAuthProviderRow & { provider: string } =>
+            typeof p?.provider === "string")
+          .map((p) => ({
+            provider: p.provider,
+            displayName: p.displayName || p.provider,
+            authenticated: p.status === "ok",
+            authKind: p.profiles?.[0]?.type ?? null,
+            status: p.status || "unknown",
+          }))
+      : (summary.status.auth?.providers || []).map((p) => ({
+          provider: p.provider,
+          displayName: p.provider,
+          authenticated: Boolean(p.effective),
+          authKind: p.effective?.kind ?? null,
+          status: p.effective ? "ok" : "missing",
+        }));
+
+    return json({
+      ...summary,
+      models,
+      authProviders,
+      gatewayOffline,
+      ...(gatewayErrors.length > 0 ? { gatewayErrors } : {}),
+      degraded: Boolean(summary.degraded) || gatewayOffline,
+    });
   } catch (err) {
     return json({ error: String(err) }, 500);
   }
@@ -61,6 +146,7 @@ export async function POST(request: NextRequest) {
 
         const envKey = PROVIDER_ENV_KEYS[provider];
         let method = "";
+        let gatewayError: string | null = null;
 
         // Layer 1: Gateway RPC (preferred — triggers live reload)
         if (envKey) {
@@ -71,8 +157,11 @@ export async function POST(request: NextRequest) {
             }
             await patchConfig(patch);
             method = "gateway";
-          } catch {
-            method = "";
+          } catch (err) {
+            // Surface why the live path failed instead of silently degrading —
+            // the disk fallback works, but the gateway won't hot-reload it.
+            gatewayError = err instanceof Error ? err.message : String(err);
+            console.error("[auth-provider] gateway config patch failed, using disk fallback:", err);
           }
         }
 
@@ -124,7 +213,13 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        return json({ ok: true, provider, method, modelSet: modelToSet || null });
+        return json({
+          ok: true,
+          provider,
+          method,
+          modelSet: modelToSet || null,
+          ...(gatewayError ? { gatewayError } : {}),
+        });
       }
 
       // ── Remove a provider's credentials ──

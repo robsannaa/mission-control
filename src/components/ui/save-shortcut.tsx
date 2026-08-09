@@ -12,15 +12,20 @@ export function SaveShortcut({ className, keyClassName }: SaveShortcutProps) {
   const [modifier, setModifier] = useState<"mod" | "cmd" | "ctrl">("mod");
 
   useEffect(() => {
-    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-    const platform =
-      typeof navigator === "undefined"
-        ? ""
-        : String(
-            nav.userAgentData?.platform || navigator.platform || navigator.userAgent || ""
-          ).toLowerCase();
-    const isApple = /mac|iphone|ipad|ipod/.test(platform);
-    setModifier(isApple ? "cmd" : "ctrl");
+    // Deferred so hydration completes before the state update (and to avoid a
+    // synchronous setState cascade inside the effect).
+    const t = setTimeout(() => {
+      const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+      const platform =
+        typeof navigator === "undefined"
+          ? ""
+          : String(
+              nav.userAgentData?.platform || navigator.platform || navigator.userAgent || ""
+            ).toLowerCase();
+      const isApple = /mac|iphone|ipad|ipod/.test(platform);
+      setModifier(isApple ? "cmd" : "ctrl");
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
 
   return (

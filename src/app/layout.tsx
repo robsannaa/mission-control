@@ -12,6 +12,8 @@ import { UsageAlertMonitor } from "@/components/usage-alert-monitor";
 import { OpenClawUpdateBanner } from "@/components/openclaw-update-banner";
 import { MissionControlUpdateBanner } from "@/components/mission-control-update-banner";
 import { ToastRenderer } from "@/components/toast-renderer";
+import { PairingBanner } from "@/components/pairing-banner";
+import { VersionSkewBanner } from "@/components/version-skew-banner";
 import { DashboardTourGate } from "@/components/dashboard-tour-gate";
 
 const inter = Inter({
@@ -133,6 +135,8 @@ export default function RootLayout({
             <ChatNotificationToast />
             {!isHosted && <OpenClawUpdateBanner />}
             {!isHosted && <MissionControlUpdateBanner />}
+            <PairingBanner />
+            <VersionSkewBanner />
             <UsageAlertMonitor />
             <ToastRenderer />
           </SetupGate>

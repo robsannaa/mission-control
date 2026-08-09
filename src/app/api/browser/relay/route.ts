@@ -4,7 +4,7 @@ import { constants as fsConstants } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { getGatewayPort, getOpenClawHome } from "@/lib/paths";
-import { runCliJson } from "@/lib/openclaw-cli";
+import { runCliJson } from "@/lib/openclaw";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { getOpenClawBin, getGatewayUrl } from "@/lib/paths";
 import { probeGatewayLiveness } from "@/lib/gateway-liveness";
+import {
+  SUPPORTED_OPENCLAW_RANGE,
+  isOpenClawVersionSupported,
+} from "@/lib/gateway-protocol";
 import { triggerResponsesEndpointSetup } from "@/lib/responses-endpoint";
 import { logRequest, logError } from "@/lib/request-log";
 import { execFile } from "child_process";
@@ -35,11 +39,31 @@ async function probeGatewayHttp(): Promise<{
   return { ok: await probeGatewayLiveness(url), port, url };
 }
 
+type GatewayVersionInfo = {
+  /** Version the gateway reports (status.runtimeVersion), or null when unknown. */
+  gateway: string | null;
+  /** OpenClaw range this Mission Control build was verified against. */
+  supportedRange: string;
+  /** false = version skew, null = version unknown/unparseable. */
+  supported: boolean | null;
+};
+
 type GatewayPayload = {
   status: "online" | "degraded" | "offline";
   health: Record<string, unknown>;
   gatewayStatus?: Record<string, unknown>;
+  version: GatewayVersionInfo;
 };
+
+function buildVersionInfo(gatewayStatus: Record<string, unknown> | null): GatewayVersionInfo {
+  const raw = gatewayStatus?.runtimeVersion;
+  const version = typeof raw === "string" && raw.trim() ? raw.trim() : null;
+  return {
+    gateway: version,
+    supportedRange: SUPPORTED_OPENCLAW_RANGE,
+    supported: version ? isOpenClawVersionSupported(version) : null,
+  };
+}
 
 const GATEWAY_RESPONSE_TTL_MS = 2500;
 const GATEWAY_MAX_STALE_MS = 60000;
@@ -64,6 +88,7 @@ async function computeGatewayPayload(): Promise<GatewayPayload> {
     return {
       status: "offline",
       health: { ok: false, error: "Gateway HTTP endpoint not reachable" },
+      version: buildVersionInfo(null),
     };
   }
 
@@ -83,6 +108,7 @@ async function computeGatewayPayload(): Promise<GatewayPayload> {
       status: gwStatus,
       health,
       ...(status ? { gatewayStatus: status } : {}),
+      version: buildVersionInfo(status),
     };
   } catch {
     // RPC failed — but gateway IS reachable via HTTP
@@ -92,6 +118,7 @@ async function computeGatewayPayload(): Promise<GatewayPayload> {
   return {
     status: "online",
     health: { ok: true, port: probe.port, note: "Lite probe (full health unavailable)" },
+    version: buildVersionInfo(null),
   };
 }
 
@@ -155,6 +182,7 @@ export async function GET() {
     return NextResponse.json({
       status: "offline",
       health: { ok: false, error: "Gateway health check failed" },
+      version: buildVersionInfo(null),
       stale: true,
       restarting: true,
     });

@@ -455,6 +455,20 @@ export function getGatewayToken(): string {
   return _gatewayToken;
 }
 
+/**
+ * Drop the memoized gateway auth credentials so the next read comes from disk.
+ *
+ * Called by the RPC layer when the gateway rejects the shared secret: the user
+ * may have rotated `gateway.auth.token` (or `gateway.auth.password`) since
+ * this process cached it, and re-reading is the only way to recover without a
+ * restart. Both halves of the shared-secret cache drop together because a
+ * rotation can switch the auth mode as well as the value.
+ */
+export function invalidateGatewayToken(): void {
+  _gatewayToken = null;
+  _gatewayPassword = null;
+}
+
 // ── Gateway auth password ───────────────────────
 
 let _gatewayPassword: string | null = null;

@@ -1,0 +1,53 @@
+# Lint, type-check, build, and run the CI-safe Playwright project.
+#
+# The Playwright suite is split in playwright.config.ts:
+#   - CI project (this workflow): specs not tagged @live — unit-style tests
+#     plus specs that spawn their own throwaway next servers. No OpenClaw
+#     gateway required. Equivalent to `--grep-invert @live`.
+#   - LIVE_GATEWAY project: specs tagged @live need a running gateway on
+#     127.0.0.1:18789 and a dev server on :3100 — run locally via
+#     `npm run test:live`.
+#
+# All specs are request-style (no page fixture), so no browser install step.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Playwright (CI project — skips @live specs)
+        run: npx playwright test --project=CI
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7

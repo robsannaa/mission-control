@@ -80,9 +80,12 @@ async function generateTestPhrase(): Promise<string> {
     // "main" is `agents.list`'s mainKey, not an agent id. The RPC rejects it as
     // unknown, and the CLI silently resolves `--agent main` to a workspace
     // *inside* the real one, so it targets the wrong place instead of failing.
-    // Ask which agent is actually the default; "main" stays only as the
-    // last-resort value for when the gateway cannot be reached at all.
-    const agentId = (await getDefaultAgentId()) ?? "main";
+    // Ask which agent is actually the default; when the gateway cannot be
+    // reached there is no safe guess, so fall through to the template phrase.
+    const agentId = await getDefaultAgentId();
+    if (!agentId) {
+      throw new Error("Could not resolve the default agent from the gateway");
+    }
 
     let output = "";
     try {

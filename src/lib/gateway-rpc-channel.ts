@@ -15,6 +15,7 @@
  */
 
 import { GatewayRpcClient, GatewayRpcError } from "./gateway-rpc";
+import { invalidateGatewayToken } from "./paths";
 
 /** Cooldown before retrying the WebSocket path after a transport failure. */
 const WS_RETRY_COOLDOWN_MS = 15_000;
@@ -30,6 +31,26 @@ function isTransportFailure(err: unknown): boolean {
   // MISSING_SCOPES is ours, and specifically means the CLI may do better.
   if (err.code && err.code !== "MISSING_SCOPES") return false;
   return true;
+}
+
+/**
+ * Whether the gateway refused our shared-secret credentials. Distinct from a
+ * transport failure: the gateway answered, but the cached token/password no
+ * longer matches — typically because the user rotated `gateway.auth.token`
+ * after this process memoized it. A live gateway rejects the connect with
+ * `code: "INVALID_REQUEST"`, `message: "unauthorized: gateway token mismatch
+ * (provide gateway auth token)"` and `details: { code: "AUTH_TOKEN_MISMATCH",
+ * authReason: "token_mismatch", ... }`.
+ */
+function isAuthFailure(err: unknown): boolean {
+  if (!(err instanceof GatewayRpcError)) return false;
+  if (err.details && typeof err.details === "object") {
+    const details = err.details as Record<string, unknown>;
+    if (String(details.code || "").startsWith("AUTH_")) return true;
+    if (String(details.authReason || "").includes("mismatch")) return true;
+  }
+  const msg = err.message.toLowerCase();
+  return msg.includes("unauthorized") || msg.includes("token mismatch");
 }
 
 export class GatewayRpcChannel {
@@ -77,7 +98,7 @@ export class GatewayRpcChannel {
 
     if (wsUsable) {
       try {
-        return await this.getClient().request<T>(method, params, timeout);
+        return await this.requestOverWs<T>(method, params, timeout);
       } catch (err) {
         if (!isTransportFailure(err)) throw err;
         this.markWsFailed(err);
@@ -91,6 +112,29 @@ export class GatewayRpcChannel {
     // subprocess is actually needed.
     const { gatewayCall } = await import("./openclaw-cli");
     return gatewayCall<T>(method, params, timeout);
+  }
+
+  /**
+   * One WebSocket attempt, plus a single retry with freshly-read credentials
+   * when the gateway rejects our auth. The token is memoized process-wide, so
+   * without this a `gateway.auth.token` rotation on disk would 401 every RPC
+   * until the process restarts. A constructor-injected token cannot be
+   * refreshed from disk, so those channels surface the failure unchanged.
+   */
+  private async requestOverWs<T>(
+    method: string,
+    params: Record<string, unknown>,
+    timeout: number,
+  ): Promise<T> {
+    try {
+      return await this.getClient().request<T>(method, params, timeout);
+    } catch (err) {
+      if (this.token || !isAuthFailure(err)) throw err;
+      invalidateGatewayToken();
+      // Drop the client so the reconnect picks up the re-read credentials.
+      this.client = null;
+      return await this.getClient().request<T>(method, params, timeout);
+    }
   }
 }
 

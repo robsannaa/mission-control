@@ -896,7 +896,7 @@ export function DashboardView() {
                   <Link href="/config" className="text-emerald-700 hover:underline dark:text-emerald-300">
                     Config
                   </Link>{" "}
-                  under <code className="rounded bg-stone-100 px-1 text-stone-700 dark:bg-[#20252a] dark:text-[#d6dce3]">gateway.auth.token</code>. The UI shows it redacted; to view or copy the full token, run on the gateway host: <code className="rounded bg-stone-100 px-1 text-stone-700 dark:bg-[#20252a] dark:text-[#d6dce3]">openclaw config get gateway.auth.token</code>. For remote access, paste the token when the dashboard prompts.{" "}
+                  under <code className="rounded bg-stone-100 px-1 text-stone-700 dark:bg-[#20252a] dark:text-[#d6dce3]">gateway.auth.token</code>. Secrets, including this token, are visible and editable in this dashboard — access is controlled by the Mission Control auth gate (<code className="rounded bg-stone-100 px-1 text-stone-700 dark:bg-[#20252a] dark:text-[#d6dce3]">MISSION_CONTROL_AUTH</code>), so only expose the dashboard behind it.{" "}
                   <a
                     href="https://docs.openclaw.ai/web/dashboard"
                     target="_blank"

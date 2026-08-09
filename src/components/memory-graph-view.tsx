@@ -100,7 +100,10 @@ type GraphNodePayload = {
   label: string;
   kind: string;
   summary: string;
-  confidence: number;
+  /** Absent for LLM-extracted nodes — models produce no calibrated number. */
+  confidence?: number;
+  /** Where the confidence value came from: explicit | heuristic | user. */
+  confidenceSource?: string;
   source: string;
   tags: string[];
   x: number;
@@ -112,7 +115,8 @@ type GraphEdgePayload = {
   source: string;
   target: string;
   relation: string;
-  weight: number;
+  /** Present only for deterministic (1.0) or user-weighted edges. */
+  weight?: number;
   evidence: string;
   fact?: string;
 };
@@ -166,10 +170,24 @@ type GraphTelemetry = {
   recentChatMessages: RecentChatMessage[];
 };
 
+type ExtractionInfo = {
+  mode: "gateway" | "openai" | "off";
+  model: string;
+  configured: boolean;
+};
+
+type ExtractionSettingsPayload = {
+  mode: "gateway" | "openai" | "off";
+  model: string;
+  openaiApiKey: string;
+};
+
 type GraphApiResponse = {
   graph?: GraphPayload;
   telemetry?: GraphTelemetry;
-  bootstrap?: { source: "indexed" | "filesystem"; files: string[] };
+  bootstrap?: { source: "indexed" | "filesystem"; files: string[]; error?: string };
+  extraction?: ExtractionInfo;
+  warning?: string;
   error?: string;
 };
 
@@ -185,6 +203,8 @@ type AggregatedEdge = {
   count: number;
   confidence: number;
   maxConfidence: number;
+  /** True when at least one contributing edge carried a real weight. */
+  scored: boolean;
   evidence: string[];
   lastSeenMs: number;
   fact?: string;
@@ -316,6 +336,23 @@ function clamp01(value: number): number {
   if (value < 0) return 0;
   if (value > 1) return 1;
   return value;
+}
+
+/**
+ * Honest confidence display: shows the number only when one exists, always
+ * with its provenance. LLM-extracted nodes are labeled unscored instead of
+ * being given a fake percentage.
+ */
+function confidenceLabel(node: GraphNodePayload): string {
+  if (typeof node.confidence !== "number") return "unscored (LLM-extracted)";
+  const pct = Math.round(node.confidence * 100);
+  const src =
+    node.confidenceSource === "explicit"
+      ? "explicit"
+      : node.confidenceSource === "user"
+        ? "set by you"
+        : "heuristic";
+  return `confidence ${pct}% (${src})`;
 }
 
 function formatAgo(timestampMs: number): string {
@@ -504,6 +541,16 @@ export function MemoryGraphView() {
   const [rebuilding, setRebuilding] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [apiWarning, setApiWarning] = useState<string | null>(null);
+  const [extractionInfo, setExtractionInfo] = useState<ExtractionInfo | null>(null);
+
+  // ── Extraction settings (mode / model / key) ──
+  const [showExtraction, setShowExtraction] = useState(false);
+  const [extractionSettings, setExtractionSettings] = useState<ExtractionSettingsPayload | null>(null);
+  const [legacyKeyDetected, setLegacyKeyDetected] = useState(false);
+  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
+  const [gatewayDefaultModel, setGatewayDefaultModel] = useState("");
+  const [extractionSaving, setExtractionSaving] = useState(false);
 
   const [layer, setLayer] = useState<LayerMode>("topic");
   const [lens, setLens] = useState<LensMode>("topic");
@@ -573,12 +620,15 @@ export function MemoryGraphView() {
           recentChatMessages: [],
         }
       );
+      setApiWarning(data.warning || null);
+      setExtractionInfo(data.extraction || null);
       setDirty(mode === "bootstrap");
 
       if (mode === "bootstrap") {
         const source = data.bootstrap?.source === "indexed" ? "indexed vectors" : "filesystem markdown";
         const files = data.bootstrap?.files?.length || 0;
-        setNotice({ kind: "success", text: `Graph rebuilt from ${source} (${files} files).` });
+        const via = data.extraction?.mode === "off" ? "links only" : `${data.extraction?.mode || "gateway"} extraction`;
+        setNotice({ kind: "success", text: `Graph rebuilt from ${source} (${files} files, ${via}).` });
       } else {
         setNotice(null);
       }
@@ -592,6 +642,75 @@ export function MemoryGraphView() {
   useEffect(() => {
     void loadGraph();
   }, [loadGraph]);
+
+  // Load extraction settings + the gateway's model catalog for the picker.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/memory/extraction", { cache: "no-store" });
+        const data = await res.json();
+        if (data?.settings) setExtractionSettings(data.settings as ExtractionSettingsPayload);
+        setLegacyKeyDetected(Boolean(data?.legacyOpenAiKeyDetected));
+      } catch {
+        // Settings panel simply stays hidden-config until reload.
+      }
+      try {
+        const res = await fetch("/api/models", { cache: "no-store" });
+        const data = await res.json();
+        const allowed = Array.isArray(data?.status?.allowed)
+          ? (data.status.allowed as unknown[]).map((m) => String(m)).filter(Boolean)
+          : [];
+        setGatewayModels(allowed);
+        setGatewayDefaultModel(String(data?.status?.defaultModel || ""));
+      } catch {
+        // Model list is a convenience; free-text input still works.
+      }
+    })();
+  }, []);
+
+  const updateExtractionSettings = useCallback((patch: Partial<ExtractionSettingsPayload>) => {
+    setExtractionSettings((prev) => ({
+      ...(prev || { mode: "gateway", model: "", openaiApiKey: "" }),
+      ...patch,
+    }));
+  }, []);
+
+  const saveExtractionSettings = useCallback(async () => {
+    if (!extractionSettings) return;
+    setExtractionSaving(true);
+    try {
+      const res = await fetch("/api/memory/extraction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", settings: extractionSettings }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      setExtractionSettings(data.settings as ExtractionSettingsPayload);
+      setNotice({ kind: "success", text: "Extraction settings saved. Rebuild to apply." });
+    } catch (err) {
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to save extraction settings." });
+    } finally {
+      setExtractionSaving(false);
+    }
+  }, [extractionSettings]);
+
+  const importLegacyKey = useCallback(async () => {
+    try {
+      const res = await fetch("/api/memory/extraction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import-legacy-key" }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      setExtractionSettings(data.settings as ExtractionSettingsPayload);
+      setLegacyKeyDetected(false);
+      setNotice({ kind: "success", text: "OpenAI key imported from ~/.openclaw/.env." });
+    } catch (err) {
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to import key." });
+    }
+  }, []);
 
   useEffect(() => {
     if (!notice) return;
@@ -640,6 +759,7 @@ export function MemoryGraphView() {
       target: string;
       relation: string;
       confidence: number;
+      scored: boolean;
       evidence: string;
       fact?: string;
     }> = [];
@@ -650,7 +770,10 @@ export function MemoryGraphView() {
         source: edge.source,
         target: edge.target,
         relation: normalizeRelation(edge.relation),
-        confidence: clamp01(Number(edge.weight || 0.7)),
+        // Unscored edges get a neutral value for layout math only — the UI
+        // never displays it as a percentage (see `scored`).
+        confidence: clamp01(Number(edge.weight ?? 0.6)),
+        scored: typeof edge.weight === "number",
         evidence: String(edge.evidence || "").trim(),
         fact: edge.fact,
       });
@@ -669,7 +792,8 @@ export function MemoryGraphView() {
             source: edgeIn.source,
             target: edgeOut.target,
             relation,
-            confidence: clamp01((Number(edgeIn.weight || 0.6) + Number(edgeOut.weight || 0.6)) / 2),
+            confidence: clamp01((Number(edgeIn.weight ?? 0.6) + Number(edgeOut.weight ?? 0.6)) / 2),
+            scored: typeof edgeIn.weight === "number" && typeof edgeOut.weight === "number",
             evidence: [edgeIn.evidence, edgeOut.evidence, relationNode?.label]
               .map((v) => String(v || "").trim())
               .filter(Boolean)
@@ -715,6 +839,7 @@ export function MemoryGraphView() {
           count: 1,
           confidence: edge.confidence,
           maxConfidence: edge.confidence,
+          scored: edge.scored,
           evidence: edge.evidence ? [edge.evidence] : [],
           lastSeenMs: recency,
           fact: edge.fact,
@@ -723,6 +848,7 @@ export function MemoryGraphView() {
         existing.count += 1;
         existing.confidence = clamp01((existing.confidence * (existing.count - 1) + edge.confidence) / existing.count);
         existing.maxConfidence = Math.max(existing.maxConfidence, edge.confidence);
+        existing.scored = existing.scored || edge.scored;
         if (edge.evidence) existing.evidence.push(edge.evidence);
         if (recency > existing.lastSeenMs) existing.lastSeenMs = recency;
         if (edge.fact && !existing.fact) existing.fact = edge.fact;
@@ -1141,7 +1267,9 @@ export function MemoryGraphView() {
         const hay = `${node.label} ${node.summary} ${node.kind} ${(node.tags || []).join(" ")}`.toLowerCase();
         if (!hay.includes(queryLower)) return false;
       }
-      if (node.confidence < confidenceThreshold) return false;
+      // Threshold applies only to nodes that actually carry a confidence
+      // value — LLM-extracted nodes are unscored, not "low confidence".
+      if (typeof node.confidence === "number" && node.confidence < confidenceThreshold) return false;
       if (timeLimit < Number.POSITIVE_INFINITY && insight.recencyMs > 0 && Date.now() - insight.recencyMs > timeLimit) {
         return false;
       }
@@ -1185,7 +1313,7 @@ export function MemoryGraphView() {
     const edgeCandidates = collapsed.edges.filter((edge) => {
       if (!selectedSet.has(edge.source) || !selectedSet.has(edge.target)) return false;
       if (!enabledRelations[edge.relation]) return false;
-      if (edge.confidence < confidenceThreshold) return false;
+      if (edge.scored && edge.confidence < confidenceThreshold) return false;
       if (timeLimit < Number.POSITIVE_INFINITY && edge.lastSeenMs > 0 && Date.now() - edge.lastSeenMs > timeLimit) {
         return false;
       }
@@ -1539,8 +1667,11 @@ export function MemoryGraphView() {
     if (!selectedNode) return;
     const tags = new Set(selectedNode.tags || []);
     tags.add("confirmed");
+    // A user confirmation is an explicit signal — record it as such instead
+    // of nudging a fabricated number.
     applyNodePatch(selectedNode.id, {
-      confidence: clamp01(selectedNode.confidence + 0.08),
+      confidence: 1,
+      confidenceSource: "user",
       tags: [...tags],
     });
     setNotice({ kind: "success", text: `Confirmed: ${selectedNode.label}` });
@@ -1551,7 +1682,8 @@ export function MemoryGraphView() {
     const tags = new Set(selectedNode.tags || []);
     tags.add("deprecated");
     applyNodePatch(selectedNode.id, {
-      confidence: clamp01(selectedNode.confidence - 0.2),
+      confidence: 0.2,
+      confidenceSource: "user",
       tags: [...tags],
     });
     setNotice({ kind: "success", text: `Deprecated: ${selectedNode.label}` });
@@ -1739,6 +1871,110 @@ export function MemoryGraphView() {
               </button>
             </div>
           </div>
+
+          {/* Extraction settings — where LLM extraction prompts go */}
+          <div className="border-t border-foreground/10 p-2">
+            <button
+              type="button"
+              onClick={() => setShowExtraction((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded border border-foreground/10 bg-card px-2 py-1 text-xs text-foreground/80 hover:bg-muted"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <SlidersHorizontal className="h-3 w-3" />
+                Extraction
+              </span>
+              <span className="text-muted-foreground">
+                {extractionSettings?.mode === "off"
+                  ? "off"
+                  : extractionSettings?.mode === "openai"
+                    ? `openai · ${extractionSettings.model || "gpt-4o-mini"}`
+                    : `gateway · ${extractionSettings?.model || gatewayDefaultModel || "agent default"}`}
+              </span>
+            </button>
+
+            {showExtraction && extractionSettings ? (
+              <div className="mt-2 space-y-2 rounded border border-foreground/10 bg-card/60 p-2">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-foreground/90">Mode</p>
+                  <select
+                    value={extractionSettings.mode}
+                    onChange={(e) => updateExtractionSettings({ mode: e.target.value as ExtractionSettingsPayload["mode"] })}
+                    className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground/90"
+                  >
+                    <option value="gateway">Gateway model (local endpoint)</option>
+                    <option value="openai">OpenAI API (direct)</option>
+                    <option value="off">Off — links only</option>
+                  </select>
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    {extractionSettings.mode === "gateway"
+                      ? "Prompts go through your local gateway and its configured providers."
+                      : extractionSettings.mode === "openai"
+                        ? "Memory content is sent to api.openai.com with the key below."
+                        : "No LLM calls. The graph builds from wikilinks and headings only."}
+                  </p>
+                </div>
+
+                {extractionSettings.mode === "gateway" ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-foreground/90">Model</p>
+                    <select
+                      value={extractionSettings.model}
+                      onChange={(e) => updateExtractionSettings({ model: e.target.value })}
+                      className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground/90"
+                    >
+                      <option value="">
+                        Agent default{gatewayDefaultModel ? ` (${gatewayDefaultModel})` : ""}
+                      </option>
+                      {gatewayModels.map((model) => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
+                {extractionSettings.mode === "openai" ? (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-foreground/90">Model</p>
+                      <input
+                        value={extractionSettings.model}
+                        onChange={(e) => updateExtractionSettings({ model: e.target.value })}
+                        placeholder="gpt-4o-mini"
+                        className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 text-xs text-foreground/90 outline-none placeholder:text-muted-foreground/60"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-foreground/90">API key</p>
+                      <input
+                        value={extractionSettings.openaiApiKey}
+                        onChange={(e) => updateExtractionSettings({ openaiApiKey: e.target.value })}
+                        placeholder="sk-..."
+                        className="w-full rounded border border-foreground/10 bg-card px-1.5 py-1 font-mono text-xs text-foreground/90 outline-none placeholder:text-muted-foreground/60"
+                      />
+                      {legacyKeyDetected && !extractionSettings.openaiApiKey ? (
+                        <button
+                          type="button"
+                          onClick={() => void importLegacyKey()}
+                          className="w-full rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-1 text-left text-[11px] leading-snug text-amber-700 hover:bg-amber-500/20 dark:text-amber-200"
+                        >
+                          A key was found in ~/.openclaw/.env. It is never used automatically — click to import it.
+                        </button>
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => void saveExtractionSettings()}
+                  disabled={extractionSaving}
+                  className="w-full rounded border border-violet-500/35 bg-violet-500/15 px-2 py-1 text-xs text-violet-700 hover:bg-violet-500/25 dark:text-violet-200 disabled:opacity-50"
+                >
+                  {extractionSaving ? "Saving..." : "Save extraction settings"}
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </aside>
 
@@ -1780,6 +2016,18 @@ export function MemoryGraphView() {
         </ReactFlow>
 
         <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col gap-2">
+          {apiWarning ? (
+            <div className="inline-flex max-w-xl items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1.5 text-xs text-amber-800 shadow-sm backdrop-blur dark:text-amber-100">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{apiWarning}</span>
+            </div>
+          ) : null}
+          {extractionInfo?.mode === "off" ? (
+            <div className="inline-flex items-center gap-2 rounded-md border border-foreground/15 bg-card/80 px-2.5 py-1 text-xs text-foreground/80 shadow-sm backdrop-blur">
+              <EyeOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span>LLM extraction is off — showing link-based graph.</span>
+            </div>
+          ) : null}
           <div className="inline-flex items-center gap-2 rounded-md border border-foreground/15 bg-card/80 px-2.5 py-1 text-xs text-foreground/90 shadow-sm backdrop-blur">
             <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-300" />
             <span>
@@ -1851,7 +2099,7 @@ export function MemoryGraphView() {
               <div className="space-y-2 rounded-lg border border-foreground/10 bg-card/45 p-3">
                 <p className="text-xs font-semibold text-foreground">{selectedNode.label}</p>
                 <p className="text-xs text-muted-foreground">
-                  {selectedNode.kind} · confidence {Math.round(selectedNode.confidence * 100)}% · updated {formatAgo(nodeInsights.get(selectedNode.id)?.recencyMs || 0)}
+                  {selectedNode.kind} · {confidenceLabel(selectedNode)} · updated {formatAgo(nodeInsights.get(selectedNode.id)?.recencyMs || 0)}
                 </p>
 
                 <div className="flex flex-wrap gap-1 text-xs">
@@ -1934,7 +2182,9 @@ export function MemoryGraphView() {
                           {edge.fact ? (
                             <p className="truncate text-muted-foreground italic">{edge.fact}</p>
                           ) : (
-                            <p className="truncate text-muted-foreground">{relationLabel(edge.relation)} · conf {Math.round(edge.confidence * 100)}% · {formatAgo(edge.lastSeenMs)}</p>
+                            <p className="truncate text-muted-foreground">
+                              {relationLabel(edge.relation)} · {edge.scored ? `conf ${Math.round(edge.confidence * 100)}%` : "unscored"} · {formatAgo(edge.lastSeenMs)}
+                            </p>
                           )}
                         </button>
                       );
