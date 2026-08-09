@@ -3,6 +3,14 @@ import { readdir, stat, open, readFile } from "fs/promises";
 import { join } from "path";
 import { getOpenClawHome } from "@/lib/paths";
 import { fetchGatewaySessions } from "@/lib/gateway-sessions";
+import { gatewayCall } from "@/lib/openclaw";
+
+// OpenClaw v2026.3.23+ writes tslog JSON to /tmp/openclaw/openclaw-YYYY-MM-DD.log.
+const TMP_LOG_CANDIDATES = [
+  "/tmp/openclaw",
+  "/private/tmp/openclaw",
+  join(process.env.TMPDIR || "/tmp", "openclaw"),
+];
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +75,47 @@ async function tailLines(path: string, n: number): Promise<string[]> {
 
 // ── Aggregation helpers ──────────────────────────────────────────────────────
 
+function cronEntryToEvent(entry: CronRunEntry): ActivityEvent | null {
+  // Require a valid numeric timestamp and a jobId to proceed.
+  if (!entry.ts || typeof entry.ts !== "number" || !entry.jobId) {
+    return null;
+  }
+
+  const isError =
+    entry.status === "error" ||
+    entry.status === "failed" ||
+    Boolean(entry.error);
+
+  return {
+    id: `cron-${entry.jobId}-${entry.ts}`,
+    type: "cron",
+    timestamp: entry.ts,
+    title: `Cron: ${entry.jobId} — ${entry.action}`,
+    detail: entry.error || entry.summary || undefined,
+    status: isError ? "error" : "ok",
+    source: entry.jobId,
+  };
+}
+
 async function aggregateCronEvents(): Promise<ActivityEvent[]> {
+  // Primary: the gateway's cron.runs RPC (cron history moved into the gateway's
+  // SQLite store in OpenClaw 6.x — the ~/.openclaw/cron/runs/*.jsonl files are
+  // no longer written).
+  try {
+    const data = await gatewayCall<{ entries?: CronRunEntry[] }>(
+      "cron.runs",
+      { limit: 50 },
+      10000,
+    );
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    return entries
+      .map(cronEntryToEvent)
+      .filter((e): e is ActivityEvent => e !== null);
+  } catch {
+    // Gateway unreachable — fall through to the legacy file layout below so
+    // pre-6.x installs still get their history.
+  }
+
   const home = getOpenClawHome();
   const runsDir = join(home, "cron", "runs");
   const events: ActivityEvent[] = [];
@@ -83,29 +131,8 @@ async function aggregateCronEvents(): Promise<ActivityEvent[]> {
     for (const lines of tails) {
       for (const line of lines) {
         try {
-          const entry = JSON.parse(line) as CronRunEntry;
-
-          // Require a valid numeric timestamp and a jobId to proceed.
-          if (!entry.ts || typeof entry.ts !== "number" || !entry.jobId) {
-            continue;
-          }
-
-          const isError =
-            entry.status === "error" ||
-            entry.status === "failed" ||
-            Boolean(entry.error);
-
-          const detail = entry.error || entry.summary || undefined;
-
-          events.push({
-            id: `cron-${entry.jobId}-${entry.ts}`,
-            type: "cron",
-            timestamp: entry.ts,
-            title: `Cron: ${entry.jobId} — ${entry.action}`,
-            detail,
-            status: isError ? "error" : "ok",
-            source: entry.jobId,
-          });
+          const event = cronEntryToEvent(JSON.parse(line) as CronRunEntry);
+          if (event) events.push(event);
         } catch {
           // Skip malformed JSONL lines.
         }
@@ -118,50 +145,103 @@ async function aggregateCronEvents(): Promise<ActivityEvent[]> {
   return events;
 }
 
+type TslogLine = {
+  message?: string;
+  hostname?: string;
+  time?: string;
+  _meta?: {
+    logLevelName?: string;
+    date?: string;
+    name?: string;
+    parentNames?: string[];
+  };
+};
+
+async function findTslogFiles(): Promise<string[]> {
+  for (const tmpDir of TMP_LOG_CANDIDATES) {
+    try {
+      const entries = await readdir(tmpDir);
+      const logFiles = entries
+        .filter((f) => f.startsWith("openclaw-") && f.endsWith(".log"))
+        .sort()
+        .slice(-2) // Last 2 days
+        .map((f) => join(tmpDir, f));
+      if (logFiles.length > 0) return logFiles;
+    } catch {
+      // This candidate dir doesn't exist — try the next one
+    }
+  }
+  return [];
+}
+
 async function aggregateLogEvents(): Promise<ActivityEvent[]> {
+  const events: ActivityEvent[] = [];
+
+  // Primary: tslog JSON files (OpenClaw v2026.3.23+). One JSON object per line.
+  const tslogFiles = await findTslogFiles();
+  for (const path of tslogFiles) {
+    const lines = await tailLines(path, 200);
+    for (const line of lines) {
+      let parsed: TslogLine;
+      try {
+        parsed = JSON.parse(line) as TslogLine;
+      } catch {
+        // Not JSON — a wrapped continuation or corrupt tail chunk. Dropping it
+        // is correct: inventing a timestamp would sort noise to the top of the
+        // feed as if it just happened.
+        continue;
+      }
+
+      const level = parsed._meta?.logLevelName?.toUpperCase();
+      if (level !== "WARN" && level !== "ERROR" && level !== "FATAL") continue;
+
+      const rawTimestamp = parsed.time || parsed._meta?.date;
+      const ts = rawTimestamp ? new Date(rawTimestamp).getTime() : NaN;
+      if (!Number.isFinite(ts) || ts <= 0) continue;
+
+      const source =
+        parsed._meta?.parentNames?.join(".") || parsed._meta?.name || "gateway";
+      const message = (parsed.message || "").trim();
+      if (!message) continue;
+
+      events.push({
+        id: `log-${source}-${ts}-${events.length}`,
+        type: "log",
+        timestamp: ts,
+        title: `${source}: ${message}`,
+        status: level === "WARN" ? "warning" : "error",
+        source,
+      });
+    }
+  }
+  if (events.length > 0 || tslogFiles.length > 0) return events;
+
+  // Legacy fallback: pre-4.25 plain-text gateway.log (TIMESTAMP [SOURCE] MSG).
   const home = getOpenClawHome();
   const logPath = join(home, "logs", "gateway.log");
   const lines = await tailLines(logPath, 50);
-  const events: ActivityEvent[] = [];
-
-  // Only surface warn / error lines.
   const errorPattern = /\[warn\]|\[error\]|error/i;
 
   for (const line of lines) {
     if (!errorPattern.test(line)) continue;
 
-    // Parse: TIMESTAMP [SOURCE] MESSAGE
-    // Example: 2026-03-03T12:00:00.000Z [gateway] error: something went wrong
     const match = line.match(/^(\S+)\s+\[([^\]]+)\]\s+(.*)/);
+    // Lines that don't match the known format are dropped — no synthetic
+    // timestamps.
+    if (!match) continue;
 
-    let rawTimestamp: string;
-    let source: string;
-    let message: string;
-
-    if (match) {
-      rawTimestamp = match[1];
-      source = match[2];
-      message = match[3];
-    } else {
-      // Unrecognized format — surface the whole line under an unknown source.
-      rawTimestamp = new Date().toISOString();
-      source = "unknown";
-      message = line;
-    }
-
-    const ts = new Date(rawTimestamp).getTime();
-    const timestamp = Number.isFinite(ts) && ts > 0 ? ts : Date.now();
+    const ts = new Date(match[1]).getTime();
+    if (!Number.isFinite(ts) || ts <= 0) continue;
 
     const isWarning = /\[warn\]/i.test(line);
-    const status: ActivityEventStatus = isWarning ? "warning" : "error";
 
     events.push({
-      id: `log-${source}-${timestamp}-${events.length}`,
+      id: `log-${match[2]}-${ts}-${events.length}`,
       type: "log",
-      timestamp,
-      title: `${source}: ${message}`,
-      status,
-      source,
+      timestamp: ts,
+      title: `${match[2]}: ${match[3]}`,
+      status: isWarning ? "warning" : "error",
+      source: match[2],
     });
   }
 
