@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from "react";
+import type { CSSProperties } from "react";
 import {
   Plus,
   ChevronLeft,
@@ -388,9 +389,17 @@ export function TasksView() {
         </p>
       </div>
 
-      {/* Kanban columns — horizontal scroll; columns fixed width; card content wraps vertically */}
-      <div className="flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-hidden px-4 md:px-6 pb-6">
-        <div className="flex flex-col md:flex-row md:flex-nowrap gap-4 md:gap-6 pb-2 md:pb-0 w-max md:w-max">
+      {/*
+        Responsive Kanban:
+        - phones stack full-width columns and scroll vertically;
+        - mid-size screens keep usable column widths with horizontal scroll;
+        - wide screens fit every column into the available board width.
+      */}
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-6 md:overflow-x-auto md:overflow-y-hidden md:px-6">
+        <div
+          className="kanban-board-grid items-start gap-4 pb-2"
+          style={{ "--kanban-column-count": columns.length } as CSSProperties}
+        >
           {columns.map((col) => {
           const colTasks = tasks.filter((t) => t.column === col.id);
           const isDragTarget = dragOverColumn === col.id && draggingTaskId !== null;
@@ -398,7 +407,7 @@ export function TasksView() {
             <div
               key={col.id}
               className={cn(
-                "flex w-[280px] md:w-80 flex-shrink-0 flex-col min-w-0 overflow-hidden rounded-xl border border-foreground/5 bg-muted/30 py-3 px-3 transition-all",
+                "flex w-full min-w-0 flex-col overflow-hidden rounded-xl border border-foreground/5 bg-muted/30 px-3 py-3 transition-all",
                 isDragTarget && "bg-muted-foreground/10 border-border-strong ring-1 ring-inset ring-border-strong"
               )}
               onDragOver={(e) => {

@@ -47,8 +47,6 @@ type AccountsResponse = {
     configEnvKeys: number;
     processEnvKeys: number;
     configSecrets: number;
-    discoveredCredentials: number;
-    discoveredCredentialServices: number;
   };
   agents: Array<{
     id: string;
@@ -136,22 +134,6 @@ type AccountsResponse = {
         value: string | null;
         redacted: boolean;
       }>;
-    }>;
-  };
-  discoveredCredentials: {
-    summary: {
-      total: number;
-      services: number;
-      highConfidence: number;
-    };
-    entries: Array<{
-      sourcePath: string;
-      section: string | null;
-      service: string | null;
-      key: string;
-      value: string;
-      redacted: boolean;
-      confidence: "high" | "medium";
     }>;
   };
   configSecrets: Array<{
@@ -915,12 +897,6 @@ export function AccountsKeysView() {
                   <p className="text-xs text-muted-foreground">Process Env Credentials</p>
                   <p className="mt-1 text-xs font-semibold">{data.summary.processEnvKeys}</p>
                 </div>
-                <div className="rounded-md border border-border/70 bg-muted/30 p-3">
-                  <p className="text-xs text-muted-foreground">Discovered External Credentials</p>
-                  <p className="mt-1 text-xs font-semibold">
-                    {data.summary.discoveredCredentials} ({data.summary.discoveredCredentialServices} services)
-                  </p>
-                </div>
                 <div className="rounded-md border border-border/70 bg-muted/30 p-3 sm:col-span-2">
                   <p className="text-xs text-muted-foreground">Discovered Config Secrets</p>
                   <p className="mt-1 text-xs font-semibold">{data.summary.configSecrets}</p>
@@ -979,46 +955,7 @@ export function AccountsKeysView() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-border/70 bg-card p-4">
-              <h2 className="text-xs font-semibold text-foreground">Discovered Credential Sources</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Generic detection from accessible files/notes/state (not provider hardcoded).
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                entries={data.discoveredCredentials.summary.total} · services={data.discoveredCredentials.summary.services} · high-confidence={data.discoveredCredentials.summary.highConfidence}
-              </p>
-              <div className="mt-3 space-y-2">
-                {data.discoveredCredentials.entries.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No additional credential entries discovered.</p>
-                ) : null}
-                {data.discoveredCredentials.entries.map((entry, idx) => (
-                  <div
-                    key={`${entry.sourcePath}:${entry.key}:${entry.service || "unknown"}:${idx}`}
-                    className="rounded-md border border-border/60 bg-muted/20 p-2 text-xs"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-medium text-foreground">
-                        {entry.service || "unknown service"} · {entry.key}
-                      </p>
-                      <span className={entry.confidence === "high" ? "text-success-fg" : "text-warning-fg"}>
-                        {entry.confidence}
-                      </span>
-                    </div>
-                    {entry.section ? (
-                      <p className="mt-1 text-muted-foreground">
-                        section: <code>{entry.section}</code>
-                      </p>
-                    ) : null}
-                    <p className="mt-1 break-all text-muted-foreground">
-                      source: <code>{entry.sourcePath}</code>
-                    </p>
-                    <p className="mt-1 break-all text-muted-foreground">
-                      value: <code>{renderSecret(entry.value, revealSecrets, entry.redacted)}</code>
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
+
 
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-xl border border-border/70 bg-card p-4">

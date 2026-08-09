@@ -295,182 +295,8 @@ function extractLineKeyValue(line: string): { label: string; value: string } | n
   return null;
 }
 
-function parseCredentialText(
-  text: string,
-  sourcePath: string,
-  out: DiscoveredCredentialRow[],
-  dedupe: Set<string>
-) {
-  const lines = text.split(/\r?\n/);
-  let currentSection: string | null = null;
 
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const heading = line.match(/^\s{0,3}#{1,6}\s+(.+)\s*$/);
-    if (heading?.[1]) {
-      currentSection = heading[1].trim();
-      continue;
-    }
 
-    const kv = extractLineKeyValue(line);
-    if (kv) {
-      const label = kv.label;
-      const value = kv.value;
-      const key = normalizeCredentialKey(label);
-      const labelIsCredential =
-        (looksCredentialKey(label) || looksCredentialKey(key)) &&
-        key !== "ACCESS" &&
-        key !== "REFRESH";
-      if (labelIsCredential || looksSecretValue(value)) {
-        pushDiscoveredCredential(out, dedupe, {
-          sourcePath,
-          section: currentSection,
-          service: inferServiceName({ section: currentSection, key, line, sourcePath }),
-          key,
-          value,
-          redacted: false,
-          confidence: labelIsCredential ? "high" : "medium",
-        });
-      }
-    }
-
-    const envRe = /\b([A-Z][A-Z0-9_]{2,})\s*=\s*([^\s"'`]+)\b/g;
-    for (let m = envRe.exec(line); m; m = envRe.exec(line)) {
-      const key = m[1];
-      const value = cleanValue(m[2]);
-      if (!looksCredentialKey(key) && !looksSecretValue(value)) continue;
-      pushDiscoveredCredential(out, dedupe, {
-        sourcePath,
-        section: currentSection,
-        service: inferServiceName({ section: currentSection, key, line, sourcePath }),
-        key,
-        value,
-        redacted: false,
-        confidence: looksCredentialKey(key) ? "high" : "medium",
-      });
-    }
-
-    const headerRe = /\b([A-Za-z0-9-]{2,80}(?:token|key|secret|password)[A-Za-z0-9-]{0,80})\s*:\s*([^\s"'`|]+)\b/gi;
-    for (let m = headerRe.exec(line); m; m = headerRe.exec(line)) {
-      const key = normalizeCredentialKey(m[1]);
-      const value = cleanValue(m[2]);
-      if (!looksSecretValue(value)) continue;
-      pushDiscoveredCredential(out, dedupe, {
-        sourcePath,
-        section: currentSection,
-        service: inferServiceName({ section: currentSection, key, line, sourcePath }),
-        key,
-        value,
-        redacted: false,
-        confidence: "high",
-      });
-    }
-  }
-}
-
-async function collectDiscoveryFiles(configParsed: Record<string, unknown>): Promise<string[]> {
-  const workspaceRoots = new Set<string>();
-  workspaceRoots.add(getDefaultWorkspaceSync());
-  workspaceRoots.add(join(OPENCLAW_HOME, "workspace"));
-  const cfgAgents = asRecord(configParsed.agents);
-  const cfgDefaults = asRecord(cfgAgents.defaults);
-  const cfgDefaultWorkspace = toStringValue(cfgDefaults.workspace).trim();
-  if (cfgDefaultWorkspace) workspaceRoots.add(cfgDefaultWorkspace);
-  for (const row of asArray(cfgAgents.list)) {
-    const ws = toStringValue(asRecord(row).workspace).trim();
-    if (ws) workspaceRoots.add(ws);
-  }
-
-  const out = new Set<string>();
-  const topCandidates = [join(OPENCLAW_HOME, "exec-approvals.json")];
-  for (const root of workspaceRoots) {
-    topCandidates.push(join(root, "TOOLS.md"));
-    topCandidates.push(join(root, "MEMORY.md"));
-    topCandidates.push(join(root, "AGENTS.md"));
-    topCandidates.push(join(root, "USER.md"));
-  }
-  for (const p of topCandidates) {
-    if (await exists(p)) out.add(p);
-  }
-
-  for (const workspaceDir of workspaceRoots) {
-    try {
-      const entries = await readdir(workspaceDir, { withFileTypes: true, encoding: "utf8" });
-      for (const entry of entries) {
-        if (!entry.isFile()) continue;
-        const name = entry.name;
-        if (
-          name.startsWith(".env") ||
-          /(tool|cred|secret|account|key|auth|env|memory|notes?)/i.test(name)
-        ) {
-          const full = join(workspaceDir, name);
-          if (await exists(full)) out.add(full);
-        }
-      }
-    } catch {
-      // best effort
-    }
-
-    try {
-      const memoryDir = join(workspaceDir, "memory");
-      const entries = await readdir(memoryDir, { withFileTypes: true, encoding: "utf8" });
-      const mdFiles = entries
-        .filter((e) => e.isFile() && /\.md$/i.test(e.name))
-        .map((e) => join(memoryDir, e.name))
-        .slice(-5);
-      for (const p of mdFiles) out.add(p);
-    } catch {
-      // best effort
-    }
-  }
-
-  return [...out];
-}
-
-async function getDiscoveredCredentials(
-  configParsed: Record<string, unknown>,
-  warnings: string[]
-): Promise<{
-  rows: DiscoveredCredentialRow[];
-  summary: {
-    total: number;
-    services: number;
-    highConfidence: number;
-  };
-}> {
-  const files = await collectDiscoveryFiles(configParsed);
-  const rows: DiscoveredCredentialRow[] = [];
-  const dedupe = new Set<string>();
-
-  for (const path of files) {
-    try {
-      const raw = await readFile(path, "utf-8");
-      parseCredentialText(raw, path, rows, dedupe);
-    } catch (err) {
-      warnings.push(`credential discovery failed (${path}): ${String(err)}`);
-    }
-  }
-
-  rows.sort((a, b) => {
-    const svcA = a.service || "";
-    const svcB = b.service || "";
-    if (svcA !== svcB) return svcA.localeCompare(svcB);
-    if (a.key !== b.key) return a.key.localeCompare(b.key);
-    return a.sourcePath.localeCompare(b.sourcePath);
-  });
-
-  const uniqueServices = new Set(rows.map((r) => r.service || "unknown"));
-  const highConfidence = rows.filter((r) => r.confidence === "high").length;
-
-  return {
-    rows,
-    summary: {
-      total: rows.length,
-      services: uniqueServices.size,
-      highConfidence,
-    },
-  };
-}
 
 function extractFrontmatter(markdown: string): string | null {
   const match = markdown.match(SKILL_FRONTMATTER_RE);
@@ -991,7 +817,6 @@ export async function GET() {
 
   const configEnv = asRecord(parsedConfig.env);
   const skillCredentials = await getSkillCredentialMatrix(configEnv, warnings);
-  const discoveredCredentials = await getDiscoveredCredentials(parsedConfig, warnings);
   const configEnvCredentials = Object.entries(configEnv)
     .filter(([k, v]) => looksCredentialEnvKey(k) && typeof v === "string")
     .map(([k, v]) => ({
@@ -1050,8 +875,6 @@ export async function GET() {
       skillCredentialServices: skillCredentials.summary.skills,
       skillCredentialReady: skillCredentials.summary.ready,
       skillCredentialEnvKeys: skillCredentials.summary.envKeys,
-      discoveredCredentials: discoveredCredentials.summary.total,
-      discoveredCredentialServices: discoveredCredentials.summary.services,
     },
     agents,
     modelAuthByAgent,
@@ -1090,10 +913,6 @@ export async function GET() {
     skillCredentials: {
       skills: skillCredentials.rows,
       summary: skillCredentials.summary,
-    },
-    discoveredCredentials: {
-      entries: discoveredCredentials.rows,
-      summary: discoveredCredentials.summary,
     },
     configSecrets,
     warnings,

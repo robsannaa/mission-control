@@ -759,6 +759,31 @@ body {
   .stagger-enter > *:nth-child(n+9) { animation-delay: 400ms; }
 }
 
+/* ── Tasks board responsive layout ────────────────
+   Phone: one full-width column per row.
+   Tablet/small desktop: fixed usable columns with horizontal scrolling.
+   Wide desktop: all columns share the available board width. */
+.kanban-board-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  .kanban-board-grid {
+    width: max-content;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-auto-columns: minmax(280px, 320px);
+  }
+}
+
+@media (min-width: 1200px) {
+  .kanban-board-grid {
+    grid-template-columns: repeat(var(--kanban-column-count), minmax(0, 1fr));
+  }
+}
+
 /* ── Keyframes ─────────────────────────────────── */
 @keyframes enterFade {
   from { opacity: 0; }
