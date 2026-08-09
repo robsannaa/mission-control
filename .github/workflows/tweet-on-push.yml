@@ -16,107 +16,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get diff and commit messages since last push
-        id: diff
-        run: |
-          # Get the commits included in this push
-          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-            # First push / new branch, just use the latest commit
-            RANGE="${{ github.sha }}~1..${{ github.sha }}"
-          else
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-          echo "## Commit messages" > /tmp/context.md
-          git log "$RANGE" --pretty=format:"### %h%n%B%n" >> /tmp/context.md || true
-
-          echo "" >> /tmp/context.md
-          echo "## Diff stat" >> /tmp/context.md
-          git diff --stat "$RANGE" >> /tmp/context.md || true
-
-          # Cap context size to keep the prompt reasonable
-          head -c 12000 /tmp/context.md > /tmp/context_capped.md
-          mv /tmp/context_capped.md /tmp/context.md
-
-      - name: Draft tweets via OpenRouter
-        id: draft
+      - name: Draft tweets and send to Telegram
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: |
-          CONTEXT=$(cat /tmp/context.md)
-
-          SYSTEM_PROMPT='You draft tweets for Rob (robsannaa), the solo builder of OpenClaw Mission Control (a self-hosted dashboard for managing OpenClaw AI agent instances). You will be given commit messages and a diff summary for a batch of changes just pushed to the main branch. Draft 3 to 5 tweet options promoting this work.
-
-VOICE RULES (mandatory, follow exactly):
-- Benefit first. Lead with what it means for the reader or user, not with "I fixed X" as the opening line. State the outcome, then the work behind it.
-- Sound human. Write like a person talking, not marketing copy. Casual, direct, no jargon-stacking.
-- No em dashes. Use periods, commas, or start a new sentence instead.
-- Not spammy. No hype words like "game-changer", "huge", "insane". No excessive emoji. No engagement-bait like "thoughts?" or "agree?".
-- Humble. Do not oversell. Acknowledge the work took effort without bragging.
-- Always positive. Even when describing a painful bug or a broken release, land on the fix and the forward motion, not the complaint.
-- Never giving up undertone. Still building, still improving, showing up. Small consistent progress, not one-off flexes.
-- Each tweet must be under 280 characters and postable as-is.
-
-If the diff is trivial (docs typo, dependency bump, CI tweak) with nothing genuinely tweet-worthy, say exactly: NOTHING_TWEET_WORTHY
-
-Output ONLY the tweet drafts, one per line, numbered 1 to N. No preamble, no explanation.'
-
-          RESPONSE=$(curl -s https://openrouter.ai/api/v1/chat/completions \
-            -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @- <<JSONEOF
-{
-  "model": "anthropic/claude-sonnet-4.5",
-  "messages": [
-    {"role": "system", "content": $(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<< "$SYSTEM_PROMPT")},
-    {"role": "user", "content": $(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<< "$CONTEXT")}
-  ]
-}
-JSONEOF
-          )
-
-          TWEETS=$(echo "$RESPONSE" | python3 -c "
-import json,sys
-try:
-    d = json.load(sys.stdin)
-    print(d['choices'][0]['message']['content'])
-except Exception as e:
-    print('ERROR: could not parse OpenRouter response:', e)
-    print(sys.stdin.read() if hasattr(sys.stdin, 'read') else '')
-")
-
-          echo "$TWEETS" > /tmp/tweets.txt
-          cat /tmp/tweets.txt
-
-      - name: Send drafts to Telegram
-        env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          TWEETS=$(cat /tmp/tweets.txt)
-
-          if echo "$TWEETS" | grep -q "NOTHING_TWEET_WORTHY"; then
-            echo "Nothing tweet-worthy in this push, skipping Telegram send."
-            exit 0
-          fi
-
-          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
-          HEADER="🐦 New Mission Control tweet drafts
-Pushed: ${COMMIT_URL}
-
-"
-          MESSAGE="${HEADER}${TWEETS}"
-
-          python3 -c "
-import json, urllib.request, os
-
-token = os.environ['TELEGRAM_BOT_TOKEN']
-chat_id = os.environ['TELEGRAM_CHAT_ID']
-text = '''$MESSAGE'''
-
-url = f'https://api.telegram.org/bot{token}/sendMessage'
-data = json.dumps({'chat_id': chat_id, 'text': text}).encode()
-req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-with urllib.request.urlopen(req) as resp:
-    print(resp.read().decode())
-"
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: python3 .github/scripts/draft-tweets.py
