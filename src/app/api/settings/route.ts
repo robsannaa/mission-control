@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runCliCaptureBoth, gatewayCall } from "@/lib/openclaw";
+import { runCliCaptureBoth, gatewayCall, CONFIG_WRITE_TIMEOUT_MS } from "@/lib/openclaw";
 import { gatewayConfigPatch } from "@/lib/gateway-config";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +21,16 @@ export async function GET() {
       configHash = (configData.hash as string) || "";
       const parsed = (configData.parsed || {}) as Record<string, unknown>;
 
-      // Look for timezone in settings.timezone or heartbeat activeHours
-      const settings = (parsed.settings || {}) as Record<string, unknown>;
-      timezone = (settings.timezone as string) || "";
+      // Timezone lives at `agents.defaults.envelopeTimezone`. Neither `settings`
+      // nor a root `heartbeat` is a valid config key — `settings` is not in the
+      // schema at all, and heartbeat is nested under `agents.defaults` — so the
+      // old lookups could never match anything a gateway would accept.
+      const agents = (parsed.agents || {}) as Record<string, unknown>;
+      const defaults = (agents.defaults || {}) as Record<string, unknown>;
+      timezone = (defaults.envelopeTimezone as string) || "";
 
       if (!timezone) {
-        const heartbeat = (parsed.heartbeat || {}) as Record<string, unknown>;
+        const heartbeat = (defaults.heartbeat || {}) as Record<string, unknown>;
         const activeHours = (heartbeat.activeHours || {}) as Record<string, unknown>;
         timezone = (activeHours.timezone as string) || "";
       }
@@ -93,7 +97,7 @@ export async function POST(request: NextRequest) {
           const hash = configData.hash as string;
 
           const patch = {
-            settings: { timezone: tz },
+            agents: { defaults: { envelopeTimezone: tz } },
           };
 
           await gatewayConfigPatch(
@@ -101,7 +105,7 @@ export async function POST(request: NextRequest) {
               raw: JSON.stringify(patch),
               baseHash: hash,
             },
-            10000,
+            CONFIG_WRITE_TIMEOUT_MS,
           );
           return NextResponse.json({ ok: true, action, timezone: tz });
         } catch (err) {
