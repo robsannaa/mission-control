@@ -354,6 +354,23 @@ let _gatewayToken: string | null = null;
  *
  * Priority: env var → openclaw.json gateway.auth.token → empty string.
  */
+/** Read a dot path out of openclaw.json synchronously, tolerating any failure. */
+function readConfigValueSync(path: string[]): unknown {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync } = require("fs") as typeof import("fs");
+    const raw = readFileSync(join(getOpenClawHome(), "openclaw.json"), "utf-8");
+    let node: unknown = JSON.parse(raw);
+    for (const key of path) {
+      if (!node || typeof node !== "object") return undefined;
+      node = (node as Record<string, unknown>)[key];
+    }
+    return node;
+  } catch {
+    return undefined;
+  }
+}
+
 export function getGatewayToken(): string {
   if (_gatewayToken !== null) return _gatewayToken;
 
@@ -363,21 +380,41 @@ export function getGatewayToken(): string {
     return _gatewayToken;
   }
 
-  // 2. Read from config (sync — token is needed synchronously by callers)
-  try {
-    const { readFileSync } = require("fs");
-    const configPath = join(getOpenClawHome(), "openclaw.json");
-    const raw = readFileSync(configPath, "utf-8");
-    const config = JSON.parse(raw);
-    const token = config?.gateway?.auth?.token;
-    if (token && typeof token === "string") {
-      _gatewayToken = token;
-      return _gatewayToken;
-    }
-  } catch {
-    // Config doesn't exist or is invalid — fall through
+  // 2. Read from config (sync — token is needed synchronously by callers).
+  // `gateway.token` is a legacy key the gateway no longer honors, so only
+  // `gateway.auth.token` is read here.
+  const token = readConfigValueSync(["gateway", "auth", "token"]);
+  _gatewayToken = typeof token === "string" && token ? token : "";
+  return _gatewayToken;
+}
+
+// ── Gateway auth password ───────────────────────
+
+let _gatewayPassword: string | null = null;
+
+/**
+ * Resolve the Gateway password used when `gateway.auth.mode` is `"password"`.
+ *
+ * Shared-secret auth is what lets a loopback backend client authenticate as a
+ * local operator, and installs that chose password mode have no token at all.
+ *
+ * Priority: env var → openclaw.json gateway.auth.password → empty string.
+ */
+export function getGatewayPassword(): string {
+  if (_gatewayPassword !== null) return _gatewayPassword;
+
+  if (process.env.OPENCLAW_GATEWAY_PASSWORD) {
+    _gatewayPassword = process.env.OPENCLAW_GATEWAY_PASSWORD;
+    return _gatewayPassword;
   }
 
-  _gatewayToken = "";
-  return _gatewayToken;
+  const password = readConfigValueSync(["gateway", "auth", "password"]);
+  _gatewayPassword = typeof password === "string" && password ? password : "";
+  return _gatewayPassword;
+}
+
+/** Resolve `gateway.auth.mode` ("none" | "token" | "password" | "trusted-proxy"). */
+export function getGatewayAuthMode(): string {
+  const mode = readConfigValueSync(["gateway", "auth", "mode"]);
+  return typeof mode === "string" && mode ? mode : "none";
 }
