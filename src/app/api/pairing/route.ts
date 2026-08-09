@@ -147,14 +147,86 @@ function dedupeDmRequests(requests: DmRequest[]): DmRequest[] {
   return out;
 }
 
-async function listDmRequestsFromCli(): Promise<DmRequest[]> {
-  const result = await runCliCaptureBoth(["pairing", "list", "--json"], 10000);
-  if (result.code !== 0) {
-    const detail = String(result.stderr || result.stdout || "").trim();
-    throw new Error(detail || `pairing list exited with code ${result.code}`);
+/**
+ * Channels that can hold pairing requests, with their account ids.
+ *
+ * `openclaw pairing list` requires a channel: called without one it exits with
+ * "Channel required. Use --channel <channel> ...", which every poll wrote to the
+ * gateway log as a stack trace. Ask the gateway which channels exist and query
+ * each one; multi-account channels are queried per account so the results stay
+ * account-aware.
+ */
+async function listPairingTargets(): Promise<Array<{ channel: string; account?: string }>> {
+  const status = await gatewayCall<{
+    channels?: Record<string, unknown>;
+    channelOrder?: unknown;
+    channelAccounts?: Record<string, unknown>;
+  }>("channels.status", {}, 8000);
+
+  const channels = new Set<string>();
+  for (const key of Object.keys(status?.channels || {})) {
+    if (key.trim()) channels.add(key.trim());
   }
-  const payload = parseJsonFromCliOutput<unknown>(result.stdout, "openclaw pairing list --json");
-  return dedupeDmRequests(normalizeDmRequests(payload));
+  for (const entry of asArray(status?.channelOrder)) {
+    if (typeof entry === "string" && entry.trim()) channels.add(entry.trim());
+  }
+
+  const targets: Array<{ channel: string; account?: string }> = [];
+  for (const channel of channels) {
+    const accounts = asArray(status?.channelAccounts?.[channel])
+      .map((account) => {
+        if (typeof account === "string") return account;
+        if (isRecord(account) && typeof account.id === "string") return account.id;
+        return "";
+      })
+      .filter((id) => id.trim().length > 0);
+    if (accounts.length > 1) {
+      for (const account of accounts) targets.push({ channel, account });
+    } else {
+      targets.push({ channel });
+    }
+  }
+  return targets;
+}
+
+async function listDmRequestsFromCli(): Promise<DmRequest[]> {
+  const targets = await listPairingTargets();
+  // No channels configured means there is nothing to pair and no valid value
+  // for --channel; the filesystem scan still covers leftover pairing files.
+  if (targets.length === 0) return [];
+
+  const collected: DmRequest[] = [];
+  const failures: string[] = [];
+
+  await Promise.all(
+    targets.map(async ({ channel, account }) => {
+      const args = ["pairing", "list", "--channel", channel, "--json"];
+      if (account) args.push("--account", account);
+      const result = await runCliCaptureBoth(args, 10000);
+      if (result.code !== 0) {
+        failures.push(
+          `${channel}${account ? `/${account}` : ""}: ${String(result.stderr || result.stdout || "").trim() || `exit ${result.code}`}`,
+        );
+        return;
+      }
+      try {
+        const payload = parseJsonFromCliOutput<unknown>(
+          result.stdout,
+          `openclaw pairing list --channel ${channel} --json`,
+        );
+        collected.push(...normalizeDmRequests(payload, channel));
+      } catch (err) {
+        failures.push(`${channel}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+  );
+
+  // Only fail outright when no channel answered, so one broken channel does not
+  // hide pairing requests from the others.
+  if (collected.length === 0 && failures.length === targets.length) {
+    throw new Error(`pairing list failed for all channels — ${failures.join("; ")}`);
+  }
+  return dedupeDmRequests(collected);
 }
 
 /* ── GET: list all pending requests ──────────────── */

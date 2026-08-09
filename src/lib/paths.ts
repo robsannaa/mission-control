@@ -70,12 +70,72 @@ export async function readConfigFile(): Promise<Record<string, unknown>> {
 
 let _workspace: string | null = null;
 
+let _defaultAgent: { id: string; workspace: string | null } | null = null;
+
+/**
+ * Ask the gateway which agent is the default, and where its workspace is.
+ *
+ * This is the only authoritative source for either. OpenClaw gives each agent
+ * its own directory named after the agent id — a stock install's default agent
+ * `dev` lives in `$OPENCLAW_HOME/workspace-dev`, not
+ * `$OPENCLAW_HOME/workspace` — and the id is not derivable from the path.
+ *
+ * There is no safe default for the id either. `agents.list` reports `mainKey:
+ * "main"` alongside a sole agent whose id is `dev`, and the two behave
+ * differently: the RPC rejects `agentId: "main"` as unknown, while the CLI
+ * accepts `--agent main` and silently resolves it to a workspace *inside* the
+ * real one (`workspace-dev/main`). So assuming "main" does not fail loudly, it
+ * targets the wrong place.
+ *
+ * Imported lazily because `openclaw.ts` pulls in the transports, which import
+ * this module; a top-level import would be a cycle.
+ */
+export async function getDefaultAgent(): Promise<{
+  id: string;
+  workspace: string | null;
+} | null> {
+  if (_defaultAgent) return _defaultAgent;
+  try {
+    const { gatewayCall } = await import("./openclaw");
+    const payload = await gatewayCall<{
+      defaultId?: string;
+      agents?: { id?: string; workspace?: string; isDefault?: boolean }[];
+    }>("agents.list", {}, 8000);
+
+    const agents = Array.isArray(payload?.agents) ? payload.agents : [];
+    const preferred =
+      agents.find((agent) => agent?.id && agent.id === payload?.defaultId) ??
+      agents.find((agent) => agent?.isDefault) ??
+      agents[0];
+    if (!preferred?.id) return null;
+
+    const workspace =
+      typeof preferred.workspace === "string" && preferred.workspace.trim()
+        ? preferred.workspace
+        : null;
+    _defaultAgent = { id: preferred.id, workspace };
+    return _defaultAgent;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Id of the default agent, or null when the gateway cannot be reached. Callers
+ * should omit the agent argument rather than substituting a guess — OpenClaw
+ * resolves the default itself, and a wrong id is worse than none.
+ */
+export async function getDefaultAgentId(): Promise<string | null> {
+  return (await getDefaultAgent())?.id ?? null;
+}
+
 /**
  * Resolve the default agent workspace path.
  * Priority:
  *   1. OPENCLAW_WORKSPACE env var
- *   2. agents.defaults.workspace from openclaw.json
- *   3. $OPENCLAW_HOME/workspace
+ *   2. The default agent's workspace, per the gateway
+ *   3. agents.defaults.workspace from openclaw.json
+ *   4. $OPENCLAW_HOME/workspace
  */
 export async function getDefaultWorkspace(): Promise<string> {
   if (_workspace) return _workspace;
@@ -86,7 +146,14 @@ export async function getDefaultWorkspace(): Promise<string> {
     return _workspace;
   }
 
-  // 2. Read from config
+  // 2. The running gateway
+  const fromGateway = (await getDefaultAgent())?.workspace;
+  if (fromGateway) {
+    _workspace = fromGateway;
+    return _workspace;
+  }
+
+  // 3. Read from config
   try {
     const { readFile } = await import("fs/promises");
     const configPath = join(getOpenClawHome(), "openclaw.json");
@@ -101,9 +168,9 @@ export async function getDefaultWorkspace(): Promise<string> {
     // Config doesn't exist or is invalid — fall through
   }
 
-  // 3. Conventional default
-  _workspace = join(getOpenClawHome(), "workspace");
-  return _workspace;
+  // 4. Conventional default. Note this misses the per-agent suffix, so it is a
+  // guess of last resort rather than the expected outcome.
+  return join(getOpenClawHome(), "workspace");
 }
 
 /** Synchronous accessor — uses cached value or falls back to convention. */
@@ -354,6 +421,23 @@ let _gatewayToken: string | null = null;
  *
  * Priority: env var → openclaw.json gateway.auth.token → empty string.
  */
+/** Read a dot path out of openclaw.json synchronously, tolerating any failure. */
+function readConfigValueSync(path: string[]): unknown {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync } = require("fs") as typeof import("fs");
+    const raw = readFileSync(join(getOpenClawHome(), "openclaw.json"), "utf-8");
+    let node: unknown = JSON.parse(raw);
+    for (const key of path) {
+      if (!node || typeof node !== "object") return undefined;
+      node = (node as Record<string, unknown>)[key];
+    }
+    return node;
+  } catch {
+    return undefined;
+  }
+}
+
 export function getGatewayToken(): string {
   if (_gatewayToken !== null) return _gatewayToken;
 
@@ -363,21 +447,41 @@ export function getGatewayToken(): string {
     return _gatewayToken;
   }
 
-  // 2. Read from config (sync — token is needed synchronously by callers)
-  try {
-    const { readFileSync } = require("fs");
-    const configPath = join(getOpenClawHome(), "openclaw.json");
-    const raw = readFileSync(configPath, "utf-8");
-    const config = JSON.parse(raw);
-    const token = config?.gateway?.auth?.token;
-    if (token && typeof token === "string") {
-      _gatewayToken = token;
-      return _gatewayToken;
-    }
-  } catch {
-    // Config doesn't exist or is invalid — fall through
+  // 2. Read from config (sync — token is needed synchronously by callers).
+  // `gateway.token` is a legacy key the gateway no longer honors, so only
+  // `gateway.auth.token` is read here.
+  const token = readConfigValueSync(["gateway", "auth", "token"]);
+  _gatewayToken = typeof token === "string" && token ? token : "";
+  return _gatewayToken;
+}
+
+// ── Gateway auth password ───────────────────────
+
+let _gatewayPassword: string | null = null;
+
+/**
+ * Resolve the Gateway password used when `gateway.auth.mode` is `"password"`.
+ *
+ * Shared-secret auth is what lets a loopback backend client authenticate as a
+ * local operator, and installs that chose password mode have no token at all.
+ *
+ * Priority: env var → openclaw.json gateway.auth.password → empty string.
+ */
+export function getGatewayPassword(): string {
+  if (_gatewayPassword !== null) return _gatewayPassword;
+
+  if (process.env.OPENCLAW_GATEWAY_PASSWORD) {
+    _gatewayPassword = process.env.OPENCLAW_GATEWAY_PASSWORD;
+    return _gatewayPassword;
   }
 
-  _gatewayToken = "";
-  return _gatewayToken;
+  const password = readConfigValueSync(["gateway", "auth", "password"]);
+  _gatewayPassword = typeof password === "string" && password ? password : "";
+  return _gatewayPassword;
+}
+
+/** Resolve `gateway.auth.mode` ("none" | "token" | "password" | "trusted-proxy"). */
+export function getGatewayAuthMode(): string {
+  const mode = readConfigValueSync(["gateway", "auth", "mode"]);
+  return typeof mode === "string" && mode ? mode : "none";
 }

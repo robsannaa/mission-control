@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getGatewayUrl } from "@/lib/paths";
+import { probeGatewayLiveness } from "@/lib/gateway-liveness";
 import { resolveTransport } from "@/lib/openclaw";
 
 export const dynamic = "force-dynamic";
@@ -51,8 +52,7 @@ export async function GET() {
     let gateway: "online" | "offline" | "degraded" = "offline";
 
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-      gateway = res.ok ? "online" : "degraded";
+      gateway = (await probeGatewayLiveness(url)) ? "online" : "degraded";
     } catch {
       // unreachable — gateway stays "offline"
     }

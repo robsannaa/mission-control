@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runCliJson } from "@/lib/openclaw";
 import { fetchConfig, patchConfig } from "@/lib/gateway-config";
+import { gatewayCall } from "@/lib/openclaw";
 import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 import { getDefaultWorkspaceSync, getSystemSkillsDir } from "@/lib/paths";
+import {
+  deriveSkillsCheck,
+  findSkillRow,
+  loadSkillsInventory,
+  type SkillsStatus,
+  type SkillStatusRow,
+} from "@/lib/skills-status";
 
 export const dynamic = "force-dynamic";
 
@@ -34,53 +41,7 @@ type SkillsList = {
   skills: Skill[];
 };
 
-type SkillsCheck = {
-  summary: {
-    total: number;
-    eligible: number;
-    disabled: number;
-    blocked: number;
-    missingRequirements: number;
-  };
-  eligible: string[];
-  disabled: string[];
-  blocked: string[];
-  missingRequirements: { name: string; missing: string[] }[];
-};
-
-type SkillDetail = {
-  name: string;
-  description: string;
-  source: string;
-  bundled: boolean;
-  filePath: string;
-  baseDir: string;
-  skillKey: string;
-  emoji?: string;
-  homepage?: string;
-  always: boolean;
-  disabled: boolean;
-  blockedByAllowlist: boolean;
-  eligible: boolean;
-  requirements: {
-    bins: string[];
-    anyBins: string[];
-    env: string[];
-    config: string[];
-    os: string[];
-  };
-  missing: {
-    bins: string[];
-    anyBins: string[];
-    env: string[];
-    config: string[];
-    os: string[];
-  };
-  configChecks: unknown[];
-  install: { id: string; kind: string; label: string; bins?: string[] }[];
-};
-
-/* ── Filesystem fallback for when CLI returns empty output ────── */
+/* ── Filesystem fallback for when neither gateway nor CLI answers ────── */
 
 /**
  * Parse SKILL.md frontmatter to extract metadata.
@@ -174,50 +135,38 @@ async function readSkillsFromFilesystem(): Promise<SkillsList> {
 
 /* ── GET ──────────────────────────────────────────── */
 
+/** Project one inventory row onto the list shape the UI consumes. */
+function toListSkill(row: SkillStatusRow): Skill {
+  return {
+    name: row.name,
+    description: row.description,
+    emoji: row.emoji || "",
+    eligible: row.eligible,
+    disabled: row.disabled,
+    blockedByAllowlist: row.blockedByAllowlist,
+    source: row.source,
+    bundled: row.bundled,
+    homepage: row.homepage,
+    missing: row.missing ?? { bins: [], anyBins: [], env: [], config: [], os: [] },
+  };
+}
+
+function toListPayload(status: SkillsStatus): SkillsList {
+  return {
+    workspaceDir: status.workspaceDir,
+    managedSkillsDir: status.managedSkillsDir,
+    skills: status.skills.map(toListSkill),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action") || "list";
+  // Must be a real id from agents.list; the gateway rejects an unknown one
+  // rather than falling back to the default agent.
+  const agentId = searchParams.get("agent")?.trim() || undefined;
 
   try {
-    if (action === "check") {
-      const data = await runCliJson<SkillsCheck>(["skills", "check"]);
-      return NextResponse.json(data);
-    }
-
-    if (action === "info") {
-      const name = searchParams.get("name");
-      if (!name)
-        return NextResponse.json({ error: "name required" }, { status: 400 });
-
-      const data = await runCliJson<SkillDetail>(["skills", "info", name]);
-
-      // Try to read the SKILL.md content for display
-      let skillMd: string | null = null;
-      if (data.filePath) {
-        try {
-          const raw = await readFile(data.filePath, "utf-8");
-          // Truncate very long files
-          skillMd = raw.length > 10000 ? raw.slice(0, 10000) + "\n\n...(truncated)" : raw;
-        } catch {
-          // file may not be readable
-        }
-      }
-
-      // Check the config for skill-specific settings
-      let skillConfig: Record<string, unknown> | null = null;
-      try {
-        const configData = await fetchConfig(8000);
-        const tools = (configData.resolved.tools || {}) as Record<string, unknown>;
-        if (tools[data.skillKey || data.name]) {
-          skillConfig = tools[data.skillKey || data.name] as Record<string, unknown>;
-        }
-      } catch {
-        // config not available
-      }
-
-      return NextResponse.json({ ...data, skillMd, skillConfig });
-    }
-
     if (action === "config") {
       // Get the full config to see skills/tools section
       try {
@@ -245,38 +194,95 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Default: list all skills
-    const data = await runCliJson<SkillsList>(["skills", "list"]);
-    return NextResponse.json(data);
+    if (action === "info" && !searchParams.get("name")) {
+      return NextResponse.json({ error: "name required" }, { status: 400 });
+    }
+
+    // One inventory snapshot answers list, check and info alike: every row
+    // carries the full `skills info` field set, so opening a skill costs no
+    // extra call.
+    const { status, warning } = await loadSkillsInventory(agentId);
+
+    if (action === "check") {
+      return NextResponse.json({ ...deriveSkillsCheck(status), warning });
+    }
+
+    if (action === "info") {
+      const name = searchParams.get("name") as string;
+      const row = findSkillRow(status, name);
+      if (!row) {
+        return NextResponse.json(
+          { error: `Unknown skill: ${name}` },
+          { status: 404 },
+        );
+      }
+
+      // Read SKILL.md for display. The list-only CLI fallback has no filePath,
+      // so this is best-effort.
+      let skillMd: string | null = null;
+      if (row.filePath) {
+        try {
+          const raw = await readFile(row.filePath, "utf-8");
+          skillMd = raw.length > 10000 ? raw.slice(0, 10000) + "\n\n...(truncated)" : raw;
+        } catch {
+          // File may live outside this host, or be unreadable.
+        }
+      }
+
+      let skillConfig: Record<string, unknown> | null = null;
+      try {
+        const configData = await fetchConfig(8000);
+        const tools = (configData.resolved.tools || {}) as Record<string, unknown>;
+        const key = row.skillKey || row.name;
+        if (tools[key]) skillConfig = tools[key] as Record<string, unknown>;
+      } catch {
+        // Config is optional context for the detail view.
+      }
+
+      return NextResponse.json({ ...row, skillMd, skillConfig, warning });
+    }
+
+    return NextResponse.json({ ...toListPayload(status), warning });
   } catch (err) {
     console.error("Skills API error:", err);
 
-    // Filesystem fallback — read skills directly from disk when CLI fails.
-    // This handles the no-TTY empty stdout issue in OpenClaw v2026.3.23+.
+    // Last resort: read SKILL.md files off disk. Loses eligibility and
+    // requirement state, but beats showing an empty Skills page when neither
+    // the gateway nor the CLI can be reached.
     if (action === "list" || action === "check") {
       try {
         const fsSkills = await readSkillsFromFilesystem();
         if (fsSkills.skills.length > 0) {
           if (action === "check") {
             return NextResponse.json({
+              workspaceDir: fsSkills.workspaceDir,
+              managedSkillsDir: fsSkills.managedSkillsDir,
               summary: {
                 total: fsSkills.skills.length,
                 eligible: 0,
+                modelVisible: 0,
+                commandVisible: 0,
                 disabled: 0,
                 blocked: 0,
+                agentFiltered: 0,
+                notInjected: 0,
                 missingRequirements: 0,
               },
               eligible: [],
+              modelVisible: [],
+              commandVisible: [],
               disabled: [],
               blocked: [],
+              agentFiltered: [],
+              notInjected: [],
               missingRequirements: [],
-              warning: "Loaded from filesystem (CLI unavailable)",
+              warning: "Loaded from filesystem — gateway and CLI both unreachable, so eligibility is unknown.",
               fromFilesystem: true,
             });
           }
           return NextResponse.json({
             ...fsSkills,
-            warning: "Loaded from filesystem (CLI unavailable)",
+            warning: "Loaded from filesystem — gateway and CLI both unreachable, so eligibility is unknown.",
             fromFilesystem: true,
           });
         }
@@ -287,16 +293,26 @@ export async function GET(request: NextRequest) {
 
     if (action === "check") {
       return NextResponse.json({
+        workspaceDir: "",
+        managedSkillsDir: "",
         summary: {
           total: 0,
           eligible: 0,
+          modelVisible: 0,
+          commandVisible: 0,
           disabled: 0,
           blocked: 0,
+          agentFiltered: 0,
+          notInjected: 0,
           missingRequirements: 0,
         },
         eligible: [],
+        modelVisible: [],
+        commandVisible: [],
         disabled: [],
         blocked: [],
+        agentFiltered: [],
+        notInjected: [],
         missingRequirements: [],
         warning: String(err),
         degraded: true,
@@ -323,42 +339,39 @@ export async function POST(request: NextRequest) {
     const action = body.action as string;
 
     switch (action) {
-      case "install-brew": {
-        // Install a binary dependency via brew
-        const pkg = body.package as string;
-        if (!pkg)
+      // Non-streaming counterpart of POST /api/skills/install. Both go through
+      // the gateway so OpenClaw resolves the package name and the installer for
+      // its own host; see that route for why doing it here is wrong.
+      case "install-requirement": {
+        const name = body.name as string;
+        const installId = body.installId as string;
+        if (!name || !installId) {
           return NextResponse.json(
-            { error: "package required" },
+            { error: "name and installId required" },
             { status: 400 }
           );
-        // Run brew install
-        const { execFile } = await import("child_process");
-        const { promisify } = await import("util");
-        const exec = promisify(execFile);
+        }
         try {
-          const { stdout, stderr } = await exec("brew", ["install", pkg], {
-            timeout: 120000,
-          });
-          return NextResponse.json({
-            ok: true,
-            action,
-            package: pkg,
-            output: stdout + stderr,
-          });
-        } catch (err: unknown) {
-          const e = err as { stderr?: string; message?: string };
-          return NextResponse.json(
-            {
-              error: `brew install failed: ${e.stderr || e.message || String(err)}`,
-            },
-            { status: 500 }
-          );
+          const result = await gatewayCall<{
+            ok?: boolean;
+            message?: string;
+            stdout?: string;
+            stderr?: string;
+          }>("skills.install", { name, installId }, 285_000);
+          if (!result?.ok) {
+            return NextResponse.json(
+              { error: result?.message || "install failed", ...result },
+              { status: 500 }
+            );
+          }
+          return NextResponse.json({ ok: true, action, name, installId, ...result });
+        } catch (err) {
+          return NextResponse.json({ error: String(err) }, { status: 500 });
         }
       }
 
       case "enable-skill":
       case "disable-skill": {
-        // Toggle skill via skills.entries.<name>.enabled
         const name = body.name as string;
         if (!name)
           return NextResponse.json(
@@ -366,19 +379,30 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
 
-        const enabling = action === "enable-skill";
+        const enabled = action === "enable-skill";
 
+        // `skills.update` is the purpose-built toggle: it writes the same
+        // `skills.entries.<key>.enabled` and takes effect immediately. Writing
+        // that key through config.patch instead needed a gateway restart to be
+        // picked up, which dropped every live session to flip one switch.
         try {
-          await patchConfig({
-            skills: {
-              entries: {
-                [name]: { enabled: enabling },
-              },
-            },
-          }, { restartDelayMs: 2000 });
+          await gatewayCall("skills.update", { skillKey: name, enabled }, 15_000);
           return NextResponse.json({ ok: true, action, name });
-        } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+        } catch (rpcErr) {
+          // Fall back to the config write for gateways without the method.
+          try {
+            await patchConfig({
+              skills: { entries: { [name]: { enabled } } },
+            }, { restartDelayMs: 2000 });
+            return NextResponse.json({
+              ok: true,
+              action,
+              name,
+              warning: `skills.update unavailable (${rpcErr instanceof Error ? rpcErr.message : String(rpcErr)}); wrote the config and restarted the gateway instead.`,
+            });
+          } catch (err) {
+            return NextResponse.json({ error: String(err) }, { status: 500 });
+          }
         }
       }
 

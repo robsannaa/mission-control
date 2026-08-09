@@ -8,18 +8,21 @@
  * Auth: Authorization: Bearer <OPENCLAW_GATEWAY_TOKEN>
  */
 
-import { getGatewayUrl } from "../paths";
-import { GatewayRpcClient } from "../gateway-rpc";
+import { getGatewayPassword, getGatewayToken, getGatewayUrl } from "../paths";
+import { GatewayRpcChannel } from "../gateway-rpc-channel";
 import { parseJsonFromCliOutput, type RunCliResult } from "../openclaw-cli";
 import type { OpenClawClient, TransportMode } from "../openclaw-client";
 
 export class HttpTransport implements OpenClawClient {
   private token: string;
   private gatewayUrlCache: string | null = null;
-  private rpcClient: GatewayRpcClient | null = null;
+  private rpcChannel: GatewayRpcChannel | null = null;
 
   constructor(gatewayUrl?: string, token?: string) {
-    this.token = token || process.env.OPENCLAW_GATEWAY_TOKEN || "";
+    // Fall back to openclaw.json, not just the env var: token mode usually
+    // stores the secret in `gateway.auth.token`, and password mode has no token
+    // at all. Either shared secret authenticates this host as a local operator.
+    this.token = token || getGatewayToken() || getGatewayPassword();
     this.gatewayUrlCache = gatewayUrl || null;
   }
 
@@ -173,28 +176,39 @@ export class HttpTransport implements OpenClawClient {
     params?: Record<string, unknown>,
     timeout = 15000,
   ): Promise<T> {
-    if (!this.rpcClient) {
-      this.rpcClient = new GatewayRpcClient(this.gatewayUrlCache || undefined, this.token);
+    // Gateway RPC is a WebSocket protocol; it is only reached from here because
+    // this class is also the "remote gateway" transport. The channel handles
+    // connection reuse and the CLI fallback.
+    if (!this.rpcChannel) {
+      this.rpcChannel = new GatewayRpcChannel(this.gatewayUrlCache || undefined, this.token);
     }
-    return this.rpcClient.request<T>(method, params || {}, timeout);
+    return this.rpcChannel.request<T>(method, params || {}, timeout);
+  }
+
+  /**
+   * The gateway deliberately exposes no filesystem tools on
+   * `POST /tools/invoke` — `fs_write`, `fs_delete`, `fs_move` and `apply_patch`
+   * are on its default deny list, and there is no `read`/`write` tool to call.
+   * Say so instead of returning a 404 from a generic tool invocation.
+   */
+  private unsupportedFileOperation(operation: string): Error {
+    return new Error(
+      `Cannot ${operation} over the gateway HTTP transport: OpenClaw does not expose ` +
+        "filesystem tools on POST /tools/invoke. Run Mission Control on the gateway host " +
+        "with OPENCLAW_TRANSPORT=auto (or cli) so file access uses the local filesystem.",
+    );
   }
 
   async readFile(path: string): Promise<string> {
-    const result = await this.invoke<
-      { content?: string; output?: string; details?: unknown; text?: string } | string
-    >("read", { path });
-    if (typeof result === "string") return result;
-    if (typeof result.content === "string") return result.content;
-    return this.resultToText(result);
+    throw this.unsupportedFileOperation(`read ${path}`);
   }
 
-  async writeFile(path: string, content: string): Promise<void> {
-    await this.invoke("write", { path, content });
+  async writeFile(path: string): Promise<void> {
+    throw this.unsupportedFileOperation(`write ${path}`);
   }
 
   async readdir(path: string): Promise<string[]> {
-    const raw = await this.execCommand(`ls -1 "${path}"`);
-    return raw.split("\n").filter(Boolean);
+    throw this.unsupportedFileOperation(`list ${path}`);
   }
 
   async gatewayFetch(path: string, init?: RequestInit): Promise<Response> {

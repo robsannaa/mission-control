@@ -31,6 +31,12 @@ type Skill = {
 
 type ClawHubItem = {
   slug: string;
+  /**
+   * Owner-qualified `@owner/slug`. Slugs are not unique across owners — a
+   * search for "weather" returns several — so this is what identifies a skill
+   * for install. Absent for catalog rows with no owner attached.
+   */
+  ref?: string;
   displayName?: string;
   summary?: string;
   version?: string;
@@ -90,12 +96,31 @@ const SKILL_ORIGIN_ORDER: SkillOrigin[] = ["bundled", "workspace", "shared", "ot
 
 /* ── Helpers ────────────────────────────────────── */
 
-function hasMissing(m: Missing): boolean {
-  return m.bins.length > 0 || m.anyBins.length > 0 || m.env.length > 0 || m.config.length > 0 || m.os.length > 0;
+const NO_REQUIREMENTS: Missing = { bins: [], anyBins: [], env: [], config: [], os: [] };
+
+/**
+ * Requirement bags are optional on the wire — a degraded filesystem read has no
+ * eligibility data — so treat a missing bag as empty rather than throwing while
+ * rendering.
+ */
+function requirementBag(m: Missing | undefined | null): Missing {
+  if (!m) return NO_REQUIREMENTS;
+  return {
+    bins: m.bins ?? [],
+    anyBins: m.anyBins ?? [],
+    env: m.env ?? [],
+    config: m.config ?? [],
+    os: m.os ?? [],
+  };
 }
 
-function missingCount(m: Missing): number {
-  return m.bins.length + m.anyBins.length + m.env.length + m.config.length + m.os.length;
+function hasMissing(m: Missing | undefined | null): boolean {
+  return missingCount(m) > 0;
+}
+
+function missingCount(m: Missing | undefined | null): number {
+  const bag = requirementBag(m);
+  return bag.bins.length + bag.anyBins.length + bag.env.length + bag.config.length + bag.os.length;
 }
 
 function getAvailability(skill: Pick<Skill, "eligible" | "missing" | "blockedByAllowlist">): {
@@ -209,14 +234,14 @@ function ToastBar({ toast, onDone }: { toast: Toast; onDone: () => void }) {
 type TermLine = { text: string; stream: "stdout" | "stderr" | "system" };
 
 function InstallTerminal({
-  kind,
-  pkg,
+  skillName,
+  installId,
   label,
   onDone,
   onClose,
 }: {
-  kind: string;
-  pkg: string;
+  skillName: string;
+  installId: string;
   label: string;
   onDone: (ok: boolean) => void;
   onClose: () => void;
@@ -257,7 +282,7 @@ function InstallTerminal({
         const res = await fetch("/api/skills/install", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ kind, package: pkg }),
+          body: JSON.stringify({ name: skillName, installId }),
           signal: controller.signal,
         });
 
@@ -331,7 +356,7 @@ function InstallTerminal({
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, pkg]);
+  }, [skillName, installId]);
 
   const handleAbort = useCallback(() => {
     abortRef.current?.abort();
@@ -359,7 +384,7 @@ function InstallTerminal({
           <div className="flex items-center gap-2">
             <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-xs font-medium text-muted-foreground">
-              {kind} install {pkg}
+              skills install {skillName} ({installId})
             </span>
           </div>
           {running && (
@@ -705,21 +730,51 @@ function SkillCard({ skill, onClick, onToggle, toggling }: { skill: Skill; onCli
 
 /* ── Skill Detail Panel ─────────────────────────── */
 
+/**
+ * Reason this payload cannot be rendered as a skill, or null when it can.
+ * Covers both an explicit `{ error }` body and a 200 whose shape is unusable.
+ */
+function readDetailError(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return "Malformed response from /api/skills.";
+  const record = payload as Record<string, unknown>;
+  if (typeof record.error === "string" && record.error.trim()) return record.error;
+  if (typeof record.name !== "string" || !record.name.trim()) {
+    return "The skill inventory is unavailable, so this skill's details could not be loaded.";
+  }
+  return null;
+}
+
 function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: () => void; onAction: (msg: string) => void }) {
   const [detail, setDetail] = useState<SkillDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [showMd, setShowMd] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
-  const [installTerminal, setInstallTerminal] = useState<{ kind: string; pkg: string; label: string } | null>(null);
+  const [installTerminal, setInstallTerminal] = useState<{ installId: string; label: string } | null>(null);
   const installSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoading(true);
+    setDetailError(null);
     fetch("/api/skills?action=info&name=" + encodeURIComponent(name))
       .then((r) => r.json())
-      .then((d) => { setDetail(d); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then((d) => {
+        // An error payload is still an object, so storing it unchecked used to
+        // pass the null guard below and then crash on `detail.missing.bins`.
+        const err = readDetailError(d);
+        if (err) {
+          setDetail(null);
+          setDetailError(err);
+        } else {
+          setDetail(d as SkillDetail);
+        }
+        setLoading(false);
+      })
+      .catch((err) => {
+        setDetailError(String(err));
+        setLoading(false);
+      });
   }, [name]);
 
   const doAction = useCallback(async (action: string, params: Record<string, unknown>) => {
@@ -730,11 +785,12 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
       if (d.ok) { onAction(action + " succeeded"); } else { onAction("Error: " + (d.error || "failed")); }
     } catch (err) { onAction("Error: " + String(err)); }
     finally { setBusy(null); }
-    // Refresh detail
+    // Refresh detail. Keep the previous snapshot on a bad payload rather than
+    // replacing a rendered skill with something unrenderable.
     try {
       const res = await fetch("/api/skills?action=info&name=" + encodeURIComponent(name));
       const d = await res.json();
-      setDetail(d);
+      if (!readDetailError(d)) setDetail(d as SkillDetail);
     } catch { /* ignore */ }
   }, [name, onAction]);
 
@@ -742,6 +798,24 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
     return (
       <SectionLayout>
         <LoadingState label="Loading skill..." />
+      </SectionLayout>
+    );
+  }
+  if (detailError) {
+    return (
+      <SectionLayout>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <AlertTriangle className="h-5 w-5 text-amber-400" />
+          <p className="text-sm font-medium text-foreground">Could not load {name}</p>
+          <p className="max-w-md text-xs text-muted-foreground">{detailError}</p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            Back to skills
+          </button>
+        </div>
       </SectionLayout>
     );
   }
@@ -889,45 +963,37 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
           <div ref={installSectionRef} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
             <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300"><Download className="h-3.5 w-3.5" />Install what’s missing</h3>
             <p className="text-xs text-amber-800/90 dark:text-amber-200/90">This skill needs the following to work. Click Install to add them (when available).</p>
-            <div className="space-y-2">{detail.install.map((inst) => {
-              const supportedKinds = ["brew", "npm", "pip"];
-              const canInstall = supportedKinds.includes(inst.kind) && inst.bins && inst.bins.length > 0;
-              return (
+            <div className="space-y-2">{detail.install.map((inst) => (
                 <div key={inst.id} className="glass-subtle flex items-center justify-between rounded-lg px-4 py-3">
                   <div>
                     <p className="text-xs font-medium text-foreground/90">{inst.label}</p>
                     <p className="text-xs text-muted-foreground">{inst.kind}{inst.bins ? " \u2022 installs " + inst.bins.join(", ") : ""}</p>
                   </div>
-                  {canInstall ? (
-                    <button
-                      onClick={() => setInstallTerminal({ kind: inst.kind, pkg: inst.bins![0], label: inst.label })}
-                      disabled={installTerminal !== null}
-                      className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
-                    >
-                      <Terminal className="h-3 w-3" />Install
-                    </button>
-                  ) : (
-                    <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">Manual</span>
-                  )}
+                  <button
+                    onClick={() => setInstallTerminal({ installId: inst.id, label: inst.label })}
+                    disabled={installTerminal !== null}
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    <Terminal className="h-3 w-3" />Install
+                  </button>
                 </div>
-              );
-            })}</div>
+              ))}</div>
           </div>
         )}
 
         {/* Install terminal */}
         {installTerminal && (
           <InstallTerminal
-            kind={installTerminal.kind}
-            pkg={installTerminal.pkg}
+            skillName={name}
+            installId={installTerminal.installId}
             label={installTerminal.label}
             onDone={(ok) => {
               if (ok) {
-                onAction(`${installTerminal.pkg} installed successfully`);
+                onAction(`${installTerminal.label} completed`);
                 // Refresh skill detail
                 fetch("/api/skills?action=info&name=" + encodeURIComponent(name))
                   .then((r) => r.json())
-                  .then((d) => setDetail(d))
+                  .then((d) => { if (!readDetailError(d)) setDetail(d as SkillDetail); })
                   .catch(() => {});
               }
             }}
@@ -1013,6 +1079,7 @@ function ClawHubPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clawhubNotFound, setClawhubNotFound] = useState(false);
+  const [browseNotice, setBrowseNotice] = useState<string | null>(null);
   const [copiedInstallCmd, setCopiedInstallCmd] = useState(false);
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<"install" | "update" | "uninstall" | null>(null);
@@ -1097,12 +1164,16 @@ function ClawHubPanel({
         setLoading(false);
         return;
       }
+      // Browsing needs the standalone CLI, but search and install do not, so
+      // this is a note rather than the tab-wide "not found" state.
+      setBrowseNotice(typeof data?.notice === "string" ? data.notice : null);
       if (!res.ok || data?.error) {
         setClawhubNotFound(false);
         throw new Error(String(data?.error || `HTTP ${res.status}`));
       }
       const normalized: ClawHubItem[] = (data.items || []).map((item: {
         slug?: string;
+        ref?: string;
         displayName?: string;
         summary?: string;
         latestVersion?: { version?: string };
@@ -1112,6 +1183,7 @@ function ClawHubPanel({
         author?: string;
       }) => ({
         slug: String(item.slug || ""),
+        ref: item.ref || undefined,
         displayName: item.displayName || undefined,
         summary: item.summary || "",
         version: item.latestVersion?.version || "latest",
@@ -1136,6 +1208,7 @@ function ClawHubPanel({
     if (!q) return;
     setLoading(true);
     setMode("search");
+    setBrowseNotice(null);
     try {
       const res = await fetch(`/api/skills/clawhub?action=search&q=${encodeURIComponent(q)}&limit=28`);
       const data = await res.json();
@@ -1153,19 +1226,27 @@ function ClawHubPanel({
       }
       const normalized: ClawHubItem[] = (data.items || []).map((item: {
         slug?: string;
+        ref?: string;
         version?: string;
         summary?: string;
         score?: number;
         developer?: string;
         author?: string;
         displayName?: string;
+        stats?: { downloads?: number; installsCurrent?: number; stars?: number };
+        updatedAt?: number;
       }) => ({
         slug: String(item.slug || ""),
+        ref: item.ref || undefined,
         displayName: item.displayName || undefined,
         version: item.version || "latest",
         summary: item.summary || "",
         score: typeof item.score === "number" ? item.score : undefined,
         developer: (item.developer ?? item.author) || undefined,
+        downloads: item.stats?.downloads || 0,
+        installsCurrent: item.stats?.installsCurrent || 0,
+        stars: item.stats?.stars || 0,
+        updatedAt: item.updatedAt,
       })).filter((item: ClawHubItem) => item.slug);
       setItems(normalized);
       setError(null);
@@ -1177,14 +1258,14 @@ function ClawHubPanel({
     setLoading(false);
   }, [query]);
 
-  const installSkill = useCallback(async (slug: string, version?: string, force = false) => {
+  const installSkill = useCallback(async (slug: string, version?: string, force = false, ref?: string) => {
     setBusySlug(slug);
     setBusyAction("install");
     try {
       const res = await fetch("/api/skills/clawhub", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "install", slug, version, force }),
+        body: JSON.stringify({ action: "install", slug, ref, version, force }),
       });
       const data = await res.json();
       if (data?.code === "CLAWHUB_NOT_FOUND") {
@@ -1200,7 +1281,7 @@ function ClawHubPanel({
         if (isSuspicious && !force && window.confirm("This skill is flagged as suspicious by VirusTotal (e.g. risky patterns). Install anyway? Review the skill code after installing.")) {
           setBusySlug(null);
           setBusyAction(null);
-          return void installSkill(slug, version, true);
+          return void installSkill(slug, version, true, ref);
         }
         onAction(`Error: ${errMsg}`);
       } else {
@@ -1293,6 +1374,12 @@ function ClawHubPanel({
 
   return (
     <div className="space-y-3">
+      {browseNotice && !clawhubNotFound && (
+        <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Search className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <p>{browseNotice}</p>
+        </div>
+      )}
       {clawhubNotFound && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200">
           <div className="flex items-start gap-2">
@@ -1397,7 +1484,7 @@ function ClawHubPanel({
               const installLabel = isBusy && busyAction === "install" ? "Installing..." : isBusy && busyAction === "update" ? "Updating..." : isBusy && busyAction === "uninstall" ? "Deleting..." : isInstalled ? "Reinstall" : "Install";
               return (
                 <div
-                  key={item.slug}
+                  key={item.ref || item.slug}
                   className="glass w-full rounded-lg p-3.5 text-left transition-colors"
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -1439,7 +1526,7 @@ function ClawHubPanel({
                           Delete
                         </button>
                       )}
-                      <button type="button" disabled={isBusy || clawhubNotFound} onClick={() => void installSkill(item.slug, item.version)} className="rounded-md border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">
+                      <button type="button" disabled={isBusy || clawhubNotFound} onClick={() => void installSkill(item.slug, item.version, false, item.ref)} className="rounded-md border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">
                         {installLabel}
                       </button>
                     </div>

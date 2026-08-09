@@ -1,7 +1,7 @@
 import { getGatewayUrl, getGatewayToken } from "@/lib/paths";
 import { guessMime } from "@/lib/openresponses";
 import { logRequest, logError } from "@/lib/request-log";
-import { triggerResponsesEndpointSetup, waitForResponsesEndpoint } from "@/app/api/gateway/route";
+import { triggerResponsesEndpointSetup, waitForResponsesEndpoint } from "@/lib/responses-endpoint";
 
 /**
  * Streaming chat endpoint — proxies SSE from the Gateway's OpenResponses API.

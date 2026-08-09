@@ -1,11 +1,30 @@
 import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { getGatewayToken, getGatewayUrl, getOpenClawHome } from "./paths";
+import {
+  GATEWAY_CLIENT_ID,
+  GATEWAY_CLIENT_MODE,
+  GATEWAY_CONNECT_CHALLENGE_TIMEOUT_MS,
+  GATEWAY_MIN_CLIENT_PROTOCOL_VERSION,
+  GATEWAY_OPERATOR_SCOPES,
+  GATEWAY_PROTOCOL_VERSION,
+  getMissionControlVersion,
+} from "./gateway-protocol";
+import {
+  getGatewayPassword,
+  getGatewayToken,
+  getGatewayUrl,
+  getOpenClawHome,
+} from "./paths";
 
 type GatewayConnectHello = {
+  protocol?: number;
   features?: {
     methods?: string[];
+  };
+  auth?: {
+    role?: string;
+    scopes?: string[];
   };
 };
 
@@ -170,6 +189,26 @@ export class GatewayRpcError extends Error {
   }
 }
 
+/**
+ * Raised when the handshake succeeds but the gateway grants no operator
+ * scopes. Every RPC would fail with `missing scope: ...`, so surface the
+ * actionable cause instead of letting each call fail separately.
+ */
+export class GatewayScopeError extends GatewayRpcError {
+  constructor(granted: string[]) {
+    super(
+      "Gateway granted no operator scopes to Mission Control. " +
+        "Configure gateway auth (gateway.auth.token / OPENCLAW_GATEWAY_TOKEN, or " +
+        "gateway.auth.password) so this host authenticates as a local operator, " +
+        "or approve its device identity with `openclaw devices approve`. " +
+        `Granted scopes: [${granted.join(", ")}]`,
+      "MISSING_SCOPES",
+      { granted },
+    );
+    this.name = "GatewayScopeError";
+  }
+}
+
 export class GatewayRpcClient {
   private ws: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
@@ -180,10 +219,18 @@ export class GatewayRpcClient {
   private connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private connectKickTimer: ReturnType<typeof setTimeout> | null = null;
   private connectNonce: string | null = null;
-  private supportedMethods = new Set<string>();
+  /**
+   * Methods advertised in `hello-ok.features.methods`. Advisory only: OpenClaw
+   * builds this list conservatively and intentionally omits real, callable
+   * methods (`sessions.usage`, `plugins.list`, `audit.activity.list`, …), so it
+   * must never be used to reject a request.
+   */
+  private advertisedMethods = new Set<string>();
+  private grantedScopes: string[] = [];
   private pending = new Map<string, PendingRequest>();
   private seq = 0;
   private readonly token: string;
+  private readonly password: string;
   private readonly gatewayUrl?: string;
   private listeners: {
     open?: () => void;
@@ -192,9 +239,20 @@ export class GatewayRpcClient {
     error?: () => void;
   } = {};
 
-  constructor(gatewayUrl?: string, token?: string) {
+  constructor(gatewayUrl?: string, token?: string, password?: string) {
     this.gatewayUrl = gatewayUrl;
     this.token = token ?? getGatewayToken();
+    this.password = password ?? getGatewayPassword();
+  }
+
+  /** Operator scopes the gateway granted on the current connection. */
+  getGrantedScopes(): string[] {
+    return [...this.grantedScopes];
+  }
+
+  /** Whether the gateway advertised this method in `hello-ok` (advisory). */
+  advertisesMethod(method: string): boolean {
+    return this.advertisedMethods.has(method);
   }
 
   async request<T>(
@@ -203,10 +261,6 @@ export class GatewayRpcClient {
     timeout = 15000,
   ): Promise<T> {
     await this.connect(timeout);
-
-    if (this.supportedMethods.size > 0 && !this.supportedMethods.has(method)) {
-      throw new GatewayRpcError(`Gateway does not support method: ${method}`, "UNSUPPORTED_METHOD");
-    }
 
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -337,7 +391,15 @@ export class GatewayRpcClient {
     if (message.id && message.id === this.connectRequestId) {
       if (message.ok) {
         const hello = (message.payload || {}) as GatewayConnectHello;
-        this.supportedMethods = new Set(hello.features?.methods || []);
+        this.advertisedMethods = new Set(hello.features?.methods || []);
+        this.grantedScopes = Array.isArray(hello.auth?.scopes) ? hello.auth!.scopes! : [];
+        // A handshake can succeed with zero scopes (unpaired device, or a
+        // client identity the gateway does not treat as a local operator).
+        // Every later RPC would fail; fail the connect instead.
+        if (this.grantedScopes.length === 0) {
+          this.connectReject?.(new GatewayScopeError(this.grantedScopes));
+          return;
+        }
         this.connectResolve?.();
       } else {
         this.connectReject?.(this.normalizeGatewayError(message.error));
@@ -361,6 +423,12 @@ export class GatewayRpcClient {
     pending.reject(this.normalizeGatewayError(message.error));
   }
 
+  /**
+   * The gateway emits `connect.challenge` right after the socket opens and its
+   * nonce is required to sign a device identity. Wait for it rather than racing
+   * ahead, but still send an unsigned connect if it never arrives so shared-
+   * secret auth keeps working.
+   */
   private scheduleConnectRequest(): void {
     if (this.connectRequestSent || this.connectKickTimer) {
       return;
@@ -368,7 +436,7 @@ export class GatewayRpcClient {
     const timer = setTimeout(() => {
       this.connectKickTimer = null;
       this.sendConnectRequest();
-    }, 750);
+    }, GATEWAY_CONNECT_CHALLENGE_TIMEOUT_MS);
     this.connectKickTimer = timer;
   }
 
@@ -387,13 +455,7 @@ export class GatewayRpcClient {
       this.connectKickTimer = null;
     }
 
-    const scopes = [
-      "operator.read",
-      "operator.write",
-      "operator.admin",
-      "operator.approvals",
-      "operator.pairing",
-    ];
+    const scopes = [...GATEWAY_OPERATOR_SCOPES];
     const nonce = this.connectNonce || "";
 
     // Resolve device identity and auth tokens for signed connect.
@@ -401,24 +463,28 @@ export class GatewayRpcClient {
     const authTokens = loadDeviceAuthTokens();
     const deviceToken = authTokens?.operator?.token;
 
-    // Build auth: prefer device token over gateway token.
+    // Build auth. Shared-secret auth (token or password, depending on
+    // gateway.auth.mode) is what makes a loopback backend client a trusted
+    // local operator; a paired device token also works.
     const authToken = this.token || undefined;
+    const authPassword = this.password || undefined;
     const auth: Record<string, unknown> = {};
     if (authToken) auth.token = authToken;
+    if (authPassword) auth.password = authPassword;
     if (deviceToken) auth.deviceToken = deviceToken;
 
     // Build device signature if identity is available and we have a nonce.
     let device: Record<string, unknown> | undefined;
     if (identity && nonce) {
       const signedAtMs = Date.now();
-      // Token used for signature: must match what auth.token sends.
-      // The gateway verifies the signature against the token in the connect
-      // request. When a gateway token is present it takes precedence.
+      // The gateway recomputes this payload from the connect frame, so every
+      // signed field must match exactly what we send below — including the
+      // client id and mode.
       const signatureToken = authToken || deviceToken || null;
       const payload = buildDeviceAuthPayloadV3({
         deviceId: identity.deviceId,
-        clientId: "cli",
-        clientMode: "backend",
+        clientId: GATEWAY_CLIENT_ID,
+        clientMode: GATEWAY_CLIENT_MODE,
         role: "operator",
         scopes,
         signedAtMs,
@@ -442,13 +508,14 @@ export class GatewayRpcClient {
         id: this.connectRequestId,
         method: "connect",
         params: {
-          minProtocol: 3,
-          maxProtocol: 3,
+          minProtocol: GATEWAY_MIN_CLIENT_PROTOCOL_VERSION,
+          maxProtocol: GATEWAY_PROTOCOL_VERSION,
           client: {
-            id: "cli",
-            version: "mission-control",
+            id: GATEWAY_CLIENT_ID,
+            displayName: "Mission Control",
+            version: getMissionControlVersion(),
             platform: process.platform,
-            mode: "backend",
+            mode: GATEWAY_CLIENT_MODE,
             instanceId: `pid-${process.pid}`,
           },
           role: "operator",
@@ -457,7 +524,7 @@ export class GatewayRpcClient {
           ...(Object.keys(auth).length > 0 ? { auth } : {}),
           ...(device ? { device } : {}),
           locale: "en-US",
-          userAgent: "@openclaw/dashboard",
+          userAgent: `@openclaw/dashboard/${getMissionControlVersion()}`,
         },
       }),
     );
@@ -472,7 +539,8 @@ export class GatewayRpcClient {
       pending.reject(error);
       this.pending.delete(id);
     }
-    this.supportedMethods.clear();
+    this.advertisedMethods.clear();
+    this.grantedScopes = [];
     this.closeSocket();
   }
 

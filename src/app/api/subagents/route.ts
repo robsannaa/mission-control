@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
+import { getDefaultAgentId } from "@/lib/paths";
 
 type GatewayMessage = {
   role?: string;
@@ -207,7 +208,12 @@ function defaultSessionKey(agentId: string): string {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const agentId = sanitizeArg(searchParams.get("agentId") || "main", 64);
+    // "main" is a mainKey alias rather than an agent id — the CLI accepts it and
+    // silently targets a workspace inside the real one — so resolve the default.
+    const agentId = sanitizeArg(
+      searchParams.get("agentId") || (await getDefaultAgentId()) || "main",
+      64,
+    );
     const sessionKey = sanitizeArg(searchParams.get("sessionKey") || defaultSessionKey(agentId), 200);
     const out = await runAgentMessage({
       agentId,
@@ -229,7 +235,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const action = sanitizeArg(body?.action, 24).toLowerCase();
-    const agentId = sanitizeArg(body?.agentId || "main", 64);
+    const agentId = sanitizeArg(body?.agentId || (await getDefaultAgentId()) || "main", 64);
     const sessionKey = sanitizeArg(body?.sessionKey || defaultSessionKey(agentId), 200);
     const waitTimeoutMs = Number(body?.waitTimeoutMs || 120000);
     const thinking = sanitizeArg(body?.thinking || "minimal", 16);
