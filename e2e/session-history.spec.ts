@@ -13,13 +13,22 @@ const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3100";
 /* ── Pure classification (no gateway, no server — safe for CI) ───────────── */
 
 test.describe("session kind classification", () => {
-  test("prefers the gateway-provided kind over key parsing", () => {
-    expect(sessionKindOf({ kind: "cron", key: "agent:main:openresponses:x" })).toBe("cron");
+  test("reads the origin from the key, ignoring the record's mode field", () => {
+    // Verified live: `kind` is the conversation mode and reads "direct" for
+    // every session — cron and subagent ones included. Trusting it would
+    // misclassify the entire list.
+    expect(sessionKindOf({ kind: "direct", key: "agent:main:cron:abc" })).toBe("cron");
+    expect(sessionKindOf({ kind: "direct", key: "agent:main:openresponses:abc" })).toBe(
+      "openresponses",
+    );
   });
 
-  test("falls back to key parsing when kind is absent", () => {
-    expect(sessionKindOf({ key: "agent:main:openresponses:abc" })).toBe("openresponses");
+  test("malformed keys fail closed rather than guessing", () => {
     expect(sessionKindOf({ key: "malformed" })).toBe("");
+    expect(sessionKindOf({ key: "agent:main:openresponses" })).toBe("");
+    expect(sessionKindOf({ key: "notagent:main:cron:x" })).toBe("");
+    expect(sessionKindOf({})).toBe("");
+    expect(classifySessionKind(sessionKindOf({ key: "malformed" })).isInspectable).toBe(false);
   });
 
   test("only real dashboard chats are offered as chats", () => {
@@ -53,10 +62,10 @@ test.describe("session kind classification", () => {
   });
 
   test("titles prefer gateway labels over invented ones", () => {
-    expect(sessionTitleOf({ label: "versami-mail-sweep", kind: "cron" })).toBe("versami-mail-sweep");
-    expect(sessionTitleOf({ displayName: "Gmail crawl", kind: "cron" })).toBe("Gmail crawl");
-    expect(sessionTitleOf({ kind: "cron" })).toBe("Scheduled job");
-    expect(sessionTitleOf({ label: "   ", kind: "openresponses" })).toBe("Chat");
+    expect(sessionTitleOf({ label: "versami-mail-sweep", key: "agent:main:cron:x" })).toBe("versami-mail-sweep");
+    expect(sessionTitleOf({ displayName: "Gmail crawl", key: "agent:main:cron:x" })).toBe("Gmail crawl");
+    expect(sessionTitleOf({ key: "agent:main:cron:x" })).toBe("Scheduled job");
+    expect(sessionTitleOf({ label: "   ", key: "agent:main:openresponses:x" })).toBe("Chat");
   });
 
   test("extracts the agent id from a session key", () => {

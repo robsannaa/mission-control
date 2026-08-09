@@ -1,18 +1,24 @@
 /**
- * Session-kind classification — the single source of truth for which OpenClaw
+ * Session-origin classification — the single source of truth for which OpenClaw
  * sessions are user-facing chats.
  *
- * The gateway's `sessions.list` returns a `kind` field (and `label`,
- * `displayName`, `archived`, `pinned`, `unread`) on every session. Do NOT
- * hand-parse the session key: `agent:<agentId>:<kind>:<id>` is an
- * implementation detail, and treating segment 2 as the whole story is how a
- * chat session browser ends up listing cron runs, subagent scratch sessions,
- * and — worst of all — private channel transcripts.
+ * IMPORTANT, verified against a live gateway (OpenClaw 2026.7.1-2): the `kind`
+ * field returned by `sessions.list` is the conversation MODE — it reads
+ * "direct" for every session, including cron and subagent ones. It is NOT the
+ * session type. The origin lives in the third segment of the session key:
  *
- * On a typical install the kind distribution looks like:
- *   openresponses (dashboard chats), mission-control (internal), main,
- *   cron (scheduled jobs), subagent (spawned helpers), telegram/discord/... (channels)
- * Only the first group belongs in a chat UI.
+ *     agent:<agentId>:<origin>:<id>
+ *            ^^^^^^^^  ^^^^^^^^
+ *            segment 2  segment 3
+ *
+ * Filtering on segment 2 (the agent) while ignoring segment 3 is how a chat
+ * session browser ends up listing cron runs, subagent scratch sessions, and —
+ * worst of all — private channel transcripts.
+ *
+ * Observed origins on a working install:
+ *   openresponses (dashboard chats), main, mission-control (internal),
+ *   cron (scheduled jobs), subagent (spawned helpers), telegram/... (channels)
+ * Only the first group belongs in a chat picker.
  */
 
 /** Kinds that represent a conversation the dashboard user actually had here. */
@@ -51,14 +57,15 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 /**
- * Derive the kind from a session record. Prefers the gateway-provided `kind`
- * field and only falls back to key parsing for older gateways that omit it.
+ * Derive the session origin from its key. The key is authoritative — the
+ * record's `kind` field is the conversation mode ("direct"/"group") and must
+ * not be used for this. Returns "" when the key has an unexpected shape, which
+ * classifies as not-inspectable (fail closed).
  */
 export function sessionKindOf(session: { kind?: string; key?: string }): string {
-  if (session.kind) return session.kind;
   const parts = (session.key ?? "").split(":");
-  // agent:<agentId>:<kind>:<id>
-  return parts.length >= 3 ? parts[2] : "";
+  // agent:<agentId>:<origin>:<id>
+  return parts[0] === "agent" && parts.length >= 4 ? parts[2] : "";
 }
 
 export function classifySessionKind(kind: string): SessionKindInfo {
