@@ -52,4 +52,7 @@ next-env.d.ts
 !docs/**/*.md
 .claude/
 *.png
+!cover.png
+!public/**/*.png
+!.github/**/*.png
 .playwright-cli/
