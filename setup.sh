@@ -75,23 +75,50 @@ fi
 
 node_major() { "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
 
-find_best_node() {
-  local candidates=() dir v best="" best_major=0
-  # Anything already on PATH goes first.
-  if command -v node >/dev/null 2>&1; then candidates+=("$(command -v node)"); fi
-  # nvm installs
-  for dir in "$HOME"/.nvm/versions/node/*/bin/node; do
-    [[ -x "$dir" ]] && candidates+=("$dir")
-  done
-  # fnm, volta, homebrew, system
-  for dir in "$HOME"/.local/state/fnm_multishells/*/bin/node \
+# Mission Control shells out to the `openclaw` CLI, and that CLI refuses to run
+# on a Node version outside its supported ranges. So "newest Node wins" is the
+# wrong rule: Homebrew's 25.6.1 is newer than nvm's 24.19.0 but sits in a gap
+# OpenClaw rejects, which breaks the Doctor and Security pages at runtime.
+# Prefer a Node the CLI accepts; fall back to any Node >= 20 with a loud warning.
+openclaw_supports_node() {
+  "$1" -e '
+    const [maj, min, pat] = process.versions.node.split(".").map(Number);
+    const ge = (a, b, c) => maj > a || (maj === a && (min > b || (min === b && pat >= c)));
+    const ok =
+      (maj === 22 && ge(22, 22, 3)) ||
+      (maj === 24 && ge(24, 15, 0)) ||
+      (maj === 25 && ge(25, 9, 0)) ||
+      maj >= 26;
+    process.exit(ok ? 0 : 1);
+  ' >/dev/null 2>&1
+}
+
+node_candidates() {
+  local dir
+  command -v node >/dev/null 2>&1 && command -v node
+  for dir in "$HOME"/.nvm/versions/node/*/bin/node \
+             "$HOME"/.local/state/fnm_multishells/*/bin/node \
              "$HOME"/.fnm/node-versions/*/installation/bin/node \
              "$HOME"/.volta/bin/node \
              /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node; do
-    [[ -x "$dir" ]] && candidates+=("$dir")
+    [[ -x "$dir" ]] && echo "$dir"
   done
-  for v in ${candidates[@]+"${candidates[@]}"}; do
-    local m; m="$(node_major "$v")"
+}
+
+# Pass 1: newest Node that the openclaw CLI actually accepts.
+# Pass 2 (fallback): newest Node >= 20 — Mission Control itself runs, but CLI-backed
+# pages will fail until the user installs a supported Node.
+find_best_node() {
+  local v m best="" best_major=0
+  for v in $(node_candidates); do
+    m="$(node_major "$v")"
+    if [[ "$m" -ge 20 ]] && openclaw_supports_node "$v" && [[ "$m" -gt "$best_major" ]]; then
+      best="$v"; best_major="$m"
+    fi
+  done
+  if [[ -n "$best" ]]; then echo "$best"; return; fi
+  for v in $(node_candidates); do
+    m="$(node_major "$v")"
     if [[ "$m" -ge 20 && "$m" -gt "$best_major" ]]; then
       best="$v"; best_major="$m"
     fi
@@ -99,7 +126,7 @@ find_best_node() {
   echo "$best"
 }
 
-log "Looking for Node.js 20 or newer..."
+log "Looking for a Node.js version that OpenClaw supports..."
 NODE_PATH_FOUND="$(find_best_node)"
 if [[ -z "$NODE_PATH_FOUND" ]]; then
   if command -v node >/dev/null 2>&1; then
