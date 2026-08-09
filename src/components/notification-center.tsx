@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, CheckCheck, CheckCircle, Clock, AlertCircle, AlertTriangle, Info, Zap, Terminal, Radio } from "lucide-react";
+import { Bell, BellOff, CheckCheck, CheckCircle, Clock, AlertCircle, AlertTriangle, Info, Zap, Terminal, Radio, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import {
@@ -38,6 +38,12 @@ type PairingResponse = {
     createdAtMs?: number;
   }>;
 };
+
+/** Stable signature so a recurring log/warning stays dismissed across re-polls
+ *  even though each poll assigns it a fresh, timestamp-based id. */
+function signatureOf(type: string, title: string, source?: string): string {
+  return `${type}|${source ?? ""}|${title}`;
+}
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -118,8 +124,22 @@ export function NotificationCenter() {
       return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
     } catch { return new Set(); }
   });
+  // Signatures of individually-dismissed items — persisted so they stay gone
+  // even when the next poll re-derives them with a new id.
+  const [dismissedSigs, setDismissedSigs] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const stored = localStorage.getItem("notif_dismissed_sigs");
+      return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+  // Mute: hide the badge, silence desktop notifications, poll slowly.
+  const [muted, setMuted] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("notif_muted") === "1";
+  });
   const panelRef = useRef<HTMLDivElement>(null);
-  const slowBackgroundPolling = !open;
+  const slowBackgroundPolling = !open || muted;
 
   // Subscribe to store-pushed bell notifications
   const storeNotifications = useSyncExternalStore(
@@ -134,6 +154,16 @@ export function NotificationCenter() {
       localStorage.setItem("notif_read_ids", JSON.stringify([...readIds]));
     } catch { /* ignore */ }
   }, [readIds]);
+
+  // Persist dismissed signatures (cap to keep localStorage small)
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "notif_dismissed_sigs",
+        JSON.stringify([...dismissedSigs].slice(-200)),
+      );
+    } catch { /* ignore */ }
+  }, [dismissedSigs]);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -182,8 +212,8 @@ export function NotificationCenter() {
 
       // Usage alert firings → notification events + desktop notification
       const alertEvents: NotificationEvent[] = (alertsData.alerts || []).map((alert) => {
-        // Fire a desktop notification for each new alert
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        // Fire a desktop notification for each new alert (unless muted)
+        if (!muted && typeof Notification !== "undefined" && Notification.permission === "granted") {
           try {
             new Notification("Usage Alert", {
               body: alert.message,
@@ -211,7 +241,7 @@ export function NotificationCenter() {
     } catch {
       /* ignore */
     }
-  }, [open]);
+  }, [open, muted]);
 
   useSmartPoll(fetchNotifications, { intervalMs: slowBackgroundPolling ? 60_000 : 20_000 });
 
@@ -266,17 +296,37 @@ export function NotificationCenter() {
       storeNotification: n,
     }));
 
-    // Dedup by id, then sort by timestamp desc
+    // Dedup by id, drop anything the user dismissed, then sort by timestamp desc
     const byId = new Map<string, DisplayItem>();
     for (const item of [...polledItems, ...storeItems]) {
-      if (!byId.has(item.id)) byId.set(item.id, item);
+      if (byId.has(item.id)) continue;
+      if (dismissedSigs.has(signatureOf(item.type, item.title, item.source))) continue;
+      byId.set(item.id, item);
     }
     return Array.from(byId.values())
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 25);
-  }, [events, storeNotifications, lastSeenTs, readIds]);
+  }, [events, storeNotifications, lastSeenTs, readIds, dismissedSigs]);
 
-  const unreadCount = displayItems.filter((d) => !d.read).length;
+  const unreadCount = muted ? 0 : displayItems.filter((d) => !d.read).length;
+
+  const dismissItem = useCallback((item: DisplayItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (item.storeNotification) notificationStore.dismiss(item.id);
+    setDismissedSigs((prev) => {
+      const next = new Set(prev);
+      next.add(signatureOf(item.type, item.title, item.source));
+      return next;
+    });
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setMuted((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("notif_muted", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   const markAllRead = useCallback(() => {
     const now = Date.now();
@@ -330,7 +380,7 @@ export function NotificationCenter() {
         )}
         aria-label="Notifications"
       >
-        <Bell className="h-4 w-4" />
+        {muted ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
         {unreadCount > 0 && (
           <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-lg">
             {unreadCount > 9 ? "9+" : unreadCount}
@@ -345,7 +395,7 @@ export function NotificationCenter() {
             <p className="text-sm font-semibold text-stone-900 dark:text-[#f5f7fa]">
               Notifications
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {unreadCount > 0 && (
                 <button
                   type="button"
@@ -356,9 +406,21 @@ export function NotificationCenter() {
                   Mark read
                 </button>
               )}
-              <span className="text-xs text-stone-500 dark:text-[#8d98a5]">
-                {displayItems.length} alert{displayItems.length !== 1 ? "s" : ""}
-              </span>
+              <button
+                type="button"
+                onClick={toggleMute}
+                aria-pressed={muted}
+                title={muted ? "Notifications muted — click to unmute" : "Mute notifications"}
+                className={cn(
+                  "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                  muted
+                    ? "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10"
+                    : "text-stone-500 hover:bg-stone-100 hover:text-stone-700 dark:text-[#8d98a5] dark:hover:bg-[#20252a] dark:hover:text-[#f5f7fa]",
+                )}
+              >
+                {muted ? <BellOff className="h-3 w-3" /> : <Bell className="h-3 w-3" />}
+                {muted ? "Muted" : "Mute"}
+              </button>
             </div>
           </div>
 
@@ -378,12 +440,12 @@ export function NotificationCenter() {
                     ? TYPE_ICON.pairing
                     : STATUS_ICON[item.status] || Info;
                 return (
-                  <div key={item.id} role="listitem">
+                  <div key={item.id} role="listitem" className="group relative">
                     <button
                       type="button"
                       onClick={() => handleItemClick(item)}
                       className={cn(
-                        "flex w-full gap-3 border-b border-stone-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-stone-50 dark:border-[#1e2228] dark:hover:bg-[#1a1f25]",
+                        "flex w-full gap-3 border-b border-stone-100 px-4 py-3 pr-9 text-left transition-colors last:border-b-0 hover:bg-stone-50 dark:border-[#1e2228] dark:hover:bg-[#1a1f25]",
                         !item.read && "bg-stone-50 dark:bg-[#151920]",
                       )}
                     >
@@ -449,6 +511,15 @@ export function NotificationCenter() {
                           </span>
                         </div>
                       </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => dismissItem(item, e)}
+                      aria-label="Dismiss notification"
+                      title="Dismiss"
+                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-stone-400 opacity-0 transition-opacity hover:bg-stone-200 hover:text-stone-700 focus:opacity-100 group-hover:opacity-100 dark:text-[#7a8591] dark:hover:bg-[#2a2f36] dark:hover:text-[#f5f7fa]"
+                    >
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 );
