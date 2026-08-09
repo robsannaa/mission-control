@@ -4,7 +4,7 @@ import { constants as fsConstants } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { getGatewayPort, getOpenClawHome } from "@/lib/paths";
-import { runCli, runCliJson } from "@/lib/openclaw";
+import { runCliCaptureBoth, runCliJson } from "@/lib/openclaw";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -135,24 +135,31 @@ function parseExtensionPath(stdout: string): string | null {
 /**
  * Read the unpacked extension directory.
  *
- * `openclaw browser extension path --json` prints a bare filesystem path, not
- * JSON — `--json` is accepted (it is a `browser` group option) but this
- * subcommand has no structured payload to emit. Parsing it as JSON therefore
- * always throws, which reported a perfectly healthy extension as broken and
- * left the path blank in the UI. Accept a structured payload too, in case a
- * hosted or future build returns one.
+ * Two things make this command awkward to consume. It prints a bare filesystem
+ * path rather than JSON — `--json` is accepted because it is a `browser` group
+ * option, but this subcommand has no structured payload to emit — and it writes
+ * that path to stderr, not stdout. Reading it as JSON on stdout therefore
+ * yields nothing at all, which left the path blank in the UI on a perfectly
+ * healthy install. A structured payload is still accepted in case a hosted or
+ * future build returns one.
  */
-async function fetchExtensionPath(timeout = 10000): Promise<ExtensionPathResponse | string> {
-  const stdout = await runCli(["browser", "extension", "path", "--json"], timeout);
-  const trimmed = stdout.trim();
-  if (trimmed.startsWith("{")) {
+async function fetchExtensionPath(timeout = 15000): Promise<ExtensionPathResponse | string> {
+  const { stdout, stderr, code } = await runCliCaptureBoth(
+    ["browser", "extension", "path", "--json"],
+    timeout
+  );
+  const output = (stdout.trim() ? stdout : stderr).trim();
+  if (code !== 0) {
+    throw new Error(output || `browser extension path failed (exit ${code})`);
+  }
+  if (output.startsWith("{")) {
     try {
-      return JSON.parse(trimmed) as ExtensionPathResponse;
+      return JSON.parse(output) as ExtensionPathResponse;
     } catch {
       // Fall through and treat it as text.
     }
   }
-  return stdout;
+  return output;
 }
 
 function expandHome(pathValue: string | null): string | null {

@@ -190,30 +190,44 @@ export function parseJsonFromCliOutput<T>(
   return JSON.parse(candidate) as T;
 }
 
+/**
+ * Run a command with `--json` and parse its payload.
+ *
+ * Both streams are captured and searched, and the exit code is not used to
+ * decide where to look. Some commands print their JSON payload to stderr even
+ * on success — `browser extension path` and `browser extension pair` do, for
+ * instance — so reading stdout alone silently yields nothing for them. Others
+ * exit non-zero while still reporting a usable payload. Preferring stdout and
+ * falling back to stderr covers all four combinations.
+ */
 export async function runCliJson<T>(
   args: string[],
   timeout = 15000
 ): Promise<T> {
-  try {
-    const stdout = await runCli([...args, "--json"], timeout);
-    return parseJsonFromCliOutput<T>(stdout, `openclaw ${args.join(" ")} --json`);
-  } catch (err) {
-    // On non-zero exit, try to recover JSON from stdout or stderr.
-    // Some OpenClaw versions write JSON to stderr when there's no TTY.
-    const errObj = err as { stdout?: unknown; stderr?: unknown };
-    const stdout = typeof errObj?.stdout === "string" ? String(errObj.stdout) : "";
-    const stderr = typeof errObj?.stderr === "string" ? String(errObj.stderr) : "";
-    for (const output of [stdout, stderr]) {
-      if (output.trim()) {
-        try {
-          return parseJsonFromCliOutput<T>(output, `openclaw ${args.join(" ")} --json`);
-        } catch {
-          // Not valid JSON in this stream — try the next one.
-        }
-      }
+  const context = `openclaw ${args.join(" ")} --json`;
+  const { stdout, stderr, code } = await runCliCaptureBoth(
+    [...args, "--json"],
+    timeout
+  );
+
+  for (const output of [stdout, stderr]) {
+    if (!output.trim()) continue;
+    try {
+      return parseJsonFromCliOutput<T>(output, context);
+    } catch {
+      // Not valid JSON in this stream — try the next one.
     }
-    throw err;
   }
+
+  const detail = stripAnsi(stderr || stdout)
+    .replace(/\r/g, "")
+    .trim()
+    .slice(0, 400);
+  throw new Error(
+    code === 0
+      ? `Failed to parse JSON from ${context}${detail ? `. Output: ${detail}` : ": empty output"}`
+      : `Command failed (exit ${code}): ${detail || `no output from ${context}`}`
+  );
 }
 
 export async function gatewayCall<T>(
