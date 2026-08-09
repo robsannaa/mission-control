@@ -3,8 +3,33 @@ import { readFile, readdir, stat, open } from "fs/promises";
 import { join } from "path";
 import { getOpenClawHome, getGatewayUrl, getGatewayPort, readConfigFile } from "@/lib/paths";
 import { fetchGatewaySessions, summarizeSessionsByAgent } from "@/lib/gateway-sessions";
+import { gatewayCall } from "@/lib/openclaw";
 
 const OPENCLAW_HOME = getOpenClawHome();
+
+// OpenClaw v2026.3.23+ writes tslog JSON to /tmp/openclaw/openclaw-YYYY-MM-DD.log.
+const TMP_LOG_CANDIDATES = [
+  "/tmp/openclaw",
+  "/private/tmp/openclaw",
+  join(process.env.TMPDIR || "/tmp", "openclaw"),
+];
+
+async function findLatestTslogFile(): Promise<string | null> {
+  for (const tmpDir of TMP_LOG_CANDIDATES) {
+    try {
+      const entries = await readdir(tmpDir);
+      const logFiles = entries
+        .filter((f) => f.startsWith("openclaw-") && f.endsWith(".log"))
+        .sort();
+      if (logFiles.length > 0) {
+        return join(tmpDir, logFiles[logFiles.length - 1]);
+      }
+    } catch {
+      // This candidate dir doesn't exist — try the next one
+    }
+  }
+  return null;
+}
 
 async function readJsonSafe<T>(path: string, fallback: T): Promise<T> {
   try {
@@ -94,24 +119,59 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const [gateway, cronData, logs, cronRuns, agents] = await Promise.all([
+    const [gateway, cronData, tslogPath, cronRuns, agents] = await Promise.all([
       checkGatewayHealth(),
       readCronJobs(),
-      tailLines(join(OPENCLAW_HOME, "logs", "gateway.log"), 40),
+      findLatestTslogFile(),
       readRecentCronRuns(),
       readAgentSessions(),
     ]);
 
-    // Parse gateway logs into structured entries
-    const logEntries = logs.map((line) => {
-      const match = line.match(
-        /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+\[([^\]]+)\]\s+(.*)/
-      );
-      if (match) {
-        return { time: match[1], source: match[2], message: match[3] };
-      }
-      return { time: "", source: "unknown", message: line };
-    }).reverse(); // newest first
+    // Parse gateway logs into structured entries. Primary source is the tslog
+    // JSON file; the pre-4.25 plain-text gateway.log is the fallback.
+    // Unparseable lines are dropped in both paths — never given fake fields.
+    let logEntries: { time: string; source: string; message: string }[] = [];
+    if (tslogPath) {
+      const lines = await tailLines(tslogPath, 60);
+      logEntries = lines
+        .map((line) => {
+          try {
+            const parsed = JSON.parse(line) as {
+              message?: string;
+              time?: string;
+              _meta?: { date?: string; name?: string; parentNames?: string[] };
+            };
+            const message = (parsed.message || "").trim();
+            const time = parsed.time || parsed._meta?.date || "";
+            if (!message || !time) return null;
+            return {
+              time,
+              source:
+                parsed._meta?.parentNames?.join(".") ||
+                parsed._meta?.name ||
+                "gateway",
+              message,
+            };
+          } catch {
+            return null;
+          }
+        })
+        .filter((e): e is { time: string; source: string; message: string } => e !== null)
+        .reverse(); // newest first
+    } else {
+      const logs = await tailLines(join(OPENCLAW_HOME, "logs", "gateway.log"), 40);
+      logEntries = logs
+        .map((line) => {
+          const match = line.match(
+            /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+\[([^\]]+)\]\s+(.*)/
+          );
+          return match
+            ? { time: match[1], source: match[2], message: match[3] }
+            : null;
+        })
+        .filter((e): e is { time: string; source: string; message: string } => e !== null)
+        .reverse(); // newest first
+    }
 
     // Read config metadata (merged nested + outer)
     const config = await readConfigFile();
@@ -141,10 +201,23 @@ async function readCronJobs(): Promise<{
   jobs: CronJobLive[];
   stats: { total: number; ok: number; error: number };
 }> {
-  const data = await readJsonSafe<{ jobs?: Record<string, unknown>[] }>(
-    join(OPENCLAW_HOME, "cron", "jobs.json"),
-    { jobs: [] }
-  );
+  // Primary: the gateway's cron.list RPC — the ~/.openclaw/cron/jobs.json file
+  // stopped being written when cron state moved into the gateway's SQLite
+  // store (OpenClaw 6.x). The legacy file remains as a fallback for old
+  // installs and offline gateways.
+  let data: { jobs?: Record<string, unknown>[] };
+  try {
+    data = await gatewayCall<{ jobs?: Record<string, unknown>[] }>(
+      "cron.list",
+      {},
+      10000,
+    );
+  } catch {
+    data = await readJsonSafe<{ jobs?: Record<string, unknown>[] }>(
+      join(OPENCLAW_HOME, "cron", "jobs.json"),
+      { jobs: [] }
+    );
+  }
   const jobs: CronJobLive[] = (data.jobs || []).map((j: Record<string, unknown>) => {
     const schedule = (j.schedule || {}) as Record<string, unknown>;
     const state = (j.state || {}) as Record<string, unknown>;
@@ -179,6 +252,24 @@ async function readCronJobs(): Promise<{
 }
 
 async function readRecentCronRuns(): Promise<CronRunEntry[]> {
+  // Primary: cron.runs RPC (run history lives in the gateway since 6.x).
+  try {
+    const data = await gatewayCall<{ entries?: CronRunEntry[] }>(
+      "cron.runs",
+      { limit: 15 },
+      10000,
+    );
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    if (entries.length > 0) {
+      return entries
+        .filter((e) => typeof e.ts === "number" && e.jobId)
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, 15);
+    }
+  } catch {
+    // Gateway unreachable — fall through to the legacy file layout.
+  }
+
   const runsDir = join(OPENCLAW_HOME, "cron", "runs");
   const all: CronRunEntry[] = [];
   try {
