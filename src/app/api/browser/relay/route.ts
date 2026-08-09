@@ -4,7 +4,7 @@ import { constants as fsConstants } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { getGatewayPort, getOpenClawHome } from "@/lib/paths";
-import { runCliJson } from "@/lib/openclaw-cli";
+import { runCli, runCliJson } from "@/lib/openclaw";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -108,6 +108,13 @@ type RelaySnapshot = {
   };
 };
 
+type ExtensionPathResponse = {
+  path?: string;
+  installed?: boolean;
+  manifestName?: string;
+  manifestVersion?: string;
+};
+
 function parseError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -123,6 +130,29 @@ function parseExtensionPath(stdout: string): string | null {
     }
   }
   return lines[0] || null;
+}
+
+/**
+ * Read the unpacked extension directory.
+ *
+ * `openclaw browser extension path --json` prints a bare filesystem path, not
+ * JSON — `--json` is accepted (it is a `browser` group option) but this
+ * subcommand has no structured payload to emit. Parsing it as JSON therefore
+ * always throws, which reported a perfectly healthy extension as broken and
+ * left the path blank in the UI. Accept a structured payload too, in case a
+ * hosted or future build returns one.
+ */
+async function fetchExtensionPath(timeout = 10000): Promise<ExtensionPathResponse | string> {
+  const stdout = await runCli(["browser", "extension", "path", "--json"], timeout);
+  const trimmed = stdout.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      return JSON.parse(trimmed) as ExtensionPathResponse;
+    } catch {
+      // Fall through and treat it as text.
+    }
+  }
+  return stdout;
 }
 
 function expandHome(pathValue: string | null): string | null {
@@ -220,13 +250,6 @@ function sanitizeProfile(value: string | null): string | null {
   return v;
 }
 
-type ExtensionPathResponse = {
-  path?: string;
-  installed?: boolean;
-  manifestName?: string;
-  manifestVersion?: string;
-};
-
 async function buildSnapshot(profile: string | null): Promise<RelaySnapshot> {
   const statusP = browserGet<BrowserStatus>("/browser/status", profile)
     .then((value) => ({ value, error: null as string | null }))
@@ -238,8 +261,8 @@ async function buildSnapshot(profile: string | null): Promise<RelaySnapshot> {
     .then((value) => ({ value, error: null as string | null }))
     .catch((err) => ({ value: null, error: parseError(err) }));
   // Extension path is CLI-only (not on browser control server)
-  const extensionPathP = runCliJson<ExtensionPathResponse>(["browser", "extension", "path"], 10000)
-    .then((value) => ({ value: value as ExtensionPathResponse | string, error: null as string | null }))
+  const extensionPathP = fetchExtensionPath()
+    .then((value) => ({ value, error: null as string | null }))
     .catch((err) => ({ value: null, error: parseError(err) }));
 
   const [statusR, profilesR, tabsR, extensionPathR] = await Promise.all([
@@ -378,10 +401,15 @@ export async function POST(request: NextRequest) {
         result = await browserPost<Record<string, unknown>>("/browser/start", { profile }, 20000);
         break;
       }
-      case "install-extension": {
-        // Extension install is CLI-only (not on browser control server)
-        const installArgs = ["browser", "extension", "install"];
-        result = await runCliJson<Record<string, unknown>>(installArgs, 15000);
+      case "pair-extension": {
+        // There is no `browser extension install`: the unpacked extension ships
+        // inside the OpenClaw package, so it is loaded by hand in Chrome from
+        // the path above. What cannot be done by hand is minting the relay
+        // pairing secret, which is what this returns.
+        result = await runCliJson<Record<string, unknown>>(
+          ["browser", "extension", "pair"],
+          15000
+        );
         break;
       }
       case "open-test-tab": {

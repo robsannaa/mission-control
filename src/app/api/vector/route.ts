@@ -345,12 +345,12 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ results: [], query });
       }
 
+      // `runCliJson` appends `--json` itself.
       const args = [
         "memory",
         "search",
         "--query",
         query.trim(),
-        "--json",
         "--max-results",
         String(parseInt(maxResults, 10) || 10),
       ];

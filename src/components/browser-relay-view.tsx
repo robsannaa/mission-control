@@ -88,7 +88,7 @@ type RelayPostResponse = {
   error?: string;
 };
 
-type RelayAction = "install-extension" | "start" | "stop" | "restart" | "open-test-tab" | "snapshot-test" | "screenshot";
+type RelayAction = "pair-extension" | "start" | "stop" | "restart" | "open-test-tab" | "snapshot-test" | "screenshot";
 
 type PrimaryAction = {
   action: RelayAction;
@@ -134,10 +134,10 @@ function statusPill(label: string, ok: boolean) {
 
 function actionSuccessMessage(action: RelayAction, mode: BrowserMode, hosted = false): string {
   switch (action) {
-    case "install-extension":
+    case "pair-extension":
       return mode === "extension"
-        ? "Extension files are ready. In Chrome, open Extensions and load the unpacked extension."
-        : "Extension files are ready. They are only needed when using extension relay mode.";
+        ? "Pairing string ready. Load the unpacked extension from the path below, then click the OpenClaw toolbar icon and paste the string into the popup."
+        : "Pairing string ready. It is only needed when using extension relay mode.";
     case "start":
       if (mode === "extension") {
         return "Relay started. Open a tab and click the OpenClaw extension icon to connect it.";
@@ -176,6 +176,12 @@ function humanizeRelayError(
   mode: BrowserMode
 ): string {
   const err = rawError.toLowerCase();
+  // `browser` is a bundled *plugin* command. Under a restrictive
+  // `plugins.allow` with no root `browser` config block it is never registered,
+  // so the CLI reports it as an unknown command rather than a browser failure.
+  if (err.includes("does not know the command")) {
+    return 'The OpenClaw browser plugin is not enabled, so the "browser" command is unavailable. Add "browser" to plugins.allow in openclaw.json, or set browser.enabled, then retry.';
+  }
   if (err.includes("missing scope") || err.includes("operator.read")) {
     return "Browser relay is authenticated, but the paired device is missing operator.read. Update/re-pair the openclaw-control-ui device scopes, then retry.";
   }
@@ -192,7 +198,7 @@ function humanizeRelayError(
     if (mode !== "extension") {
       return "Browser setup check failed. Open advanced diagnostics for details and retry.";
     }
-    return "Browser extension is missing or not loaded yet. Install/repair extension and load it in Chrome.";
+    return "Browser extension is missing or not loaded yet. Load it unpacked in Chrome and pair it.";
   }
   if (err.includes("tab") || err.includes("target")) {
     return mode === "extension"
@@ -200,7 +206,7 @@ function humanizeRelayError(
       : "No controllable tab found. Open a tab in the selected profile, then test again.";
   }
   if (mode === "extension" && !snapshot?.extension.installed) {
-    return "Extension is not installed yet. Install extension first.";
+    return "Extension files were not found. Get the pairing string, then load the unpacked extension in Chrome.";
   }
   return rawError;
 }
@@ -469,8 +475,8 @@ export function BrowserRelayView({ isHosted = false }: { isHosted?: boolean }) {
       return [
         {
           key: "extension",
-          title: "Install OpenClaw extension",
-          hint: "Install/repair extension and load it as an unpacked extension in Chrome.",
+          title: "Load and pair the OpenClaw extension",
+          hint: "Load the printed directory as an unpacked extension in Chrome, then paste the pairing string into its popup.",
           done: modeHealth.installed,
         },
         {
@@ -535,9 +541,9 @@ export function BrowserRelayView({ isHosted = false }: { isHosted?: boolean }) {
     if (!snapshot) return null;
     if (!isHosted && mode === "extension" && !modeHealth.installed) {
       return {
-        action: "install-extension",
-        label: "Install Extension",
-        hint: "First run setup: install extension files for Chrome.",
+        action: "pair-extension",
+        label: "Pair Extension",
+        hint: "First run setup: get the pairing string for the Chrome extension.",
       };
     }
     if (!modeHealth.running) {
@@ -591,7 +597,7 @@ export function BrowserRelayView({ isHosted = false }: { isHosted?: boolean }) {
       notes.push("Running on a server \u2014 managed browser runs in the background. For cloud browsers, configure a remote browser profile.");
     }
     if (!isHosted && mode === "extension" && !modeHealth.installed) {
-      notes.push("Install extension first, then open Chrome extensions and load unpacked.");
+      notes.push("Open Chrome extensions, load the printed directory unpacked, then pair it.");
     }
     if (!isHosted && mode === "extension" && (snapshot.profiles || []).some((p) => p.isRemote)) {
       notes.push("For headless/VPC usage, switch Browser profile to a remote CDP profile (no extension click needed).");
@@ -620,7 +626,7 @@ export function BrowserRelayView({ isHosted = false }: { isHosted?: boolean }) {
       }
     }
     if (!isHosted && mode === "extension" && snapshot.extension.error) {
-      notes.push("Extension diagnostics reported an issue. Use Install Extension to repair.");
+      notes.push("Extension diagnostics reported an issue. Re-pair the extension, or check that the browser plugin is enabled.");
     }
     if (mode !== "extension" && modeHealth.installed) {
       notes.push("Extension is optional in this mode; it is only required for extension relay profiles.");
@@ -1011,11 +1017,11 @@ export function BrowserRelayView({ isHosted = false }: { isHosted?: boolean }) {
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => void runAction("install-extension")}
+                  onClick={() => void runAction("pair-extension")}
                   className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
                   disabled={loading || actionBusy !== null}
                 >
-                  {actionBusy === "install-extension" ? "Installing..." : "Install / Repair Extension"}
+                  {actionBusy === "pair-extension" ? "Pairing..." : "Get Pairing String"}
                 </button>
                 <button
                   type="button"
