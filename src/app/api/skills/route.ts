@@ -372,7 +372,6 @@ export async function POST(request: NextRequest) {
 
       case "enable-skill":
       case "disable-skill": {
-        // Toggle skill via skills.entries.<name>.enabled
         const name = body.name as string;
         if (!name)
           return NextResponse.json(
@@ -380,19 +379,30 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
 
-        const enabling = action === "enable-skill";
+        const enabled = action === "enable-skill";
 
+        // `skills.update` is the purpose-built toggle: it writes the same
+        // `skills.entries.<key>.enabled` and takes effect immediately. Writing
+        // that key through config.patch instead needed a gateway restart to be
+        // picked up, which dropped every live session to flip one switch.
         try {
-          await patchConfig({
-            skills: {
-              entries: {
-                [name]: { enabled: enabling },
-              },
-            },
-          }, { restartDelayMs: 2000 });
+          await gatewayCall("skills.update", { skillKey: name, enabled }, 15_000);
           return NextResponse.json({ ok: true, action, name });
-        } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+        } catch (rpcErr) {
+          // Fall back to the config write for gateways without the method.
+          try {
+            await patchConfig({
+              skills: { entries: { [name]: { enabled } } },
+            }, { restartDelayMs: 2000 });
+            return NextResponse.json({
+              ok: true,
+              action,
+              name,
+              warning: `skills.update unavailable (${rpcErr instanceof Error ? rpcErr.message : String(rpcErr)}); wrote the config and restarted the gateway instead.`,
+            });
+          } catch (err) {
+            return NextResponse.json({ error: String(err) }, { status: 500 });
+          }
         }
       }
 
