@@ -1,0 +1,36 @@
+name: Draft tweet on push to main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      preview_only:
+        description: "Send a preview message without needing a new commit (uses the latest push diff)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+
+jobs:
+  draft-tweet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Draft tweets and send to Telegram
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: python3 .github/scripts/draft-tweets.py
