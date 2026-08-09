@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runCli } from "@/lib/openclaw";
 import { runOpenResponsesText } from "@/lib/openresponses";
+import { getDefaultAgentId } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const agentId = safeToken(body.agentId || "", "main");
+    // "main" is a mainKey alias, not an agent id: the RPC rejects it and the CLI
+    // resolves `--agent main` to a workspace inside the real one. Resolve the
+    // real default instead, keeping "main" only for an unreachable gateway.
+    const agentId = safeToken(
+      body.agentId || (await getDefaultAgentId()) || "",
+      "main",
+    );
     if (!agentId) {
       return NextResponse.json(
         { ok: false, error: "Invalid agentId" },

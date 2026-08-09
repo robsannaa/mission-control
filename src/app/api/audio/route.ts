@@ -3,7 +3,7 @@ import { gatewayCall, runCli } from "@/lib/openclaw";
 import { runOpenResponsesText } from "@/lib/openresponses";
 import { readFile, stat } from "fs/promises";
 import { extname, join } from "path";
-import { getOpenClawHome } from "@/lib/paths";
+import { getDefaultAgentId, getOpenClawHome } from "@/lib/paths";
 import { fetchConfig, patchConfig, gatewayConfigPatch } from "@/lib/gateway-config";
 
 /* ── Gather personal context for TTS test phrase generation ── */
@@ -77,11 +77,18 @@ async function generateTestPhrase(): Promise<string> {
       context,
     ].join("\n");
 
+    // "main" is `agents.list`'s mainKey, not an agent id. The RPC rejects it as
+    // unknown, and the CLI silently resolves `--agent main` to a workspace
+    // *inside* the real one, so it targets the wrong place instead of failing.
+    // Ask which agent is actually the default; "main" stays only as the
+    // last-resort value for when the gateway cannot be reached at all.
+    const agentId = (await getDefaultAgentId()) ?? "main";
+
     let output = "";
     try {
       const result = await runOpenResponsesText({
         input: prompt,
-        agentId: "main",
+        agentId,
         timeoutMs: 15000,
       });
       if (!result.ok) {
@@ -90,8 +97,8 @@ async function generateTestPhrase(): Promise<string> {
       output = result.text;
     } catch {
       output = await runCli(
-        ["agent", "--agent", "main", "--message", prompt],
-        15000
+        ["agent", "--agent", agentId, "--message", prompt],
+        30000
       );
     }
     const phrase = output.trim().replace(/^["']|["']$/g, ""); // strip wrapping quotes

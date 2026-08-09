@@ -70,34 +70,63 @@ export async function readConfigFile(): Promise<Record<string, unknown>> {
 
 let _workspace: string | null = null;
 
+let _defaultAgent: { id: string; workspace: string | null } | null = null;
+
 /**
- * Ask the gateway where the default agent's workspace is.
+ * Ask the gateway which agent is the default, and where its workspace is.
  *
- * This is the only source that is actually authoritative. OpenClaw gives each
- * agent its own directory named after the agent id — a stock install's default
- * agent `dev` lives in `$OPENCLAW_HOME/workspace-dev`, not
+ * This is the only authoritative source for either. OpenClaw gives each agent
+ * its own directory named after the agent id — a stock install's default agent
+ * `dev` lives in `$OPENCLAW_HOME/workspace-dev`, not
  * `$OPENCLAW_HOME/workspace` — and the id is not derivable from the path.
+ *
+ * There is no safe default for the id either. `agents.list` reports `mainKey:
+ * "main"` alongside a sole agent whose id is `dev`, and the two behave
+ * differently: the RPC rejects `agentId: "main"` as unknown, while the CLI
+ * accepts `--agent main` and silently resolves it to a workspace *inside* the
+ * real one (`workspace-dev/main`). So assuming "main" does not fail loudly, it
+ * targets the wrong place.
  *
  * Imported lazily because `openclaw.ts` pulls in the transports, which import
  * this module; a top-level import would be a cycle.
  */
-async function workspaceFromGateway(): Promise<string | null> {
+export async function getDefaultAgent(): Promise<{
+  id: string;
+  workspace: string | null;
+} | null> {
+  if (_defaultAgent) return _defaultAgent;
   try {
     const { gatewayCall } = await import("./openclaw");
     const payload = await gatewayCall<{
       defaultId?: string;
-      agents?: { id?: string; workspace?: string }[];
+      agents?: { id?: string; workspace?: string; isDefault?: boolean }[];
     }>("agents.list", {}, 8000);
 
     const agents = Array.isArray(payload?.agents) ? payload.agents : [];
     const preferred =
       agents.find((agent) => agent?.id && agent.id === payload?.defaultId) ??
+      agents.find((agent) => agent?.isDefault) ??
       agents[0];
-    const workspace = preferred?.workspace;
-    return typeof workspace === "string" && workspace.trim() ? workspace : null;
+    if (!preferred?.id) return null;
+
+    const workspace =
+      typeof preferred.workspace === "string" && preferred.workspace.trim()
+        ? preferred.workspace
+        : null;
+    _defaultAgent = { id: preferred.id, workspace };
+    return _defaultAgent;
   } catch {
     return null;
   }
+}
+
+/**
+ * Id of the default agent, or null when the gateway cannot be reached. Callers
+ * should omit the agent argument rather than substituting a guess — OpenClaw
+ * resolves the default itself, and a wrong id is worse than none.
+ */
+export async function getDefaultAgentId(): Promise<string | null> {
+  return (await getDefaultAgent())?.id ?? null;
 }
 
 /**
@@ -118,7 +147,7 @@ export async function getDefaultWorkspace(): Promise<string> {
   }
 
   // 2. The running gateway
-  const fromGateway = await workspaceFromGateway();
+  const fromGateway = (await getDefaultAgent())?.workspace;
   if (fromGateway) {
     _workspace = fromGateway;
     return _workspace;

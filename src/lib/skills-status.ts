@@ -14,6 +14,7 @@
  */
 
 import { gatewayCall, runCliJson } from "./openclaw";
+import { GatewayRpcError } from "./gateway-rpc";
 
 export type SkillRequirements = {
   bins: string[];
@@ -134,6 +135,19 @@ export async function fetchSkillsStatusViaCli(
 }
 
 /**
+ * Whether the CLI is worth trying after an RPC failure.
+ *
+ * Only when we failed to *reach* the gateway. If the gateway rejected the
+ * request itself, the CLI is not a second opinion — and for an unknown agent id
+ * it is actively worse: the RPC answers `unknown agent id "main"`, while
+ * `skills list --agent main` accepts it and reports a workspace nested inside
+ * the real one. Retrying there converts a clear error into wrong data.
+ */
+function shouldTryCli(err: unknown): boolean {
+  return !(err instanceof GatewayRpcError && err.code === "INVALID_REQUEST");
+}
+
+/**
  * Inventory from whichever source answers, preferring the RPC. Reports which
  * one won so callers can tell a full snapshot from a list-only one.
  */
@@ -143,6 +157,7 @@ export async function loadSkillsInventory(
   try {
     return { status: await fetchSkillsStatus(agentId), source: "rpc" };
   } catch (rpcErr) {
+    if (!shouldTryCli(rpcErr)) throw rpcErr;
     const status = await fetchSkillsStatusViaCli(agentId);
     return {
       status,
