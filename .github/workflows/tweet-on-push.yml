@@ -3,6 +3,12 @@ name: Draft tweet on push to main
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      preview_only:
+        description: "Send a preview message without needing a new commit (uses the latest push diff)"
+        required: false
+        default: "true"
 
 permissions:
   contents: read
