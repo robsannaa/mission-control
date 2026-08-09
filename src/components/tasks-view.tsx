@@ -11,10 +11,7 @@ import {
   X,
   Check,
   ListChecks,
-  FileJson,
   Rocket,
-  Bot,
-  Brain,
   CheckCircle,
   GripVertical,
   Copy,
@@ -1244,89 +1241,52 @@ function BoardOnboarding({
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto">
             <div className="mx-auto max-w-xl px-4 md:px-6 py-12">
-            {/* Hero */}
+            {/* One idea, one action. The three bordered feature cards read as a
+                pitch deck; what a person needs here is what this is and how to
+                start, with the detail available but quiet. */}
             <div className="text-center">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted-foreground/10">
-                <ListChecks className="h-8 w-8 text-fg-secondary" />
-              </div>
-              <h1 className="text-sm font-semibold text-foreground">
-                Task Board
+              <h1 className="text-[26px] font-medium tracking-tight text-foreground">
+                Task board
               </h1>
-              <p className="mx-auto mt-3 max-w-md text-xs leading-relaxed text-muted-foreground">
-                A Kanban board that both you and your agents can manage.
-                Add tasks here or just ask your agent &mdash; it all stays in sync.
+              <p className="mx-auto mt-3 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
+                A shared Kanban board for you and your agents. Add a task here,
+                or just ask your agent in chat — both sides stay in sync.
               </p>
-            </div>
 
-            {/* What you get */}
-            <div className="mt-8 space-y-3">
-              <FeatureRow
-                icon={FileJson}
-                iconColor="text-info-fg"
-                title="kanban.json"
-                desc="A simple JSON file in your workspace. Portable, version-controlled, no lock-in."
-              />
-              <FeatureRow
-                icon={Bot}
-                iconColor="text-fg-secondary"
-                title="Agent-aware"
-                desc='Your agent learns about the board instantly. Say "add a task" in chat and it appears here.'
-              />
-              <FeatureRow
-                icon={Brain}
-                iconColor="text-success-fg"
-                title="Bidirectional"
-                desc="Tasks you add show up for the agent. Tasks the agent adds show up for you. Always in sync."
-              />
-            </div>
-
-            {/* Board preview */}
-            <div className="mt-8">
-              <p className="mb-2.5 text-xs font-medium uppercase tracking-wider text-fg-subtle">
-                Your board columns
-              </p>
-              <div className="flex gap-2">
-                {columns.map((col) => (
-                  <div
-                    key={col.id}
-                    className="flex flex-1 items-center gap-2 rounded-lg border border-foreground/5 bg-foreground/5 px-3 py-2.5"
-                  >
-                    <div
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: col.color }}
-                    />
-                    <span className="text-xs font-medium text-fg-secondary">
-                      {col.title}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* CTA */}
-            <div className="mt-8 flex flex-col items-center gap-3">
               <button
                 type="button"
                 onClick={initBoard}
-                className="flex items-center gap-2.5 rounded-xl bg-primary text-primary-foreground px-7 py-3.5 text-xs font-medium transition-all hover:bg-primary/90 active:scale-95"
+                className="mt-7 inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-[13.5px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
               >
-                <Rocket className="h-4.5 w-4.5" />
-                Set Up Task Board
+                <Rocket className="h-4 w-4" />
+                Create the board
               </button>
-              <p className="max-w-xs text-center text-xs leading-relaxed text-fg-subtle">
-                Creates <code className="rounded bg-foreground/5 px-1 text-xs">kanban.json</code>
-                {" "}&amp;{" "}
-                <code className="rounded bg-foreground/5 px-1 text-xs">TASKS.md</code>
-                {" "}in your workspace.{" "}
-                One click, zero config.
+              <p className="mt-3 text-[12px] text-muted-foreground">
+                Creates{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11.5px]">
+                  kanban.json
+                </code>{" "}
+                in your workspace. Nothing else changes.
               </p>
             </div>
 
+            {/* Columns, stated plainly rather than previewed as chips with
+                decorative colour. */}
+            <p className="mt-10 text-center text-[12.5px] text-muted-foreground">
+              Columns:{" "}
+              {columns.map((col, index) => (
+                <span key={col.id}>
+                  <span className="text-fg-secondary">{col.title}</span>
+                  {index < columns.length - 1 ? " · " : ""}
+                </span>
+              ))}
+            </p>
+
             {/* Or copy-paste: for users who prefer to create the file themselves */}
-            <div className="mt-10 border-t border-foreground/5 pt-8">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
-                Or create the file yourself
-              </p>
+            <details className="mt-10 border-t border-border pt-8">
+              <summary className="mb-3 cursor-pointer list-none text-[12.5px] text-muted-foreground transition-colors hover:text-foreground">
+                Prefer to create the file yourself?
+              </summary>
               <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
                 Save as <code className="rounded bg-foreground/5 px-1 text-xs">kanban.json</code> in your workspace and paste:
               </p>
@@ -1353,7 +1313,7 @@ function BoardOnboarding({
                   )}
                 </button>
               </div>
-            </div>
+            </details>
           </div>
         </div>
       </div>
@@ -1415,29 +1375,6 @@ function BoardOnboarding({
 
 /* ── FeatureRow (onboarding) ─────────────────────── */
 
-function FeatureRow({
-  icon: Icon,
-  iconColor,
-  title,
-  desc,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  iconColor: string;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <div className="flex items-start gap-3.5 rounded-xl border border-foreground/5 bg-foreground/5 p-4">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground/5">
-        <Icon className={cn("h-4 w-4", iconColor)} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{desc}</p>
-      </div>
-    </div>
-  );
-}
 
 /* ── StepIndicator (init animation) ──────────────── */
 
