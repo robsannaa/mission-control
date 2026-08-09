@@ -242,3 +242,4 @@ Error: listen EADDRINUSE: address already in use 127.0.0.1:3100
   address: '127.0.0.1',
   port: 3100
 }
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy

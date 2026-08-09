@@ -113,10 +113,18 @@ export async function POST(req: Request) {
     }
 
     // Flatten: if there's only simple text, use a plain string input
-    const input =
+    // A single text-only message may be sent as a plain string. A message whose
+    // content is an array of parts must stay wrapped: flattening it puts
+    // input_text/input_image at the top level, which is not a valid input item
+    // and fails the whole request with "input: Invalid input".
+    const soleMessageContent =
       inputItems.length === 1 &&
       (inputItems[0] as { type: string }).type === "message"
-        ? (inputItems[0] as { content: string }).content
+        ? (inputItems[0] as { content: unknown }).content
+        : undefined;
+    const input =
+      typeof soleMessageContent === "string"
+        ? soleMessageContent
         : inputItems.length > 0
           ? inputItems
           : "";

@@ -417,3 +417,18 @@
 {"level":"info","ts":"2026-08-09T22:08:45.836Z","route":"/api/gateway","status":200,"durationMs":64,"meta":{"gateway":"online","coalesced":false}}
 {"level":"info","ts":"2026-08-09T22:09:12.386Z","route":"/api/chat/stream","status":200,"durationMs":6,"meta":{"agentId":"main","model":"openclaw:main"}}
 {"level":"info","ts":"2026-08-09T22:09:45.819Z","route":"/api/gateway","status":200,"durationMs":53,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:10:45.825Z","route":"/api/gateway","status":200,"durationMs":59,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:11:45.807Z","route":"/api/gateway","status":200,"durationMs":52,"meta":{"gateway":"online","coalesced":false}}
+
+> @openclaw/dashboard@0.7.0 dev
+> next dev -H 127.0.0.1 -p 3000 --webpack -H 127.0.0.1 -p 3333
+
+▲ Next.js 16.1.6 (webpack)
+- Local:         http://127.0.0.1:3333
+- Network:       http://127.0.0.1:3333
+
+✓ Starting...
+✓ Ready in 2.3s
+○ Compiling / ...
+ GET / 200 in 30ms (compile: 1984µs, proxy.ts: 5ms, render: 22ms)
+[?25h
