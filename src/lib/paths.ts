@@ -71,11 +71,42 @@ export async function readConfigFile(): Promise<Record<string, unknown>> {
 let _workspace: string | null = null;
 
 /**
+ * Ask the gateway where the default agent's workspace is.
+ *
+ * This is the only source that is actually authoritative. OpenClaw gives each
+ * agent its own directory named after the agent id — a stock install's default
+ * agent `dev` lives in `$OPENCLAW_HOME/workspace-dev`, not
+ * `$OPENCLAW_HOME/workspace` — and the id is not derivable from the path.
+ *
+ * Imported lazily because `openclaw.ts` pulls in the transports, which import
+ * this module; a top-level import would be a cycle.
+ */
+async function workspaceFromGateway(): Promise<string | null> {
+  try {
+    const { gatewayCall } = await import("./openclaw");
+    const payload = await gatewayCall<{
+      defaultId?: string;
+      agents?: { id?: string; workspace?: string }[];
+    }>("agents.list", {}, 8000);
+
+    const agents = Array.isArray(payload?.agents) ? payload.agents : [];
+    const preferred =
+      agents.find((agent) => agent?.id && agent.id === payload?.defaultId) ??
+      agents[0];
+    const workspace = preferred?.workspace;
+    return typeof workspace === "string" && workspace.trim() ? workspace : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve the default agent workspace path.
  * Priority:
  *   1. OPENCLAW_WORKSPACE env var
- *   2. agents.defaults.workspace from openclaw.json
- *   3. $OPENCLAW_HOME/workspace
+ *   2. The default agent's workspace, per the gateway
+ *   3. agents.defaults.workspace from openclaw.json
+ *   4. $OPENCLAW_HOME/workspace
  */
 export async function getDefaultWorkspace(): Promise<string> {
   if (_workspace) return _workspace;
@@ -86,7 +117,14 @@ export async function getDefaultWorkspace(): Promise<string> {
     return _workspace;
   }
 
-  // 2. Read from config
+  // 2. The running gateway
+  const fromGateway = await workspaceFromGateway();
+  if (fromGateway) {
+    _workspace = fromGateway;
+    return _workspace;
+  }
+
+  // 3. Read from config
   try {
     const { readFile } = await import("fs/promises");
     const configPath = join(getOpenClawHome(), "openclaw.json");
@@ -101,9 +139,9 @@ export async function getDefaultWorkspace(): Promise<string> {
     // Config doesn't exist or is invalid — fall through
   }
 
-  // 3. Conventional default
-  _workspace = join(getOpenClawHome(), "workspace");
-  return _workspace;
+  // 4. Conventional default. Note this misses the per-agent suffix, so it is a
+  // guess of last resort rather than the expected outcome.
+  return join(getOpenClawHome(), "workspace");
 }
 
 /** Synchronous accessor — uses cached value or falls back to convention. */
