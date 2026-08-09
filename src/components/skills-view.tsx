@@ -96,12 +96,31 @@ const SKILL_ORIGIN_ORDER: SkillOrigin[] = ["bundled", "workspace", "shared", "ot
 
 /* ── Helpers ────────────────────────────────────── */
 
-function hasMissing(m: Missing): boolean {
-  return m.bins.length > 0 || m.anyBins.length > 0 || m.env.length > 0 || m.config.length > 0 || m.os.length > 0;
+const NO_REQUIREMENTS: Missing = { bins: [], anyBins: [], env: [], config: [], os: [] };
+
+/**
+ * Requirement bags are optional on the wire — a degraded filesystem read has no
+ * eligibility data — so treat a missing bag as empty rather than throwing while
+ * rendering.
+ */
+function requirementBag(m: Missing | undefined | null): Missing {
+  if (!m) return NO_REQUIREMENTS;
+  return {
+    bins: m.bins ?? [],
+    anyBins: m.anyBins ?? [],
+    env: m.env ?? [],
+    config: m.config ?? [],
+    os: m.os ?? [],
+  };
 }
 
-function missingCount(m: Missing): number {
-  return m.bins.length + m.anyBins.length + m.env.length + m.config.length + m.os.length;
+function hasMissing(m: Missing | undefined | null): boolean {
+  return missingCount(m) > 0;
+}
+
+function missingCount(m: Missing | undefined | null): number {
+  const bag = requirementBag(m);
+  return bag.bins.length + bag.anyBins.length + bag.env.length + bag.config.length + bag.os.length;
 }
 
 function getAvailability(skill: Pick<Skill, "eligible" | "missing" | "blockedByAllowlist">): {
@@ -711,8 +730,23 @@ function SkillCard({ skill, onClick, onToggle, toggling }: { skill: Skill; onCli
 
 /* ── Skill Detail Panel ─────────────────────────── */
 
+/**
+ * Reason this payload cannot be rendered as a skill, or null when it can.
+ * Covers both an explicit `{ error }` body and a 200 whose shape is unusable.
+ */
+function readDetailError(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return "Malformed response from /api/skills.";
+  const record = payload as Record<string, unknown>;
+  if (typeof record.error === "string" && record.error.trim()) return record.error;
+  if (typeof record.name !== "string" || !record.name.trim()) {
+    return "The skill inventory is unavailable, so this skill's details could not be loaded.";
+  }
+  return null;
+}
+
 function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: () => void; onAction: (msg: string) => void }) {
   const [detail, setDetail] = useState<SkillDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [showMd, setShowMd] = useState(false);
@@ -722,10 +756,25 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
 
   useEffect(() => {
     setLoading(true);
+    setDetailError(null);
     fetch("/api/skills?action=info&name=" + encodeURIComponent(name))
       .then((r) => r.json())
-      .then((d) => { setDetail(d); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then((d) => {
+        // An error payload is still an object, so storing it unchecked used to
+        // pass the null guard below and then crash on `detail.missing.bins`.
+        const err = readDetailError(d);
+        if (err) {
+          setDetail(null);
+          setDetailError(err);
+        } else {
+          setDetail(d as SkillDetail);
+        }
+        setLoading(false);
+      })
+      .catch((err) => {
+        setDetailError(String(err));
+        setLoading(false);
+      });
   }, [name]);
 
   const doAction = useCallback(async (action: string, params: Record<string, unknown>) => {
@@ -736,11 +785,12 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
       if (d.ok) { onAction(action + " succeeded"); } else { onAction("Error: " + (d.error || "failed")); }
     } catch (err) { onAction("Error: " + String(err)); }
     finally { setBusy(null); }
-    // Refresh detail
+    // Refresh detail. Keep the previous snapshot on a bad payload rather than
+    // replacing a rendered skill with something unrenderable.
     try {
       const res = await fetch("/api/skills?action=info&name=" + encodeURIComponent(name));
       const d = await res.json();
-      setDetail(d);
+      if (!readDetailError(d)) setDetail(d as SkillDetail);
     } catch { /* ignore */ }
   }, [name, onAction]);
 
@@ -748,6 +798,24 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
     return (
       <SectionLayout>
         <LoadingState label="Loading skill..." />
+      </SectionLayout>
+    );
+  }
+  if (detailError) {
+    return (
+      <SectionLayout>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <AlertTriangle className="h-5 w-5 text-amber-400" />
+          <p className="text-sm font-medium text-foreground">Could not load {name}</p>
+          <p className="max-w-md text-xs text-muted-foreground">{detailError}</p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            Back to skills
+          </button>
+        </div>
       </SectionLayout>
     );
   }
@@ -925,7 +993,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
                 // Refresh skill detail
                 fetch("/api/skills?action=info&name=" + encodeURIComponent(name))
                   .then((r) => r.json())
-                  .then((d) => setDetail(d))
+                  .then((d) => { if (!readDetailError(d)) setDetail(d as SkillDetail); })
                   .catch(() => {});
               }
             }}
