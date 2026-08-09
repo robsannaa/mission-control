@@ -8,6 +8,8 @@ import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-
 import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { notifyError } from "@/lib/notification-store";
+import { classifySessionKind, sessionKindOf } from "@/lib/session-kinds";
+import { SessionTranscriptPanel } from "@/components/session-transcript-panel";
 
 type Session = {
   key: string;
@@ -49,16 +51,14 @@ function getAgeMs(session: Session): number | null {
   return null;
 }
 
-function sessionLabel(key: string): { type: string; badge: string } {
-  if (key.includes(":cron:") && key.includes(":run:"))
-    return { type: "Cron Run", badge: "bg-warning-bg text-warning-fg" };
-  if (key.includes(":cron:"))
-    return { type: "Cron", badge: "bg-warning-bg text-warning-fg" };
-  if (key.includes(":main"))
-    return { type: "Main", badge: "bg-success-bg text-success-fg" };
-  if (key.includes(":hook:"))
-    return { type: "Hook", badge: "bg-info-bg text-info-fg" };
-  return { type: "Session", badge: "bg-muted text-fg-secondary dark:bg-accent dark:text-fg-subtle" };
+/**
+ * Origin label for a session. Neutral by design: the kind of a session is
+ * metadata, not a status, so it gets no colour. Colour on this page is reserved
+ * for the one thing that deserves attention — destroying a conversation.
+ * Classification comes from the shared helper rather than ad-hoc key matching.
+ */
+function sessionLabel(key: string): string {
+  return classifySessionKind(sessionKindOf({ key })).label;
 }
 
 export function SessionsView() {
@@ -68,6 +68,7 @@ export function SessionsView() {
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [openSession, setOpenSession] = useState<string | null>(null);
   const hasLoadedOnce = useRef(false);
 
   const fetchSessions = useCallback(async () => {
@@ -139,7 +140,7 @@ export function SessionsView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState label="Loading sessions..." />
+        <ScreenLoadingState />
       </SectionLayout>
     );
   }
@@ -148,7 +149,7 @@ export function SessionsView() {
     <SectionLayout>
       <SectionHeader
         title={`Sessions (${sessions.length})`}
-        description="Live sessions via Gateway RPC • Kill to clear conversation history"
+        description="Every conversation your agents are holding. Open one to read what happened."
         actions={
           <button
             type="button"
@@ -192,24 +193,40 @@ export function SessionsView() {
         )}
 
         {sessions.map((s) => {
-          const { type, badge } = sessionLabel(s.key);
+          const type = sessionLabel(s.key);
           const isConfirming = confirmDelete === s.key;
           const isDeleting = deleting === s.key;
           const ageMs = getAgeMs(s);
           const ageLabel = ageMs === null ? "Unknown" : `${formatAge(ageMs)} ago`;
+          const canOpen = classifySessionKind(sessionKindOf({ key: s.key })).isInspectable;
           return (
             <div
               key={s.key}
-              className="rounded-xl border border-border bg-card p-4 shadow-sm"
+              className={cn(
+                "rounded-xl border border-border bg-card p-4 transition-colors",
+                canOpen && "cursor-pointer hover:border-border-strong hover:bg-muted/40",
+              )}
+              onClick={canOpen ? () => setOpenSession(s.key) : undefined}
+              role={canOpen ? "button" : undefined}
+              tabIndex={canOpen ? 0 : undefined}
+              onKeyDown={
+                canOpen
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setOpenSession(s.key);
+                      }
+                    }
+                  : undefined
+              }
             >
               <div className="flex flex-col sm:flex-row sm:items-start gap-3">
                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", badge)}>
-                      {type}
-                    </span>
-                    <span className="truncate text-xs font-mono text-muted-foreground">
+                    {/* Origin is metadata, not status — it gets no colour. */}
+                    <span className="text-sm font-medium text-foreground">{type}</span>
+                    <span className="truncate font-mono text-xs text-muted-foreground">
                       {s.key}
                     </span>
                   </div>
@@ -245,15 +262,15 @@ export function SessionsView() {
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => killSession(s.key)}
+                        onClick={(e) => { e.stopPropagation(); void killSession(s.key); }}
                         disabled={isDeleting}
-                        className="rounded-full bg-destructive px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-destructive/88 disabled:opacity-50"
+                        className="rounded-lg bg-destructive px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-destructive/88 disabled:opacity-50"
                       >
                         {isDeleting ? "Killing..." : "Confirm Kill"}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setConfirmDelete(null)}
+                        onClick={(e) => { e.stopPropagation(); setConfirmDelete(null); }}
                         className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-secondary"
                       >
                         Cancel
@@ -262,7 +279,7 @@ export function SessionsView() {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setConfirmDelete(s.key)}
+                      onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.key); }}
                       className="rounded-lg p-1.5 text-fg-subtle transition-colors hover:bg-danger-bg hover:text-danger-fg"
                       title="Kill session"
                     >
@@ -280,6 +297,17 @@ export function SessionsView() {
           </div>
         )}
       </SectionBody>
+
+      <SessionTranscriptPanel
+        sessionKey={openSession}
+        fallbackTitle={openSession ? sessionLabel(openSession) : undefined}
+        subtitle={
+          openSession
+            ? sessions.find((x) => x.key === openSession)?.model
+            : undefined
+        }
+        onClose={() => setOpenSession(null)}
+      />
     </SectionLayout>
   );
 }

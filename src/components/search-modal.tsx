@@ -7,7 +7,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Brain,
@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFocusTrap, useBodyScrollLock } from "@/hooks/use-modal-accessibility";
+import { InlineSpinner } from "@/components/ui/loading-state";
 
 /* ── types ────────────────────────────────────────── */
 
@@ -90,7 +91,7 @@ const quickActions: QuickAction[] = [
   { id: "docs", label: "Documents", group: "Knowledge", href: "/documents", icon: FolderOpen, keywords: ["files", "uploads"] },
   { id: "vectors", label: "Vector DB", group: "Knowledge", href: "/vectors", icon: Database, keywords: ["embeddings", "semantic", "index"] },
   { id: "models", label: "Models", group: "Agents", href: "/agents?tab=models", icon: Cpu, keywords: ["llm", "ai", "gpt", "claude"] },
-  { id: "accounts", label: "API Keys", group: "Configure", href: "/accounts", icon: KeyRound, keywords: ["credentials", "tokens", "auth"] },
+  { id: "accounts", label: "API Keys", group: "Configure", href: "/accounts", icon: KeyRound, keywords: ["credentials", "tokens", "auth", "keys", "api", "secrets"] },
   { id: "security", label: "Security", group: "Configure", href: "/security", icon: ShieldCheck, keywords: ["permissions", "access"] },
   { id: "hooks", label: "Hooks", group: "Configure", href: "/hooks", icon: Webhook, keywords: ["events", "triggers", "automation"] },
   { id: "settings", label: "Preferences", group: "Configure", href: "/settings", icon: Settings2, keywords: ["config", "options"] },
@@ -177,7 +178,6 @@ function getCached(query: string): SearchResult[] | null {
 
 export function SearchModal({ open, onClose }: Props) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -331,6 +331,8 @@ export function SearchModal({ open, onClose }: Props) {
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
+    // Any keystroke re-ranks the list, so selection must return to the top.
+    setSelectedIdx(0);
     // Skip API search in command mode
     if (value.startsWith(">")) {
       setResults([]);
@@ -346,8 +348,8 @@ export function SearchModal({ open, onClose }: Props) {
   };
 
   const openResult = useCallback((result: SearchResult) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("section");
+    // Start clean: params from the page behind the modal do not belong on /memory.
+    const params = new URLSearchParams();
     params.set("memoryPath", result.path);
     params.set("memoryLine", String(result.startLine));
     if (query.trim()) params.set("memoryQuery", query.trim());
@@ -356,7 +358,7 @@ export function SearchModal({ open, onClose }: Props) {
     const next = params.toString();
     router.push(next ? `/memory?${next}` : "/memory", { scroll: false });
     onClose();
-  }, [onClose, query, router, searchParams]);
+  }, [onClose, query, router]);
 
   const openAction = useCallback((action: QuickAction) => {
     router.push(action.href, { scroll: false });
@@ -523,13 +525,8 @@ export function SearchModal({ open, onClose }: Props) {
 
             {/* Loading state (memory search) */}
             {!isCommandMode && loading && results.length === 0 && searched && (
-              <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-muted-foreground sm:px-6">
-                <span className="inline-flex items-center gap-0.5">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                </span>
-                Searching vector memory...
+              <div className="flex items-center justify-center px-4 py-10 sm:px-6">
+                <InlineSpinner />
               </div>
             )}
 
