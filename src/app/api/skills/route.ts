@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchConfig, patchConfig } from "@/lib/gateway-config";
+import { gatewayCall } from "@/lib/openclaw";
 import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 import { getDefaultWorkspaceSync, getSystemSkillsDir } from "@/lib/paths";
@@ -338,36 +339,34 @@ export async function POST(request: NextRequest) {
     const action = body.action as string;
 
     switch (action) {
-      case "install-brew": {
-        // Install a binary dependency via brew
-        const pkg = body.package as string;
-        if (!pkg)
+      // Non-streaming counterpart of POST /api/skills/install. Both go through
+      // the gateway so OpenClaw resolves the package name and the installer for
+      // its own host; see that route for why doing it here is wrong.
+      case "install-requirement": {
+        const name = body.name as string;
+        const installId = body.installId as string;
+        if (!name || !installId) {
           return NextResponse.json(
-            { error: "package required" },
+            { error: "name and installId required" },
             { status: 400 }
           );
-        // Run brew install
-        const { execFile } = await import("child_process");
-        const { promisify } = await import("util");
-        const exec = promisify(execFile);
+        }
         try {
-          const { stdout, stderr } = await exec("brew", ["install", pkg], {
-            timeout: 120000,
-          });
-          return NextResponse.json({
-            ok: true,
-            action,
-            package: pkg,
-            output: stdout + stderr,
-          });
-        } catch (err: unknown) {
-          const e = err as { stderr?: string; message?: string };
-          return NextResponse.json(
-            {
-              error: `brew install failed: ${e.stderr || e.message || String(err)}`,
-            },
-            { status: 500 }
-          );
+          const result = await gatewayCall<{
+            ok?: boolean;
+            message?: string;
+            stdout?: string;
+            stderr?: string;
+          }>("skills.install", { name, installId }, 285_000);
+          if (!result?.ok) {
+            return NextResponse.json(
+              { error: result?.message || "install failed", ...result },
+              { status: 500 }
+            );
+          }
+          return NextResponse.json({ ok: true, action, name, installId, ...result });
+        } catch (err) {
+          return NextResponse.json({ error: String(err) }, { status: 500 });
         }
       }
 

@@ -209,14 +209,14 @@ function ToastBar({ toast, onDone }: { toast: Toast; onDone: () => void }) {
 type TermLine = { text: string; stream: "stdout" | "stderr" | "system" };
 
 function InstallTerminal({
-  kind,
-  pkg,
+  skillName,
+  installId,
   label,
   onDone,
   onClose,
 }: {
-  kind: string;
-  pkg: string;
+  skillName: string;
+  installId: string;
   label: string;
   onDone: (ok: boolean) => void;
   onClose: () => void;
@@ -257,7 +257,7 @@ function InstallTerminal({
         const res = await fetch("/api/skills/install", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ kind, package: pkg }),
+          body: JSON.stringify({ name: skillName, installId }),
           signal: controller.signal,
         });
 
@@ -331,7 +331,7 @@ function InstallTerminal({
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, pkg]);
+  }, [skillName, installId]);
 
   const handleAbort = useCallback(() => {
     abortRef.current?.abort();
@@ -359,7 +359,7 @@ function InstallTerminal({
           <div className="flex items-center gap-2">
             <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-xs font-medium text-muted-foreground">
-              {kind} install {pkg}
+              skills install {skillName} ({installId})
             </span>
           </div>
           {running && (
@@ -711,7 +711,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
   const [busy, setBusy] = useState<string | null>(null);
   const [showMd, setShowMd] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
-  const [installTerminal, setInstallTerminal] = useState<{ kind: string; pkg: string; label: string } | null>(null);
+  const [installTerminal, setInstallTerminal] = useState<{ installId: string; label: string } | null>(null);
   const installSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -889,41 +889,33 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
           <div ref={installSectionRef} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
             <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300"><Download className="h-3.5 w-3.5" />Install what’s missing</h3>
             <p className="text-xs text-amber-800/90 dark:text-amber-200/90">This skill needs the following to work. Click Install to add them (when available).</p>
-            <div className="space-y-2">{detail.install.map((inst) => {
-              const supportedKinds = ["brew", "npm", "pip"];
-              const canInstall = supportedKinds.includes(inst.kind) && inst.bins && inst.bins.length > 0;
-              return (
+            <div className="space-y-2">{detail.install.map((inst) => (
                 <div key={inst.id} className="glass-subtle flex items-center justify-between rounded-lg px-4 py-3">
                   <div>
                     <p className="text-xs font-medium text-foreground/90">{inst.label}</p>
                     <p className="text-xs text-muted-foreground">{inst.kind}{inst.bins ? " \u2022 installs " + inst.bins.join(", ") : ""}</p>
                   </div>
-                  {canInstall ? (
-                    <button
-                      onClick={() => setInstallTerminal({ kind: inst.kind, pkg: inst.bins![0], label: inst.label })}
-                      disabled={installTerminal !== null}
-                      className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
-                    >
-                      <Terminal className="h-3 w-3" />Install
-                    </button>
-                  ) : (
-                    <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">Manual</span>
-                  )}
+                  <button
+                    onClick={() => setInstallTerminal({ installId: inst.id, label: inst.label })}
+                    disabled={installTerminal !== null}
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    <Terminal className="h-3 w-3" />Install
+                  </button>
                 </div>
-              );
-            })}</div>
+              ))}</div>
           </div>
         )}
 
         {/* Install terminal */}
         {installTerminal && (
           <InstallTerminal
-            kind={installTerminal.kind}
-            pkg={installTerminal.pkg}
+            skillName={name}
+            installId={installTerminal.installId}
             label={installTerminal.label}
             onDone={(ok) => {
               if (ok) {
-                onAction(`${installTerminal.pkg} installed successfully`);
+                onAction(`${installTerminal.label} completed`);
                 // Refresh skill detail
                 fetch("/api/skills?action=info&name=" + encodeURIComponent(name))
                   .then((r) => r.json())
