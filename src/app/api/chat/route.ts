@@ -74,7 +74,18 @@ function extractContent(messages: Message[]): {
         // Build native OpenResponses input items for files
         const mime = p.mimeType || guessMime(p.url, p.filename);
         if (mime.startsWith("image/")) {
-          orItems.push({ type: "input_image", source: { type: "url", url: p.url } });
+          // data: URLs must go as base64; URL sources are for http(s) only.
+          const inlineImage = p.url.match(/^data:[^;]+;base64,(.+)$/);
+          orItems.push({
+            type: "input_image",
+            source: inlineImage
+              ? {
+                  type: "base64",
+                  media_type: p.mimeType || "image/png",
+                  data: inlineImage[1],
+                }
+              : { type: "url", url: p.url },
+          });
         } else {
           const base64Match = p.url.match(/^data:[^;]+;base64,(.+)$/);
           if (base64Match) {

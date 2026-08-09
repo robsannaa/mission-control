@@ -366,3 +366,54 @@
 > @openclaw/dashboard@0.6.0 start
 > next start -H 127.0.0.1 -p 3100
 
+
+> @openclaw/dashboard@0.7.0 start
+> next start -H 127.0.0.1 -p 3100
+
+▲ Next.js 16.1.6
+- Local:         http://127.0.0.1:3100
+- Network:       http://127.0.0.1:3100
+
+✓ Starting...
+✓ Ready in 216ms
+[AutoTransport] Running openclaw via local CLI: exec is not exposed on POST /tools/invoke (OpenClaw denies it by default).
+{"level":"info","ts":"2026-08-09T21:59:45.954Z","route":"/api/gateway","status":200,"durationMs":194,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T21:59:45.968Z","route":"/api/gateway","status":200,"durationMs":0,"meta":{"gateway":"online","cached":true}}
+{"level":"info","ts":"2026-08-09T21:59:55.949Z","route":"/api/chat/stream","status":400,"durationMs":11,"meta":{"agentId":"main","error":"gateway_error"}}
+{"level":"info","ts":"2026-08-09T22:00:07.995Z","route":"/api/chat/stream","status":400,"durationMs":5,"meta":{"agentId":"main","error":"gateway_error"}}
+{"level":"info","ts":"2026-08-09T22:00:45.820Z","route":"/api/gateway","status":200,"durationMs":59,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:01:45.821Z","route":"/api/gateway","status":200,"durationMs":61,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:02:45.820Z","route":"/api/gateway","status":200,"durationMs":56,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:03:45.818Z","route":"/api/gateway","status":200,"durationMs":61,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:04:45.831Z","route":"/api/gateway","status":200,"durationMs":72,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:05:45.832Z","route":"/api/gateway","status":200,"durationMs":72,"meta":{"gateway":"online","coalesced":false}}
+
+> @openclaw/dashboard@0.7.0 start
+> next start -H 127.0.0.1 -p 3100
+
+▲ Next.js 16.1.6
+- Local:         http://127.0.0.1:3100
+- Network:       http://127.0.0.1:3100
+
+✓ Starting...
+✓ Ready in 215ms
+[AutoTransport] Running openclaw via local CLI: exec is not exposed on POST /tools/invoke (OpenClaw denies it by default).
+{"level":"info","ts":"2026-08-09T22:06:39.607Z","route":"/api/chat/stream","status":400,"durationMs":80,"meta":{"agentId":"main","error":"gateway_error"}}
+{"level":"info","ts":"2026-08-09T22:06:45.819Z","route":"/api/gateway","status":200,"durationMs":48,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:06:52.300Z","route":"/api/chat/stream","status":400,"durationMs":7,"meta":{"agentId":"main","error":"gateway_error"}}
+{"level":"info","ts":"2026-08-09T22:07:45.822Z","route":"/api/gateway","status":200,"durationMs":62,"meta":{"gateway":"online","coalesced":false}}
+
+> @openclaw/dashboard@0.7.0 start
+> next start -H 127.0.0.1 -p 3100
+
+▲ Next.js 16.1.6
+- Local:         http://127.0.0.1:3100
+- Network:       http://127.0.0.1:3100
+
+✓ Starting...
+✓ Ready in 212ms
+[AutoTransport] Running openclaw via local CLI: exec is not exposed on POST /tools/invoke (OpenClaw denies it by default).
+{"level":"info","ts":"2026-08-09T22:08:43.905Z","route":"/api/chat/stream","status":400,"durationMs":75,"meta":{"agentId":"main","error":"gateway_error"}}
+{"level":"info","ts":"2026-08-09T22:08:45.836Z","route":"/api/gateway","status":200,"durationMs":64,"meta":{"gateway":"online","coalesced":false}}
+{"level":"info","ts":"2026-08-09T22:09:12.386Z","route":"/api/chat/stream","status":200,"durationMs":6,"meta":{"agentId":"main","model":"openclaw:main"}}
+{"level":"info","ts":"2026-08-09T22:09:45.819Z","route":"/api/gateway","status":200,"durationMs":53,"meta":{"gateway":"online","coalesced":false}}

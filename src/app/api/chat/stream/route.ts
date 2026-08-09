@@ -50,37 +50,59 @@ export async function POST(req: Request) {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
     const inputItems: unknown[] = [];
 
+    /*
+     * OpenResponses shape: input_text / input_image / input_file are content
+     * PARTS inside a message, not top-level input items. The previous code
+     * pushed a { type: "message" } item and then sibling input_image /
+     * input_file items into the same array, which the gateway rejects with
+     * "input: Invalid input" — so every attachment silently failed while
+     * text-only messages worked.
+     */
     if (lastUserMsg?.parts) {
+      const contentParts: unknown[] = [];
+
       for (const p of lastUserMsg.parts) {
         if (p.type === "text" && p.text) {
-          inputItems.push({
-            type: "message",
-            role: "user",
-            content: p.text,
-          });
+          contentParts.push({ type: "input_text", text: p.text });
         } else if (p.type === "file" && p.url) {
           const mime = p.mimeType || guessMime(p.url, p.filename);
+          // Browsers hand us data: URLs; the gateway wants those as base64.
+          // URL sources are for real http(s) URLs and can be disabled by config.
+          const inline = p.url.match(/^data:[^;]+;base64,(.+)$/);
+
           if (mime.startsWith("image/")) {
-            inputItems.push({
+            contentParts.push({
               type: "input_image",
-              source: { type: "url", url: p.url },
+              source: inline
+                ? { type: "base64", media_type: mime, data: inline[1] }
+                : { type: "url", url: p.url },
             });
-          } else {
-            // Extract base64 data from data URL
-            const base64Match = p.url.match(/^data:[^;]+;base64,(.+)$/);
-            if (base64Match) {
-              inputItems.push({
-                type: "input_file",
-                source: {
-                  type: "base64",
-                  media_type: mime,
-                  data: base64Match[1],
-                  filename: p.filename || "file",
-                },
-              });
-            }
+          } else if (inline) {
+            contentParts.push({
+              type: "input_file",
+              source: {
+                type: "base64",
+                media_type: mime,
+                data: inline[1],
+                filename: p.filename || "file",
+              },
+            });
           }
         }
+      }
+
+      if (contentParts.length > 0) {
+        const onlyText =
+          contentParts.length === 1 &&
+          (contentParts[0] as { type: string }).type === "input_text";
+        inputItems.push({
+          type: "message",
+          role: "user",
+          // A lone text part stays a plain string — the simplest valid form.
+          content: onlyText
+            ? (contentParts[0] as { text: string }).text
+            : contentParts,
+        });
       }
     } else if (lastUserMsg?.content) {
       inputItems.push({
