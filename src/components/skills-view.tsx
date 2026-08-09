@@ -31,6 +31,12 @@ type Skill = {
 
 type ClawHubItem = {
   slug: string;
+  /**
+   * Owner-qualified `@owner/slug`. Slugs are not unique across owners — a
+   * search for "weather" returns several — so this is what identifies a skill
+   * for install. Absent for catalog rows with no owner attached.
+   */
+  ref?: string;
   displayName?: string;
   summary?: string;
   version?: string;
@@ -1005,6 +1011,7 @@ function ClawHubPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clawhubNotFound, setClawhubNotFound] = useState(false);
+  const [browseNotice, setBrowseNotice] = useState<string | null>(null);
   const [copiedInstallCmd, setCopiedInstallCmd] = useState(false);
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<"install" | "update" | "uninstall" | null>(null);
@@ -1089,12 +1096,16 @@ function ClawHubPanel({
         setLoading(false);
         return;
       }
+      // Browsing needs the standalone CLI, but search and install do not, so
+      // this is a note rather than the tab-wide "not found" state.
+      setBrowseNotice(typeof data?.notice === "string" ? data.notice : null);
       if (!res.ok || data?.error) {
         setClawhubNotFound(false);
         throw new Error(String(data?.error || `HTTP ${res.status}`));
       }
       const normalized: ClawHubItem[] = (data.items || []).map((item: {
         slug?: string;
+        ref?: string;
         displayName?: string;
         summary?: string;
         latestVersion?: { version?: string };
@@ -1104,6 +1115,7 @@ function ClawHubPanel({
         author?: string;
       }) => ({
         slug: String(item.slug || ""),
+        ref: item.ref || undefined,
         displayName: item.displayName || undefined,
         summary: item.summary || "",
         version: item.latestVersion?.version || "latest",
@@ -1128,6 +1140,7 @@ function ClawHubPanel({
     if (!q) return;
     setLoading(true);
     setMode("search");
+    setBrowseNotice(null);
     try {
       const res = await fetch(`/api/skills/clawhub?action=search&q=${encodeURIComponent(q)}&limit=28`);
       const data = await res.json();
@@ -1145,19 +1158,27 @@ function ClawHubPanel({
       }
       const normalized: ClawHubItem[] = (data.items || []).map((item: {
         slug?: string;
+        ref?: string;
         version?: string;
         summary?: string;
         score?: number;
         developer?: string;
         author?: string;
         displayName?: string;
+        stats?: { downloads?: number; installsCurrent?: number; stars?: number };
+        updatedAt?: number;
       }) => ({
         slug: String(item.slug || ""),
+        ref: item.ref || undefined,
         displayName: item.displayName || undefined,
         version: item.version || "latest",
         summary: item.summary || "",
         score: typeof item.score === "number" ? item.score : undefined,
         developer: (item.developer ?? item.author) || undefined,
+        downloads: item.stats?.downloads || 0,
+        installsCurrent: item.stats?.installsCurrent || 0,
+        stars: item.stats?.stars || 0,
+        updatedAt: item.updatedAt,
       })).filter((item: ClawHubItem) => item.slug);
       setItems(normalized);
       setError(null);
@@ -1169,14 +1190,14 @@ function ClawHubPanel({
     setLoading(false);
   }, [query]);
 
-  const installSkill = useCallback(async (slug: string, version?: string, force = false) => {
+  const installSkill = useCallback(async (slug: string, version?: string, force = false, ref?: string) => {
     setBusySlug(slug);
     setBusyAction("install");
     try {
       const res = await fetch("/api/skills/clawhub", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "install", slug, version, force }),
+        body: JSON.stringify({ action: "install", slug, ref, version, force }),
       });
       const data = await res.json();
       if (data?.code === "CLAWHUB_NOT_FOUND") {
@@ -1192,7 +1213,7 @@ function ClawHubPanel({
         if (isSuspicious && !force && window.confirm("This skill is flagged as suspicious by VirusTotal (e.g. risky patterns). Install anyway? Review the skill code after installing.")) {
           setBusySlug(null);
           setBusyAction(null);
-          return void installSkill(slug, version, true);
+          return void installSkill(slug, version, true, ref);
         }
         onAction(`Error: ${errMsg}`);
       } else {
@@ -1285,6 +1306,12 @@ function ClawHubPanel({
 
   return (
     <div className="space-y-3">
+      {browseNotice && !clawhubNotFound && (
+        <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Search className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <p>{browseNotice}</p>
+        </div>
+      )}
       {clawhubNotFound && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200">
           <div className="flex items-start gap-2">
@@ -1389,7 +1416,7 @@ function ClawHubPanel({
               const installLabel = isBusy && busyAction === "install" ? "Installing..." : isBusy && busyAction === "update" ? "Updating..." : isBusy && busyAction === "uninstall" ? "Deleting..." : isInstalled ? "Reinstall" : "Install";
               return (
                 <div
-                  key={item.slug}
+                  key={item.ref || item.slug}
                   className="glass w-full rounded-lg p-3.5 text-left transition-colors"
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -1431,7 +1458,7 @@ function ClawHubPanel({
                           Delete
                         </button>
                       )}
-                      <button type="button" disabled={isBusy || clawhubNotFound} onClick={() => void installSkill(item.slug, item.version)} className="rounded-md border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">
+                      <button type="button" disabled={isBusy || clawhubNotFound} onClick={() => void installSkill(item.slug, item.version, false, item.ref)} className="rounded-md border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">
                         {installLabel}
                       </button>
                     </div>
