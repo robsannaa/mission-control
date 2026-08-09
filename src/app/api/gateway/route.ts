@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { getOpenClawBin, getGatewayUrl } from "@/lib/paths";
+import { probeGatewayLiveness } from "@/lib/gateway-liveness";
 import { gatewayConfigPatch } from "@/lib/gateway-config";
 import { logRequest, logError } from "@/lib/request-log";
 import { execFile } from "child_process";
@@ -109,14 +110,7 @@ async function probeGatewayHttp(): Promise<{
 }> {
   const url = await getGatewayUrl();
   const port = parseInt(new URL(url).port, 10) || 18789;
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(3000),
-    });
-    return { ok: res.ok, port, url };
-  } catch {
-    return { ok: false, port, url };
-  }
+  return { ok: await probeGatewayLiveness(url), port, url };
 }
 
 type GatewayPayload = {
