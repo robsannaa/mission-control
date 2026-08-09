@@ -8,6 +8,29 @@
 
 Monitor your AI agents in real time. Chat with them. Schedule jobs. Track costs. Manage memory. All from your browser, all running on your machine.
 
+## ⚡ Install it with your AI agent — copy, paste, done
+
+Using Claude Code, Codex, OpenClaw itself, or any coding agent? Paste this and the agent does the rest:
+
+```text
+Install Mission Control, the dashboard for OpenClaw, on this machine.
+
+1. Check prerequisites: `node --version` must be >= 20, and `openclaw --version`
+   must work. If OpenClaw is missing, install it first per
+   https://docs.openclaw.ai/install and complete its onboarding.
+2. Install:
+     cd ~/.openclaw
+     git clone https://github.com/robsannaa/openclaw-mission-control.git
+     cd openclaw-mission-control
+     ./setup.sh
+   (setup.sh is safe to re-run if anything fails.)
+3. If port 3333 is already taken, re-run as: PORT=3344 ./setup.sh
+4. Verify it works: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3333`
+   must print 200 (use the port you chose).
+5. Do not finish until that check passes, then tell me the exact URL to open
+   and how the background service was registered (launchd/systemd/nohup).
+```
+
 ## Please, consider supporting me and buy me a Claude Code Subscription!
 [![Buy Me a Claude Code Subscription!](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
 

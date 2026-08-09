@@ -8,6 +8,28 @@
 
 实时监控你的 AI 智能体、与它们对话、调度定时任务、追踪费用、管理记忆 —— 一切在浏览器中完成，一切在你自己的设备上运行。
 
+## ⚡ 让 AI 智能体帮你安装 —— 复制、粘贴、完成
+
+在用 Claude Code、Codex、或 OpenClaw 本身？把下面这段粘贴给它，剩下的交给智能体：
+
+```text
+在这台机器上安装 Mission Control（OpenClaw 的仪表盘）。
+
+1. 检查前提：`node --version` 必须 >= 20，`openclaw --version` 必须可用。
+   如果没装 OpenClaw，先按 https://docs.openclaw.ai/install 安装并完成初始化。
+2. 安装：
+     cd ~/.openclaw
+     git clone https://github.com/robsannaa/openclaw-mission-control.git
+     cd openclaw-mission-control
+     ./setup.sh
+   （setup.sh 失败后可安全重跑。）
+3. 如果 3333 端口被占用，改用：PORT=3344 ./setup.sh
+4. 验证：`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3333`
+   必须输出 200（用你实际选择的端口）。
+5. 该检查通过前不要结束任务；完成后告诉我打开哪个 URL，
+   以及后台服务是如何注册的（launchd/systemd/nohup）。
+```
+
 ## 如果觉得好用，欢迎请我喝杯咖啡（或买个 Claude Code 订阅）！
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
 

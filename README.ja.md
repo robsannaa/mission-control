@@ -8,6 +8,29 @@
 
 AI エージェントをリアルタイムで監視。チャットで対話。ジョブをスケジュール。コストを追跡。メモリを管理。すべてブラウザで、すべてあなたのマシン上で。
 
+## ⚡ AI エージェントにインストールさせる —— コピー、ペースト、完了
+
+Claude Code・Codex・OpenClaw 本体を使っていますか？以下を貼り付ければ、あとはエージェントがやってくれます：
+
+```text
+このマシンに Mission Control（OpenClaw のダッシュボード）をインストールして。
+
+1. 前提確認：`node --version` は 20 以上、`openclaw --version` が動くこと。
+   OpenClaw が未インストールなら、まず https://docs.openclaw.ai/install に
+   従ってインストールと初期設定を完了させる。
+2. インストール：
+     cd ~/.openclaw
+     git clone https://github.com/robsannaa/openclaw-mission-control.git
+     cd openclaw-mission-control
+     ./setup.sh
+   （setup.sh は失敗しても安全に再実行できる。）
+3. ポート 3333 が使用中なら：PORT=3344 ./setup.sh
+4. 検証：`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3333`
+   が 200 を出力すること（選んだポートで確認）。
+5. このチェックが通るまで終了しないこと。完了したら、開くべき URL と
+   バックグラウンドサービスの登録方式（launchd/systemd/nohup）を報告して。
+```
+
 ## 気に入ったら、コーヒー（または Claude Code サブスク）をおごってください！
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
 
