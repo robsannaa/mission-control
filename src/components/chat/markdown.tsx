@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EntityPill, classifyInlineToken } from "@/components/chat/entity-pill";
+import { FileHoverCard } from "@/components/chat/file-hover-card";
 
 /**
  * Message markdown.
@@ -176,7 +177,16 @@ const components: React.ComponentProps<typeof ReactMarkdown>["components"] = {
           ? children[0]
           : null;
     const kind = raw ? classifyInlineToken(raw) : null;
-    if (raw && (kind === "file" || kind === "memory" || kind === "command")) {
+    if (raw && (kind === "file" || kind === "memory")) {
+      // Files and memory pages are real things on disk: hovering previews them,
+      // clicking opens them in Documents.
+      return (
+        <FileHoverCard path={raw.trim()}>
+          <EntityPill kind={kind} label={raw.trim()} />
+        </FileHoverCard>
+      );
+    }
+    if (raw && kind === "command") {
       return <EntityPill kind={kind} label={raw.trim()} />;
     }
     return (

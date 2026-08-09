@@ -51,6 +51,8 @@ export type ChatSessionRow = {
   hasActiveRun: boolean;
   model: string | null;
   totalTokens: number;
+  /** Context window size, so the UI can express usage as how full a chat is. */
+  contextTokens: number;
 };
 
 /* ── Content normalisation ────────────────────────────────────────────────── */
@@ -234,6 +236,7 @@ function toRow(session: GatewaySession): ChatSessionRow | null {
     hasActiveRun: Boolean(session.hasActiveRun),
     model: session.model ? String(session.model) : null,
     totalTokens: Number(session.totalTokens) || 0,
+    contextTokens: Number(session.contextTokens) || 0,
   };
 }
 

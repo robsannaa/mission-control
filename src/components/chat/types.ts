@@ -22,6 +22,8 @@ export type ChatSessionRow = {
   hasActiveRun: boolean;
   model: string | null;
   totalTokens: number;
+  /** Context window size, so usage can be shown as how full a chat is. */
+  contextTokens: number;
 };
 
 export type SlashCommandArg = {

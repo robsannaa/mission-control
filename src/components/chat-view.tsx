@@ -503,6 +503,7 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
         hasActiveRun: false,
         model: null,
         totalTokens: 0,
+        contextTokens: 0,
       });
       const params = new URLSearchParams();
       params.set("agent", agentId);
@@ -648,9 +649,23 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
   // the model — printing it twice reads like a bug.
   const modelLabel =
     rawModel && rawModel.toLowerCase() !== agentName.toLowerCase() ? rawModel : "";
-  const contextLabel = activeRow?.totalTokens
-    ? formatTokens(activeRow.totalTokens)
-    : null;
+  /**
+   * "32.7k tokens" means nothing to someone who has never heard of a token.
+   * What a person actually wants to know is whether this conversation is
+   * getting close to the point where the agent starts forgetting the start of
+   * it — so express it as how full the conversation is, and only speak up when
+   * it is worth knowing.
+   */
+  const contextLabel = (() => {
+    const used = activeRow?.totalTokens ?? 0;
+    const capacity = activeRow?.contextTokens ?? 0;
+    if (!used) return null;
+    if (!capacity) return `${formatTokens(used)} used`;
+    const percent = Math.min(100, Math.round((used / capacity) * 100));
+    if (percent < 50) return null; // Nothing useful to say yet.
+    if (percent < 80) return `Conversation ${percent}% full`;
+    return `Conversation ${percent}% full — older messages may drop soon`;
+  })();
 
   const composerAgents: ChatAgent[] = useMemo(
     () =>

@@ -6,6 +6,8 @@ import type { FileUIPart, UIMessage } from "ai";
 import { Check, ChevronRight, Loader2, Paperclip, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CopyButton, Markdown } from "@/components/chat/markdown";
+import { EntityPill } from "@/components/chat/entity-pill";
+import { FileHoverCard } from "@/components/chat/file-hover-card";
 
 /**
  * The transcript.
@@ -209,11 +211,26 @@ function MessageRow({
   const meta = (message.metadata ?? {}) as ChatMessageMeta;
   const time = formatTime(meta.timestamp);
 
+  const { body: userBody, paths: referencedPaths } = isUser
+    ? splitReferenceFooter(text)
+    : { body: text, paths: [] as string[] };
+
   if (isUser) {
     return (
       <div className="group/msg mb-7 flex flex-col items-end">
         <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-sm leading-7 text-foreground">
-          {text ? <span className="whitespace-pre-wrap">{text}</span> : null}
+          {userBody ? (
+            <span className="whitespace-pre-wrap">{userBody}</span>
+          ) : null}
+          {referencedPaths.length > 0 && (
+            <span className="mt-1.5 flex flex-wrap items-center gap-1">
+              {referencedPaths.map((referenced) => (
+                <FileHoverCard key={referenced} path={referenced}>
+                  <EntityPill kind="file" label={referenced} />
+                </FileHoverCard>
+              ))}
+            </span>
+          )}
           {images.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
               {images.map((file, index) => (
@@ -289,6 +306,26 @@ export function ThinkingIndicator({ label = "Thinking" }: { label?: string }) {
       <span className="animate-pulse">{label}</span>
     </div>
   );
+}
+
+
+/**
+ * The composer appends a "Referenced files (relative to the agent workspace…)"
+ * block so the agent can locate what was mentioned. It is plumbing, not prose:
+ * strip it from the displayed message and surface the paths as pills instead.
+ */
+function splitReferenceFooter(text: string): { body: string; paths: string[] } {
+  const marker = text.indexOf("Referenced files (relative to the agent workspace");
+  if (marker < 0) return { body: text, paths: [] };
+
+  const body = text.slice(0, marker).trim();
+  const footer = text.slice(marker);
+  const paths: string[] = [];
+  for (const line of footer.split("\n")) {
+    const match = /^\s*-\s+(\S+?)(?:\s+—\s+.*)?$/.exec(line);
+    if (match) paths.push(match[1]);
+  }
+  return { body, paths };
 }
 
 export function MessageList({
