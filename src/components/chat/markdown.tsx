@@ -176,7 +176,7 @@ const components: React.ComponentProps<typeof ReactMarkdown>["components"] = {
           ? children[0]
           : null;
     const kind = raw ? classifyInlineToken(raw) : null;
-    if (raw && kind) {
+    if (raw && (kind === "file" || kind === "memory")) {
       return <EntityPill kind={kind} label={raw.trim()} />;
     }
     return (
@@ -236,11 +236,31 @@ const components: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   ),
 };
 
+
+/**
+ * Agent output names tools inline as plain prose — "Built-in tools apply_patch,
+ * create_goal, exec, ...". Backtick identifier-shaped tokens so they render as
+ * monospace chips instead of dissolving into the sentence. Existing code spans
+ * and fenced blocks are left exactly as authored.
+ */
+const IDENTIFIER_RE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g;
+
+function markUpIdentifiers(text: string): string {
+  const segments = text.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
+  return segments
+    .map((segment, i) => {
+      // Odd indices are the captured code spans/blocks — never touch them.
+      if (i % 2 === 1) return segment;
+      return segment.replace(IDENTIFIER_RE, (match) => `\`${match}\``);
+    })
+    .join("");
+}
+
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="text-sm text-foreground">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {text}
+        {markUpIdentifiers(text)}
       </ReactMarkdown>
     </div>
   );
