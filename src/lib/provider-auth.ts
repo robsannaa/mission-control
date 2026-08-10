@@ -20,6 +20,10 @@ export const PROVIDER_ENV_KEYS: Record<string, string> = {
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
+  // Gemini/Google. Config namespace is `models.providers.google`, but the
+  // resolved env var OpenClaw actually reads is GEMINI_API_KEY (GOOGLE_API_KEY
+  // is only a fallback) — see docs/concepts/model-providers.md.
+  google: "GEMINI_API_KEY",
 };
 
 const PROVIDER_PROBES: Record<string, ProviderProbe> = {
@@ -49,6 +53,11 @@ const PROVIDER_PROBES: Record<string, ProviderProbe> = {
     url: "https://openrouter.ai/api/v1/models",
     method: "GET",
     buildHeaders: (token) => ({ Authorization: `Bearer ${token}` }),
+  },
+  google: {
+    url: "https://generativelanguage.googleapis.com/v1beta/models",
+    method: "GET",
+    buildHeaders: (token) => ({ "x-goog-api-key": token }),
   },
 };
 

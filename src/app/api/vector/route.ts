@@ -6,6 +6,7 @@ import { getOpenClawHome, getDefaultWorkspace } from "@/lib/paths";
 import { gatewayConfigPatch } from "@/lib/gateway-config";
 import { buildModelsSummary } from "@/lib/models-summary";
 import { gatewayMemoryIndex } from "@/lib/gateway-tools";
+import type { ProviderAvailability } from "@/components/vector/types";
 
 export const dynamic = "force-dynamic";
 
@@ -227,6 +228,73 @@ function sanitizeExtraPaths(rawPaths: unknown): string[] {
   return [...new Set(normalized)];
 }
 
+/* ── Server-side cache ──────────────────────────────
+ * `openclaw memory status` is a real CLI subprocess call (the gateway denies
+ * `exec` over HTTP by default, so there is no faster transport for it — see
+ * `src/lib/transports/auto-transport.ts`). On this install it costs ~2s: the
+ * CLI has to boot the full plugin loader before it can answer. That cost is
+ * real and we do not hide it on a cold load (the client shows a skeleton
+ * instead), but there is no reason to pay it again for a manual refresh, a
+ * remount, or a tab switch a few seconds later. Module-scope cache is correct
+ * here because Mission Control runs as one long-lived Node process per
+ * deployment (self-hosted or hosted) — not a request-per-lambda model.
+ */
+type StatusPayload = Record<string, unknown>;
+let statusCache: { data: StatusPayload; expiresAt: number } | null = null;
+let documentsCache: { data: StatusPayload; expiresAt: number } | null = null;
+const STATUS_CACHE_TTL_MS = 8_000;
+const DOCUMENTS_CACHE_TTL_MS = 20_000;
+
+function invalidateVectorCaches(): void {
+  statusCache = null;
+  documentsCache = null;
+}
+
+/** Is a local Ollama server answering at the default address? Cheap, fast, best-effort. */
+async function probeOllama(): Promise<{ reachable: boolean; embeddingModels: string[] }> {
+  try {
+    const res = await fetch("http://127.0.0.1:11434/api/tags", {
+      signal: AbortSignal.timeout(700),
+    });
+    if (!res.ok) return { reachable: false, embeddingModels: [] };
+    const data = (await res.json()) as { models?: Array<{ name?: string; model?: string }> };
+    const names = Array.isArray(data.models)
+      ? data.models.map((m) => String(m?.name || m?.model || "")).filter(Boolean)
+      : [];
+    // Heuristic: Ollama has no API-level "is this an embedding model" flag,
+    // so we go by naming convention (every common embedding model on Ollama's
+    // library — nomic-embed-text, mxbai-embed-large, qwen3-embedding, bge-m3's
+    // "embed" alias — includes "embed" in its tag).
+    const embeddingModels = names.filter((n) => /embed/i.test(n));
+    return { reachable: true, embeddingModels };
+  } catch {
+    return { reachable: false, embeddingModels: [] };
+  }
+}
+
+/**
+ * Is `@openclaw/llama-cpp-provider` installed? Required for `memorySearch.provider: "local"`
+ * (see docs/concepts/memory-search.md) — without it, "Local" cannot actually run, so the UI
+ * must not offer it as a plain one-click option. Reads the plugin registry OpenClaw already
+ * maintains on disk; no subprocess.
+ */
+async function isLocalEmbeddingPluginInstalled(): Promise<boolean> {
+  try {
+    const raw = await readFile(join(getOpenClawHome(), "plugins", "installs.json"), "utf-8");
+    const data = JSON.parse(raw) as {
+      plugins?: Array<{ pluginId?: string; packageName?: string; enabled?: boolean }>;
+    };
+    const list = Array.isArray(data.plugins) ? data.plugins : [];
+    return list.some(
+      (p) =>
+        (p.pluginId === "llama-cpp-provider" || p.packageName === "@openclaw/llama-cpp-provider") &&
+        p.enabled !== false
+    );
+  } catch {
+    return false;
+  }
+}
+
 /* ── GET: status + search ─────────────────────────── */
 
 export async function GET(request: NextRequest) {
@@ -235,19 +303,28 @@ export async function GET(request: NextRequest) {
 
   try {
     if (scope === "status") {
-      // Get memory status for all agents (kept as CLI — detailed runtime data)
-      let agents: MemoryStatus[] = [];
-      let agentsWarning: string | null = null;
-      try {
-        agents = await runCliJson<MemoryStatus[]>(
-          ["memory", "status"],
-          15000
-        );
-      } catch (err) {
-        agentsWarning = String(err);
+      const bypassCache = searchParams.get("fresh") === "1";
+      if (!bypassCache && statusCache && Date.now() < statusCache.expiresAt) {
+        return NextResponse.json({ ...statusCache.data, cached: true });
       }
 
-      // Enrich with DB file sizes
+      // Every independent read runs concurrently. The CLI call dominates
+      // (~2s on a stock install — see the cache comment above); nothing else
+      // should stack serially behind it.
+      const [agentsResult, configResult, modelsSummaryResult, ollamaResult, localPluginResult] =
+        await Promise.allSettled([
+          runCliJson<MemoryStatus[]>(["memory", "status"], 15000),
+          gatewayCall<Record<string, unknown>>("config.get", undefined, 10000),
+          buildModelsSummary(),
+          probeOllama(),
+          isLocalEmbeddingPluginInstalled(),
+        ]);
+
+      const agents = agentsResult.status === "fulfilled" ? agentsResult.value : [];
+      const agentsWarning =
+        agentsResult.status === "rejected" ? String(agentsResult.reason) : null;
+
+      // Enrich with DB file sizes (cheap fs stats, parallel).
       const enriched = await Promise.all(
         agents.map(async (a) => ({
           ...a,
@@ -255,55 +332,70 @@ export async function GET(request: NextRequest) {
         }))
       );
 
-      // Get embedding config + memorySearch from config.get
       let embeddingConfig: Record<string, unknown> | null = null;
       let memorySearch: Record<string, unknown> | null = null;
       let configHash: string | null = null;
-      try {
-        const configData = await gatewayCall<Record<string, unknown>>(
-          "config.get",
-          undefined,
-          10000
-        );
+      if (configResult.status === "fulfilled") {
+        const configData = configResult.value;
         configHash = (configData.hash as string) || null;
         const resolved = (configData.resolved || {}) as Record<string, unknown>;
-        const agents_config = (resolved.agents || {}) as Record<string, unknown>;
-        const defaults = (agents_config.defaults || {}) as Record<string, unknown>;
+        const agentsConfig = (resolved.agents || {}) as Record<string, unknown>;
+        const defaults = (agentsConfig.defaults || {}) as Record<string, unknown>;
         embeddingConfig = {
           model: defaults.model || null,
           contextTokens: defaults.contextTokens || null,
         };
         memorySearch = (defaults.memorySearch || null) as Record<string, unknown> | null;
-      } catch {
-        // config not available
       }
 
-      // Get authenticated embedding providers without spawning the CLI.
       let authProviders: string[] = [];
-      try {
-        const modelsSummary = await buildModelsSummary();
-        authProviders = (modelsSummary.status.auth?.providers || [])
+      if (modelsSummaryResult.status === "fulfilled") {
+        authProviders = (modelsSummaryResult.value.status.auth?.providers || [])
           .filter((provider) => provider.effective)
           .map((provider) => String(provider.provider || "").trim())
           .filter(Boolean);
-      } catch {
+      } else {
         if (process.env.OPENAI_API_KEY) authProviders.push("openai");
         if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) authProviders.push("google");
       }
 
-      return NextResponse.json({
+      const ollama =
+        ollamaResult.status === "fulfilled"
+          ? ollamaResult.value
+          : { reachable: false, embeddingModels: [] };
+      const localPluginInstalled =
+        localPluginResult.status === "fulfilled" ? localPluginResult.value : false;
+
+      const providerAvailability: ProviderAvailability = {
+        openai: { keyPresent: authProviders.includes("openai") },
+        google: { keyPresent: authProviders.includes("google") },
+        ollama,
+        local: { pluginInstalled: localPluginInstalled },
+      };
+
+      const payload: StatusPayload = {
         agents: enriched,
         embeddingConfig,
         memorySearch,
         configHash,
         authProviders,
+        providerAvailability,
         home: getOpenClawHome(),
         defaultWorkspace: await getDefaultWorkspace(),
         warning: agentsWarning || undefined,
-      });
+        degraded: Boolean(agentsWarning),
+      };
+
+      statusCache = { data: payload, expiresAt: Date.now() + STATUS_CACHE_TTL_MS };
+      return NextResponse.json(payload);
     }
 
     if (scope === "documents") {
+      const bypassCache = searchParams.get("fresh") === "1";
+      if (!bypassCache && documentsCache && Date.now() < documentsCache.expiresAt) {
+        return NextResponse.json({ ...documentsCache.data, cached: true });
+      }
+
       const workspaceDir = await getDefaultWorkspace();
       const docs = await listWorkspaceIndexableDocs(workspaceDir);
       let selectedExtraPaths: string[] = [];
@@ -328,11 +420,9 @@ export async function GET(request: NextRequest) {
       }
 
       entries.sort((a, b) => a.path.localeCompare(b.path));
-      return NextResponse.json({
-        workspaceDir,
-        docs: entries,
-        selectedExtraPaths,
-      });
+      const payload: StatusPayload = { workspaceDir, docs: entries, selectedExtraPaths };
+      documentsCache = { data: payload, expiresAt: Date.now() + DOCUMENTS_CACHE_TTL_MS };
+      return NextResponse.json(payload);
     }
 
     if (scope === "search") {
@@ -390,6 +480,7 @@ export async function POST(request: NextRequest) {
           force: force || undefined,
         });
 
+        invalidateVectorCaches();
         return NextResponse.json({ ok: true, action, output });
       }
 
@@ -435,6 +526,7 @@ export async function POST(request: NextRequest) {
           );
         }
 
+        invalidateVectorCaches();
         return NextResponse.json({
           ok: true,
           action,
@@ -497,6 +589,7 @@ export async function POST(request: NextRequest) {
           // indexing can fail if no memory files yet, that's fine
         }
 
+        invalidateVectorCaches();
         return NextResponse.json({ ok: true, action, provider: setupProvider, model: setupModel });
       }
 
@@ -508,6 +601,7 @@ export async function POST(request: NextRequest) {
         }
         const disabledMs = { ...currentMs, enabled: false };
         await patchMemorySearchConfig(disableHash, disabledMs);
+        invalidateVectorCaches();
         return NextResponse.json({ ok: true, action });
       }
 
@@ -559,6 +653,7 @@ export async function POST(request: NextRequest) {
 
         await patchMemorySearchConfig(hash, memorySearch);
 
+        invalidateVectorCaches();
         return NextResponse.json({ ok: true, action, provider, model });
       }
 
@@ -617,6 +712,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        invalidateVectorCaches();
         return NextResponse.json({
           ok: true,
           action,
@@ -670,6 +766,7 @@ export async function POST(request: NextRequest) {
         } catch (err) {
           reindexWarning = `Reindex skipped: ${err instanceof Error ? err.message : String(err)}`;
         }
+        invalidateVectorCaches();
         return NextResponse.json({ ok: true, action, extraPaths: mergedExtra, ...(reindexWarning ? { warning: reindexWarning } : {}) });
       }
 

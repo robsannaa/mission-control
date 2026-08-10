@@ -249,6 +249,38 @@ export type WebSearchRunResponse =
       technical?: string;
     };
 
+// ── Read-in-place + save-to-memory (shared by ResultItem + the two API routes) ──
+
+export type WebReadResponse =
+  | {
+      ok: true;
+      title: string;
+      finalUrl: string;
+      text: string;
+      truncated: boolean;
+    }
+  | {
+      ok: false;
+      reason: string;
+      finalUrl?: string;
+    };
+
+export type WebSaveResponse =
+  | {
+      ok: true;
+      /** Filename only (e.g. `2026-08-10-example-title.md`), relative to `workspace/memory/`. */
+      file: string;
+      action: "created" | "updated";
+      /** Whether the reindex after the write actually completed. */
+      indexed: boolean;
+      indexNote?: string;
+      tookMs: number;
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
+
 /**
  * OpenClaw wraps text pulled from the open web in
  * `<<<EXTERNAL_UNTRUSTED_CONTENT ...>>> Source: Web Search --- <text> <<<END_EXTERNAL_UNTRUSTED_CONTENT ...>>>`

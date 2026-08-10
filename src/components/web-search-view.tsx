@@ -1,12 +1,20 @@
 "use client";
 
 /**
- * Web Search settings — rebuilt around three outcomes, not settings:
+ * Web Search — split into two views, because the page does two unrelated
+ * jobs:
+ *   - "Try it": search, read results in place, save what's worth keeping.
+ *     Where someone actually spends time, so it's the default.
+ *   - "Configure": provider choice, keys, on/off. Visited rarely, usually
+ *     once — set up and forgotten.
+ *
+ * Rebuilt around three outcomes, not settings:
  *   1. changes here genuinely land in OpenClaw's config (writes go through
  *      the same `/api/config` control plane every other settings pane uses,
  *      so the same rate limit, restart planning and conflict handling apply);
  *   2. there is a real search box that proves it, using the actual agent
- *      `web_search` tool through the live gateway;
+ *      `web_search` tool through the live gateway, with a real "read the
+ *      page" and "save it into memory" underneath each result;
  *   3. everything is described by what a person gets, not what the field is
  *      called — cost, whether a key is needed, what happens without one.
  *
@@ -17,16 +25,14 @@
  * live while building this page, not assumed from the docs.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Search,
   RefreshCw,
   Globe,
   ExternalLink,
   ChevronRight,
   Loader2,
-  CircleAlert,
-  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
@@ -35,7 +41,8 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { requestRestart } from "@/lib/restart-store";
-import type { AuthKind, NormalizedSearchResult, ProviderMeta } from "@/components/search/providers";
+import { SearchPlayground } from "@/components/search/search-playground";
+import type { AuthKind, ProviderMeta } from "@/components/search/providers";
 
 /* ── types ──────────────────────────────────────── */
 
@@ -60,6 +67,7 @@ type StatusResponse = {
 };
 
 type Notice = { tone: "success" | "error" | "info"; text: string };
+type ActiveView = "try" | "configure";
 
 /* ── small local bits (match the Doctor page's shared vocabulary) ─────── */
 
@@ -87,6 +95,43 @@ function Pill({ children, tone = "neutral" }: { children: React.ReactNode; tone?
     >
       {children}
     </span>
+  );
+}
+
+/**
+ * Fully-pilled segmented control — hairline border, flat surface, no
+ * shadow. "Try it" is the default tab: configuration is a one-time job,
+ * search-and-save is where this page earns its keep.
+ */
+function ViewSwitcher({ active, onChange }: { active: ActiveView; onChange: (v: ActiveView) => void }) {
+  const tabs: { key: ActiveView; label: string }[] = [
+    { key: "try", label: "Try it" },
+    { key: "configure", label: "Configure" },
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Web Search views"
+      className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5"
+    >
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          role="tab"
+          aria-selected={active === tab.key}
+          onClick={() => onChange(tab.key)}
+          className={cn(
+            "rounded-full px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            active === tab.key
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -195,199 +240,24 @@ function ProviderRow({
   );
 }
 
-/* ── result item ────────────────────────────────── */
-
-/**
- * `2008-06-03` is a machine's way of writing a date. Providers send whatever
- * they scraped, so anything unparseable is shown exactly as it arrived rather
- * than guessed at.
- */
-function formatPublished(raw: string): string {
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return raw;
-  return date.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function ResultItem({ result }: { result: NormalizedSearchResult }) {
-  let host = "";
-  try {
-    host = result.url ? new URL(result.url).hostname.replace(/^www\./, "") : "";
-  } catch {
-    host = "";
-  }
-  return (
-    <li className="py-3">
-      {result.url ? (
-        <a
-          href={result.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group inline-flex items-start gap-1.5 text-sm font-medium text-foreground hover:underline"
-        >
-          {result.title}
-          <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" />
-        </a>
-      ) : (
-        <p className="text-sm font-medium text-foreground">{result.title}</p>
-      )}
-      {(host || result.siteName || result.published) && (
-        /*
-         * Where it came from and when, as two pills rather than one run of
-         * dot-separated text: they are separate facts, and a reader scanning a
-         * list wants to compare source against source and date against date.
-         * Fully rounded with a hairline border, matching the pill language used
-         * across the rest of the app.
-         */
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {(result.siteName || host) && (
-            <span className="inline-flex items-center rounded-full border border-border-subtle px-2 py-0.5 text-[11px] text-muted-foreground">
-              {result.siteName || host}
-            </span>
-          )}
-          {result.published && (
-            <span className="inline-flex items-center rounded-full border border-border-subtle px-2 py-0.5 text-[11px] text-muted-foreground">
-              {formatPublished(result.published)}
-            </span>
-          )}
-        </div>
-      )}
-      {result.snippet && (
-        /*
-         * Clamped to three lines. Providers return whatever they scraped — one
-         * result here ran to a dozen lines of flattened infobox — and a result
-         * list is for scanning, not reading. The full text is one click away on
-         * the page itself, which is where it belongs.
-         */
-        <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
-          {result.snippet}
-        </p>
-      )}
-    </li>
-  );
-}
-
-/* ── search playground ──────────────────────────── */
-
-function SearchPlayground({ disabled, disabledReason }: { disabled: boolean; disabledReason: string | null }) {
-  const [query, setQuery] = useState("");
-  const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<NormalizedSearchResult[] | null>(null);
-  const [meta, setMeta] = useState<{ provider: string; tookMs: number | null; cached: boolean } | null>(null);
-  const [error, setError] = useState<{ reason: string; technical?: string } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const run = useCallback(async () => {
-    const q = query.trim();
-    if (!q || running) return;
-    setRunning(true);
-    setError(null);
-    setResults(null);
-    setMeta(null);
-    try {
-      const res = await fetch("/api/search/web/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, count: 6 }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        setError({ reason: data.reason || "Search failed.", technical: data.technical });
-        return;
-      }
-      setResults(data.results || []);
-      setMeta({ provider: data.provider, tookMs: data.tookMs, cached: data.cached });
-    } catch (err) {
-      setError({ reason: "Mission Control couldn't reach OpenClaw to run this search.", technical: String(err) });
-    } finally {
-      setRunning(false);
-    }
-  }, [query, running]);
-
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5 md:p-6">
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-fg-secondary" />
-        <h2 className="text-sm font-semibold text-foreground">Try it</h2>
-      </div>
-      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-        Search the web the same way your agent does. This is the real thing — if results come back, web search
-        works; if it fails, you&rsquo;ll see the actual reason below.
-      </p>
-
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !disabled) void run();
-            }}
-            placeholder={disabled ? "Set up a provider above first" : "Ask anything — try “weather in Lisbon this week”"}
-            disabled={disabled || running}
-            className="h-11 w-full rounded-full border border-border bg-card pl-10 pr-4 text-sm text-foreground outline-none transition-colors placeholder:text-fg-placeholder focus-visible:border-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
-          />
-        </div>
-        <Button
-          type="button"
-          size="lg"
-          onClick={() => void run()}
-          disabled={disabled || running || !query.trim()}
-          className="rounded-full sm:w-auto"
-        >
-          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-          {running ? "Searching…" : "Search"}
-        </Button>
-      </div>
-
-      {disabled && disabledReason && (
-        <p className="mt-3 text-xs leading-relaxed text-fg-subtle">{disabledReason}</p>
-      )}
-
-      {error && (
-        <div className="mt-4 rounded-xl border border-danger-border bg-danger-bg px-4 py-3">
-          <p className="flex items-start gap-2 text-sm text-danger-fg">
-            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            {error.reason}
-          </p>
-          {error.technical && (
-            <p className="mt-1.5 pl-6 font-mono text-xs leading-relaxed text-danger-fg/70">{error.technical}</p>
-          )}
-        </div>
-      )}
-
-      {results && (
-        <div className="mt-4">
-          {meta && (
-            <p className="text-xs text-fg-subtle">
-              Answered by <span className="font-medium text-fg-secondary">{meta.provider}</span>
-              {typeof meta.tookMs === "number" ? ` in ${(meta.tookMs / 1000).toFixed(1)}s` : ""}
-              {meta.cached ? " · from cache" : ""}
-            </p>
-          )}
-          {results.length === 0 ? (
-            <p className="mt-2 text-sm text-muted-foreground">No results for that search. Try different words.</p>
-          ) : (
-            <ul className="mt-1 divide-y divide-border-subtle">
-              {results.map((r, i) => (
-                <ResultItem key={`${r.url}-${i}`} result={r} />
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ── main view ──────────────────────────────────── */
 
 export function WebSearchView() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeView: ActiveView = searchParams.get("view") === "configure" ? "configure" : "try";
+
+  const setActiveView = useCallback(
+    (view: ActiveView) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (view === "try") params.delete("view");
+      else params.set("view", view);
+      const qs = params.toString();
+      router.replace(qs ? `/search?${qs}` : "/search", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -555,9 +425,9 @@ export function WebSearchView() {
   const searchDisabledReason = !status
     ? null
     : !status.enabled
-      ? "Turn web search on above to try it."
+      ? "Web search is turned off. Switch to Configure to turn it on."
       : searchDisabled
-        ? "Pick a provider that's ready above, then come back here."
+        ? "No provider is ready yet. Switch to Configure to pick one."
         : null;
 
   const groups = useMemo(() => {
@@ -581,14 +451,17 @@ export function WebSearchView() {
         description="Let your agent look things up on the web before it answers, instead of relying only on what it already knows."
         meta={null}
         actions={
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-card"
-          >
-            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ViewSwitcher active={activeView} onChange={setActiveView} />
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-card"
+            >
+              {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Refresh
+            </button>
+          </div>
         }
       />
 
@@ -598,181 +471,201 @@ export function WebSearchView() {
         ) : error && !status ? (
           <div className="rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">{error}</div>
         ) : status ? (
-          <>
-            {/* Status */}
-            <div className="rounded-2xl border border-border bg-card p-5 md:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-2">
-                    <StatusDot tone={headline.tone} />
-                    <span className="text-base font-medium text-foreground">{headline.text}</span>
-                  </p>
-                  <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-muted-foreground">
-                    {status.enabled
-                      ? "When it's on, your agent can pull in current information from the web as part of its answers."
-                      : "Your agent will only use what it already knows — nothing is fetched from the web."}
-                  </p>
-                </div>
-                <label className="flex shrink-0 items-center gap-2.5">
-                  <span className="text-sm text-muted-foreground">{status.enabled ? "On" : "Off"}</span>
-                  <Switch
-                    checked={status.enabled}
-                    disabled={togglingEnabled}
-                    onCheckedChange={(v) => void handleToggleEnabled(v)}
-                  />
-                </label>
-              </div>
-            </div>
-
-            {notice && (
-              <div
-                className={cn(
-                  "rounded-xl border px-4 py-3 text-sm",
-                  notice.tone === "success"
-                    ? "border-success-border bg-success-bg text-success-fg"
-                    : notice.tone === "error"
-                      ? "border-danger-border bg-danger-bg text-danger-fg"
-                      : "border-info-border bg-info-bg text-info-fg",
-                )}
-              >
-                {notice.text}
-              </div>
-            )}
-
-            {/* Providers */}
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">Who does the searching</h2>
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Pick one. Some work right away; others need a key from that provider first.
-              </p>
-
-              <div className="mt-3 space-y-3">
-                <div
-                  className={cn(
-                    "rounded-xl border px-4 py-3",
-                    selectedId === "auto" ? "border-border-strong bg-card" : "border-border-subtle bg-card/60",
-                  )}
-                >
+          activeView === "try" ? (
+            <>
+              {/* Compact status strip — full control lives in Configure; this tab
+                  only needs enough context to explain why search might not work. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusDot tone={headline.tone} />
+                <span className="text-sm text-foreground">{headline.text}</span>
+                {headline.tone !== "positive" && (
                   <button
                     type="button"
-                    onClick={() => void handleSelectAuto()}
-                    disabled={savingId !== null || selectedId === "auto"}
-                    className="flex w-full items-start gap-3 text-left"
+                    onClick={() => setActiveView("configure")}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
                   >
-                    <span
-                      className={cn(
-                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
-                        selectedId === "auto" ? "border-foreground" : "border-border-strong",
-                      )}
-                    >
-                      {selectedId === "auto" && <span className="h-1.5 w-1.5 rounded-full bg-foreground" />}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="text-sm font-medium text-foreground">Let OpenClaw choose (recommended)</span>
-                      <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                        {status.autoResolvedProviderId
-                          ? `Right now that means ${status.providers.find((p) => p.id === status.autoResolvedProviderId)?.label}.`
-                          : "Nothing is set up yet, so this won't answer until you add a key to one option below."}
-                      </span>
-                    </span>
-                    {savingId === "auto" && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
+                    Set up
+                    <ChevronRight className="h-3 w-3" />
                   </button>
-                </div>
-
-                {groups.free.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="eyebrow px-1">No setup needed</p>
-                    <div className="space-y-2">
-                      {groups.free.map((p) => (
-                        <ProviderRow
-                          key={p.id}
-                          meta={p}
-                          selected={selectedId === p.id}
-                          expanded={expandedId === p.id}
-                          busy={savingId === p.id}
-                          draft={drafts[p.id] || ""}
-                          onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
-                          onSelect={() => void handleSelect(p)}
-                          onSave={() => void handleSaveDraft(p)}
-                          onCollapse={() => setExpandedId(null)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {groups.keyed.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="eyebrow px-1">Bring your own key</p>
-                    <div className="space-y-2">
-                      {groups.keyed.map((p) => (
-                        <ProviderRow
-                          key={p.id}
-                          meta={p}
-                          selected={selectedId === p.id}
-                          expanded={expandedId === p.id}
-                          busy={savingId === p.id}
-                          draft={drafts[p.id] || ""}
-                          onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
-                          onSelect={() => void handleSelect(p)}
-                          onSave={() => void handleSaveDraft(p)}
-                          onCollapse={() => setExpandedId(null)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {groups.hosted.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="eyebrow px-1">Self-hosted</p>
-                    <div className="space-y-2">
-                      {groups.hosted.map((p) => (
-                        <ProviderRow
-                          key={p.id}
-                          meta={p}
-                          selected={selectedId === p.id}
-                          expanded={expandedId === p.id}
-                          busy={savingId === p.id}
-                          draft={drafts[p.id] || ""}
-                          onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
-                          onSelect={() => void handleSelect(p)}
-                          onSave={() => void handleSaveDraft(p)}
-                          onCollapse={() => setExpandedId(null)}
-                        />
-                      ))}
-                    </div>
-                  </div>
                 )}
               </div>
 
-              {status.uninstalledCount > 0 && (
-                <p className="mt-3 text-xs leading-relaxed text-fg-subtle">
-                  {status.uninstalledCount} more provider{status.uninstalledCount === 1 ? "" : "s"} (like Brave or
-                  Exa) exist but need an extra install step on this OpenClaw before they can show up here.
-                </p>
-              )}
-              {status.degraded && (
-                <p className="mt-2 text-xs leading-relaxed text-warning-fg">
-                  Mission Control couldn&rsquo;t check which providers are installed just now, so this list may be
-                  incomplete.
-                </p>
-              )}
-            </div>
+              <SearchPlayground disabled={Boolean(searchDisabled)} disabledReason={searchDisabledReason} />
+            </>
+          ) : (
+            <>
+              {/* Status */}
+              <div className="rounded-2xl border border-border bg-card p-5 md:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2">
+                      <StatusDot tone={headline.tone} />
+                      <span className="text-base font-medium text-foreground">{headline.text}</span>
+                    </p>
+                    <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-muted-foreground">
+                      {status.enabled
+                        ? "When it's on, your agent can pull in current information from the web as part of its answers."
+                        : "Your agent will only use what it already knows — nothing is fetched from the web."}
+                    </p>
+                  </div>
+                  <label className="flex shrink-0 items-center gap-2.5">
+                    <span className="text-sm text-muted-foreground">{status.enabled ? "On" : "Off"}</span>
+                    <Switch
+                      checked={status.enabled}
+                      disabled={togglingEnabled}
+                      onCheckedChange={(v) => void handleToggleEnabled(v)}
+                    />
+                  </label>
+                </div>
+              </div>
 
-            {/* Search box */}
-            <SearchPlayground disabled={Boolean(searchDisabled)} disabledReason={searchDisabledReason} />
+              {notice && (
+                <div
+                  className={cn(
+                    "rounded-xl border px-4 py-3 text-sm",
+                    notice.tone === "success"
+                      ? "border-success-border bg-success-bg text-success-fg"
+                      : notice.tone === "error"
+                        ? "border-danger-border bg-danger-bg text-danger-fg"
+                        : "border-info-border bg-info-bg text-info-fg",
+                  )}
+                >
+                  {notice.text}
+                </div>
+              )}
 
-            <a
-              href="https://docs.openclaw.ai/tools/web"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Read OpenClaw&rsquo;s web search documentation
-            </a>
-          </>
+              {/* Providers */}
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Who does the searching</h2>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                  Pick one. Some work right away; others need a key from that provider first.
+                </p>
+
+                <div className="mt-3 space-y-3">
+                  <div
+                    className={cn(
+                      "rounded-xl border px-4 py-3",
+                      selectedId === "auto" ? "border-border-strong bg-card" : "border-border-subtle bg-card/60",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void handleSelectAuto()}
+                      disabled={savingId !== null || selectedId === "auto"}
+                      className="flex w-full items-start gap-3 text-left"
+                    >
+                      <span
+                        className={cn(
+                          "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                          selectedId === "auto" ? "border-foreground" : "border-border-strong",
+                        )}
+                      >
+                        {selectedId === "auto" && <span className="h-1.5 w-1.5 rounded-full bg-foreground" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="text-sm font-medium text-foreground">Let OpenClaw choose (recommended)</span>
+                        <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                          {status.autoResolvedProviderId
+                            ? `Right now that means ${status.providers.find((p) => p.id === status.autoResolvedProviderId)?.label}.`
+                            : "Nothing is set up yet, so this won't answer until you add a key to one option below."}
+                        </span>
+                      </span>
+                      {savingId === "auto" && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
+                    </button>
+                  </div>
+
+                  {groups.free.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="eyebrow px-1">No setup needed</p>
+                      <div className="space-y-2">
+                        {groups.free.map((p) => (
+                          <ProviderRow
+                            key={p.id}
+                            meta={p}
+                            selected={selectedId === p.id}
+                            expanded={expandedId === p.id}
+                            busy={savingId === p.id}
+                            draft={drafts[p.id] || ""}
+                            onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
+                            onSelect={() => void handleSelect(p)}
+                            onSave={() => void handleSaveDraft(p)}
+                            onCollapse={() => setExpandedId(null)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {groups.keyed.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="eyebrow px-1">Bring your own key</p>
+                      <div className="space-y-2">
+                        {groups.keyed.map((p) => (
+                          <ProviderRow
+                            key={p.id}
+                            meta={p}
+                            selected={selectedId === p.id}
+                            expanded={expandedId === p.id}
+                            busy={savingId === p.id}
+                            draft={drafts[p.id] || ""}
+                            onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
+                            onSelect={() => void handleSelect(p)}
+                            onSave={() => void handleSaveDraft(p)}
+                            onCollapse={() => setExpandedId(null)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {groups.hosted.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="eyebrow px-1">Self-hosted</p>
+                      <div className="space-y-2">
+                        {groups.hosted.map((p) => (
+                          <ProviderRow
+                            key={p.id}
+                            meta={p}
+                            selected={selectedId === p.id}
+                            expanded={expandedId === p.id}
+                            busy={savingId === p.id}
+                            draft={drafts[p.id] || ""}
+                            onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
+                            onSelect={() => void handleSelect(p)}
+                            onSave={() => void handleSaveDraft(p)}
+                            onCollapse={() => setExpandedId(null)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {status.uninstalledCount > 0 && (
+                  <p className="mt-3 text-xs leading-relaxed text-fg-subtle">
+                    {status.uninstalledCount} more provider{status.uninstalledCount === 1 ? "" : "s"} (like Brave or
+                    Exa) exist but need an extra install step on this OpenClaw before they can show up here.
+                  </p>
+                )}
+                {status.degraded && (
+                  <p className="mt-2 text-xs leading-relaxed text-warning-fg">
+                    Mission Control couldn&rsquo;t check which providers are installed just now, so this list may be
+                    incomplete.
+                  </p>
+                )}
+              </div>
+
+              <a
+                href="https://docs.openclaw.ai/tools/web"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Read OpenClaw&rsquo;s web search documentation
+              </a>
+            </>
+          )
         ) : null}
       </SectionBody>
     </SectionLayout>
