@@ -183,6 +183,55 @@ export function friendlyCheckName(checkId: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * A `doctor --lint` finding printed as prose rather than JSON:
+ *   `  [warning] core/doctor/gateway-config gateway.mode is unset.`
+ * The check id is optional — some findings are emitted as bare prose:
+ *   `  [warning] Left plugin install index in place because …`
+ */
+const LINT_TEXT_LINE_RE = /^\s*\[(error|fatal|warning|warn|info|notice)\]\s+(.*\S)\s*$/i;
+
+/** `    fix: Run \`openclaw configure\` …` — remediation for the finding above. */
+const LINT_TEXT_FIX_RE = /^\s*fix:\s*(.*\S)\s*$/i;
+
+/**
+ * A check id is a slash-delimited slug (`core/doctor/gateway-config`). Requiring
+ * the slash keeps a capitalised first word of prose ("Left plugin install
+ * index …") from being mistaken for one.
+ */
+const LINT_CHECK_ID_RE = /^[a-z][\w.-]*(?:\/[\w.-]+)+$/;
+
+/**
+ * Parse `doctor --lint` prose into the same envelope the `--json` path yields,
+ * so both surfaces share one grouping, noise-filter and fix-hint code path.
+ */
+function parseLintText(text: string): DoctorLintPayload {
+  const findings: DoctorLintFinding[] = [];
+
+  for (const line of text.split(/\r?\n/)) {
+    const fix = line.match(LINT_TEXT_FIX_RE);
+    if (fix && findings.length > 0) {
+      findings[findings.length - 1].fixHint = fix[1];
+      continue;
+    }
+
+    const match = line.match(LINT_TEXT_LINE_RE);
+    if (!match) continue;
+
+    const [, severity, rest] = match;
+    const [firstWord, ...tail] = rest.split(/\s+/);
+    const hasCheckId = LINT_CHECK_ID_RE.test(firstWord) && tail.length > 0;
+
+    findings.push({
+      checkId: hasCheckId ? firstWord : "core/doctor/unknown",
+      severity: severity.toLowerCase(),
+      message: hasCheckId ? tail.join(" ") : rest,
+    });
+  }
+
+  return { checksRun: findings.length, findings };
+}
+
 function severityToStatus(severity: string): DoctorCheckStatus {
   const normalized = severity.toLowerCase();
   if (normalized === "error" || normalized === "fatal") return "fail";
@@ -394,13 +443,45 @@ export function normalizeDoctorText(text: string): {
     });
   }
 
+  /*
+   * `classifyDoctorOutput` parses the *legacy* box-drawing pass. This function
+   * is also reached with `doctor --lint` prose — plain `[severity] check-id
+   * message` lines — which the box parser returns [] for. Reading that empty
+   * result as "healthy" is exactly the false all-clear this module exists to
+   * prevent, so parse those lines and route them through the same grouping and
+   * noise filtering the JSON path uses.
+   */
   if (checks.length === 0) {
-    checks.push({
-      id: "mission-control/doctor/completed",
-      name: "All health checks passed",
-      status: "ok",
-      message: "Doctor reported no problems.",
-    });
+    const payload = parseLintText(text);
+    if ((payload.findings?.length ?? 0) > 0) {
+      const lint = normalizeLintPayload(payload);
+      return { checks: lint.checks, filtered: [...filtered, ...lint.filtered] };
+    }
+  }
+
+  if (checks.length === 0) {
+    /*
+     * Only a positive completion marker justifies an all-clear. Silence from a
+     * parser that did not recognise its input means "we could not read this",
+     * and saying so is strictly better than inventing a clean bill of health.
+     */
+    const completed = /doctor complete|no (?:problems|issues) found|checks? passed/i.test(text);
+    checks.push(
+      completed
+        ? {
+            id: "mission-control/doctor/completed",
+            name: "All health checks passed",
+            status: "ok",
+            message: "Doctor reported no problems.",
+          }
+        : {
+            id: "mission-control/doctor/unreadable",
+            name: "Health check output could not be read",
+            status: "warn",
+            message:
+              "Doctor ran but Mission Control could not interpret its output, so this is not a clean bill of health. The raw output is shown below.",
+          },
+    );
   }
 
   return { checks: sortChecks(checks), filtered };

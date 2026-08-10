@@ -1,171 +1,128 @@
+/**
+ * `POST /api/doctor/run` — run a check and narrate it.
+ *
+ * ## What changed and why
+ *
+ * The old route exposed five *modes* and mapped `scan` to
+ * `openclaw doctor --non-interactive`. That command applies safe migrations and
+ * moves state on disk. Calling it "scan" meant the page's most innocuous-looking
+ * button was quietly mutating the user's machine, and no mode used the
+ * read-only `--lint` path at all.
+ *
+ * Now there are three depths, and the mutating ones say so and refuse to run
+ * without acknowledgement:
+ *
+ *   - `quick` — **read-only.** Structured lint (all 51 checks), security audit,
+ *     secrets audit, live gateway signals. Safe on anyone's machine, any time.
+ *   - `full`  — quick, plus `openclaw doctor --non-interactive`. ⚠️ Applies
+ *     OpenClaw's safe migrations and state moves. Requires
+ *     `acknowledgeMutation: true`.
+ *   - `deep`  — as `full`, with `--deep`, which additionally reports
+ *     session-transcript gaps, the tool-result cap, and established gateway TCP
+ *     clients. Also mutating; same acknowledgement.
+ *
+ * Repairs are **not** here. They live at `POST /api/doctor/fix`, one at a time,
+ * by id, with a preview — see that route.
+ *
+ * ## Request
+ *
+ * ```json
+ * { "mode": "quick" | "full" | "deep", "acknowledgeMutation": true }
+ * ```
+ *
+ * ## Response — `text/event-stream`, one JSON object per `data:` line
+ *
+ * ```
+ * {"type":"start","runId":"…","mode":"quick","readOnly":true,"phases":4}
+ * {"type":"phase","phase":"lint","label":"…","index":1,"total":4}
+ * {"type":"output","stream":"stdout","text":"…"}
+ * {"type":"phase-done","phase":"lint","ok":true,"durationMs":5300,"detail":"51 checks, 3 reporting"}
+ * {"type":"snapshot","snapshot":{…},"diff":{…}}
+ * {"type":"done","runId":"…","durationMs":7100}
+ * ```
+ *
+ * `error` events carry `{ "type":"error","message":"…" }` and are terminal.
+ */
+
 import { NextRequest } from "next/server";
-import { spawn, type ChildProcess } from "child_process";
-import { getOpenClawBin } from "@/lib/paths";
-import { classifyDoctorOutput } from "@/lib/doctor-checks";
-import { saveDoctorRun, createRunId } from "@/lib/doctor-history";
+import { collectSnapshot, persistRun, primeCache } from "@/lib/doctor-snapshot";
+import { diffAgainstHistory, createRunId } from "@/lib/doctor-history";
+import { sseResponse, jsonError } from "@/lib/doctor-sse";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 180;
+export const maxDuration = 300;
 
-type RunMode = "scan" | "repair" | "repair-force" | "deep" | "generate-token";
-
-const MODE_CONFIG: Record<RunMode, { args: string[]; timeout: number }> = {
-  scan: { args: ["doctor", "--non-interactive"], timeout: 45000 },
-  repair: { args: ["doctor", "--repair"], timeout: 60000 },
-  "repair-force": { args: ["doctor", "--repair", "--force"], timeout: 120000 },
-  deep: { args: ["doctor", "--deep", "--non-interactive"], timeout: 60000 },
-  "generate-token": { args: ["doctor", "--generate-gateway-token", "--non-interactive"], timeout: 30000 },
+const MODES = {
+  quick: { depth: "quick" as const, readOnly: true, phases: 4 },
+  full: { depth: "full" as const, readOnly: false, phases: 5 },
+  deep: { depth: "deep" as const, readOnly: false, phases: 5 },
 };
 
-// Concurrency guard
-let activeChild: ChildProcess | null = null;
-
-// Modes that mutate system state — blocked when OPENCLAW_READ_ONLY is set.
-const MUTATING_MODES: ReadonlySet<string> = new Set([
-  "repair",
-  "repair-force",
-  "generate-token",
-]);
+/** One run at a time: concurrent doctor subprocesses fight over the same state. */
+let running = false;
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const mode = body.mode as string;
+  let body: { mode?: string; acknowledgeMutation?: boolean };
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Expected a JSON body.", 400);
+  }
 
-  if (!mode || !(mode in MODE_CONFIG)) {
-    return new Response(
-      JSON.stringify({ error: `Invalid mode. Expected one of: ${Object.keys(MODE_CONFIG).join(", ")}` }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
+  const mode = body.mode ?? "quick";
+  if (!Object.prototype.hasOwnProperty.call(MODES, mode)) {
+    return jsonError(`Unknown mode "${mode}".`, 400, { expected: Object.keys(MODES) });
+  }
+  const config = MODES[mode as keyof typeof MODES];
+
+  // The full pass writes to disk. Refusing without acknowledgement keeps the
+  // distinction real rather than documentary.
+  if (!config.readOnly && body.acknowledgeMutation !== true) {
+    return jsonError(
+      "The full check also applies OpenClaw's safe migrations, so it changes files on this machine. Send acknowledgeMutation: true to proceed, or use mode \"quick\" for a read-only check.",
+      400,
+      { mutating: true, readOnlyAlternative: "quick" },
     );
   }
 
-  // Respect read-only mode for mutating operations (issue #22).
-  if (MUTATING_MODES.has(mode) && process.env.OPENCLAW_READ_ONLY === "true") {
-    return new Response(
-      JSON.stringify({ error: "This operation is disabled in read-only mode (OPENCLAW_READ_ONLY=true)." }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
+  if (!config.readOnly && process.env.OPENCLAW_READ_ONLY === "true") {
+    return jsonError("This deployment is read-only, so the full check is disabled.", 403);
   }
 
-  if (activeChild) {
-    return new Response(
-      JSON.stringify({ error: "A doctor run is already in progress" }),
-      { status: 409, headers: { "Content-Type": "application/json" } }
-    );
+  if (running) {
+    return jsonError("A check is already running.", 409);
   }
 
-  const config = MODE_CONFIG[mode as RunMode];
-  const bin = await getOpenClawBin();
-  const encoder = new TextEncoder();
+  running = true;
   const runId = createRunId();
   const startedAt = Date.now();
 
-  const stream = new ReadableStream({
-    start(controller) {
-      const allOutput: string[] = [];
-
-      const child = spawn(bin, config.args, {
-        env: { ...process.env, NO_COLOR: "1", OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: "1" },
-        timeout: config.timeout,
-        stdio: ["pipe", "pipe", "pipe"],
+  return sseResponse(async (writer) => {
+    try {
+      writer.send({
+        type: "start",
+        runId,
+        mode,
+        readOnly: config.readOnly,
+        phases: config.phases,
       });
 
-      activeChild = child;
-
-      // Send initial banner
-      const banner = `$ openclaw ${config.args.join(" ")}\n`;
-      try {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "stdout", text: banner })}\n\n`)
-        );
-      } catch { /* stream closed */ }
-
-      child.stdout.on("data", (data: Buffer) => {
-        const text = data.toString();
-        allOutput.push(text);
-        try {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "stdout", text })}\n\n`)
-          );
-        } catch { /* stream closed */ }
+      const result = await collectSnapshot({
+        depth: config.depth,
+        onProgress: (event) => writer.send(event),
       });
 
-      child.stderr.on("data", (data: Buffer) => {
-        const text = data.toString();
-        allOutput.push(text);
-        try {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "stderr", text })}\n\n`)
-          );
-        } catch { /* stream closed */ }
-      });
+      // Diff before persisting, so the comparison is against the previous run.
+      const diff = await diffAgainstHistory(result.snapshot).catch(() => null);
+      await persistRun(result, mode).catch(() => {});
+      // The run the user just watched must be what the next status read
+      // returns, or the page appears to forget what it just showed them.
+      primeCache(result);
 
-      child.on("close", (code) => {
-        activeChild = null;
-        const exitCode = code ?? 1;
-        const completedAt = Date.now();
-        const rawOutput = allOutput.join("");
-        const lines = rawOutput.split(/\r?\n/);
-        const issues = classifyDoctorOutput(lines);
-
-        const summary = { errors: 0, warnings: 0, healthy: 0 };
-        for (const issue of issues) {
-          if (issue.severity === "error") summary.errors++;
-          else if (issue.severity === "warning") summary.warnings++;
-          else summary.healthy++;
-        }
-
-        // Save to history (fire and forget)
-        saveDoctorRun({
-          id: runId,
-          startedAt,
-          completedAt,
-          mode,
-          exitCode,
-          summary,
-          issues,
-          rawOutput,
-          durationMs: completedAt - startedAt,
-        }).catch(() => {});
-
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "exit", code: exitCode })}\n\n`
-            )
-          );
-          controller.close();
-        } catch { /* stream closed */ }
-      });
-
-      child.on("error", (err) => {
-        activeChild = null;
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "error", text: String(err) })}\n\n`
-            )
-          );
-          controller.close();
-        } catch { /* stream closed */ }
-      });
-
-      // Close stdin immediately
-      child.stdin.end();
-    },
-    cancel() {
-      // Kill the child process when the client disconnects / aborts
-      if (activeChild && !activeChild.killed) {
-        activeChild.kill();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
+      writer.send({ type: "snapshot", snapshot: result.snapshot, diff });
+      writer.send({ type: "done", runId, durationMs: Date.now() - startedAt });
+    } finally {
+      running = false;
+    }
   });
 }

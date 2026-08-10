@@ -1,1017 +1,576 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+/**
+ * The Doctor page.
+ *
+ * ## What this page is for
+ *
+ * One honest answer to "is my system healthy, and when was that actually
+ * checked?", followed by findings that explain themselves and repairs the user
+ * can see before they commit to them. It is built for someone who has never
+ * opened a terminal: no shell command appears anywhere without being asked for,
+ * and every finding says what is wrong, why it matters, and what happens if it
+ * is left alone.
+ *
+ * ## The rules it will not break
+ *
+ * These come from the server contract, and each one exists because breaking it
+ * would make the page lie:
+ *
+ * 1. `health.score === null` renders words, never a number.
+ * 2. `cached: true` shows the true age. A stored result never reads as a fresh
+ *    look.
+ * 3. `fix.blocked !== null` gets no button, and the reason is shown.
+ * 4. Anything not `safe` shows what it does and its side effects *before* the
+ *    control that runs it; `destructive` is never a single click.
+ * 5. `outcome.status === "still-present"` is a failure, whatever the exit code
+ *    said.
+ * 6. `health.caveats` and `coverage.unverifiedFamilies` are always rendered.
+ * 7. A diff with `notComparable` entries is never presented as complete.
+ * 8. Background polling uses `?peek=1`, which never starts a subprocess. Only a
+ *    deliberate action refreshes or runs.
+ */
+
 import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Info,
-  Loader2,
-  MoreHorizontal,
-  Play,
-  RefreshCw,
-  Search,
-  Wrench,
-  X,
-  Zap,
-  KeyRound,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import type { DoctorIssue } from "@/lib/doctor-checks";
 import {
   getTimeFormatServerSnapshot,
   getTimeFormatSnapshot,
+  is12HourTimeFormat,
   subscribeTimeFormatPreference,
-  withTimeFormat,
-  type TimeFormatPreference,
 } from "@/lib/time-format-preference";
+import { Panel, QuietNote, SectionTitle } from "@/components/doctor/primitives";
+import { VerdictCard } from "@/components/doctor/verdict-card";
+import {
+  FindingCard,
+  InformationalRow,
+  PreventionRow,
+} from "@/components/doctor/finding-card";
+import { ChangesPanel, CoveragePanel, VitalsPanel } from "@/components/doctor/panels";
+import { HistoryPanel } from "@/components/doctor/history-panel";
+import { FixDialog } from "@/components/doctor/fix-dialog";
+import { GuideDialog } from "@/components/doctor/guide-dialog";
+import { ReportDialog } from "@/components/doctor/report-dialog";
+import { RunConfirmDialog } from "@/components/doctor/run-confirm-dialog";
+import { errorMessage, readEventStream } from "@/components/doctor/sse";
+import type {
+  DoctorFinding,
+  DoctorHistoryResponse,
+  DoctorStatusResponse,
+  FixDescriptor,
+  FixOutcome,
+  FixPlanSummary,
+  RunEvent,
+  RunMode,
+  RunPhase,
+} from "@/components/doctor/types";
 
-/* ── types ─────────────────────────────────────── */
+/** How often the page re-reads the stored snapshot. Never runs anything. */
+const PEEK_INTERVAL_MS = 45_000;
 
-type RunMode = "scan" | "repair" | "repair-force" | "deep" | "generate-token" | "restart-gateway";
-
-type DoctorStatus = {
-  ts: number;
-  overallHealth: "healthy" | "needs-attention" | "critical";
-  healthScore: number;
-  lastRunAt: number | null;
-  summary: { errors: number; warnings: number; healthy: number };
-  gateway: { status: string; port: number; pid?: number };
-  issues: DoctorIssue[];
-};
-
-type DoctorRunRecord = {
-  id: string;
-  startedAt: number;
-  completedAt: number;
-  mode: string;
-  exitCode: number;
-  summary: { errors: number; warnings: number; healthy: number };
-  issues: DoctorIssue[];
-  rawOutput: string;
-  durationMs: number;
-};
-
-type StreamEvent =
-  | { type: "stdout"; text: string }
-  | { type: "stderr"; text: string }
-  | { type: "exit"; code: number }
-  | { type: "error"; text: string };
-
-type ConfirmState = {
-  mode: RunMode;
-  title: string;
-  description: string;
-  serious: boolean;
-} | null;
-
-/* ── helpers ───────────────────────────────────── */
-
-function relativeTime(ts: number): string {
-  const diff = Math.max(0, Date.now() - ts);
-  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function formatDate(ts: number, timeFormat: TimeFormatPreference): string {
-  const d = new Date(ts);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
-    ", " +
-    d.toLocaleTimeString(undefined, withTimeFormat({ hour: "2-digit", minute: "2-digit" }, timeFormat));
-}
-
-const MODE_LABELS: Record<string, string> = {
-  scan: "Scan",
-  repair: "Repair",
-  "repair-force": "Advanced Repair",
-  deep: "Deep Scan",
-  "generate-token": "Generate Token",
-};
-
-const CATEGORY_ORDER = [
-  "Gateway",
-  "Configuration",
-  "Security",
-  "Services",
-  "Skills & Channels",
-  "Recommendations",
-];
-
-function groupByCategory(issues: DoctorIssue[]): Map<string, DoctorIssue[]> {
-  const grouped = new Map<string, DoctorIssue[]>();
-  for (const cat of CATEGORY_ORDER) {
-    const items = issues.filter((i) => i.category === cat);
-    if (items.length > 0) grouped.set(cat, items);
-  }
-  // Catch any uncategorized
-  const uncategorized = issues.filter((i) => !CATEGORY_ORDER.includes(i.category));
-  if (uncategorized.length > 0) {
-    const existing = grouped.get("Recommendations") || [];
-    grouped.set("Recommendations", [...existing, ...uncategorized]);
-  }
-  return grouped;
-}
-
-/* ── ConfirmDialog ─────────────────────────────── */
-
-function ConfirmDialog({
-  confirm,
-  onConfirm,
-  onCancel,
-}: {
-  confirm: NonNullable<ConfirmState>;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const [typed, setTyped] = useState("");
-  const canProceed = confirm.serious ? typed === "CONFIRM" : true;
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onCancel]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div
-        className={cn(
-          "w-full max-w-md rounded-lg border bg-card p-5 shadow-xl",
-          confirm.serious ? "border-danger-border" : "border-border"
-        )}
-      >
-        <h3 className="text-sm font-semibold text-foreground">{confirm.title}</h3>
-        <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{confirm.description}</p>
-
-        {confirm.serious && (
-          <div className="mt-4">
-            <label className="block text-xs font-medium text-danger-fg mb-1.5">
-              Type CONFIRM to proceed
-            </label>
-            <input
-              type="text"
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              className="w-full rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-danger-border"
-              placeholder="CONFIRM"
-              autoFocus
-            />
-          </div>
-        )}
-
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={!canProceed}
-            className={cn(
-              "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
-              confirm.serious
-                ? "bg-danger-bg text-white hover:bg-danger disabled:hover:bg-danger-bg"
-                : "bg-primary text-primary-foreground hover:bg-primary/90"
-            )}
-          >
-            Continue
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── HealthBanner ──────────────────────────────── */
-
-function HealthBanner({
-  status,
-  loading,
-}: {
-  status: DoctorStatus | null;
-  loading: boolean;
-}) {
-  if (loading && !status) {
-    return (
-      <div className="glass rounded-lg p-5">
-        <div className="flex items-center gap-4">
-          <div className="h-14 w-14 rounded-full bg-muted animate-pulse" />
-          <div className="space-y-2 flex-1">
-            <div className="h-4 w-40 rounded bg-muted animate-pulse" />
-            <div className="h-3 w-28 rounded bg-muted animate-pulse" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!status) return null;
-
-  const scoreColor =
-    status.healthScore >= 80
-      ? "text-success-fg border-success-border bg-success-bg"
-      : status.healthScore >= 40
-        ? "text-warning-fg border-warning-border bg-warning-bg"
-        : "text-danger-fg border-danger-border bg-danger-bg";
-
-  const statusText =
-    status.overallHealth === "healthy"
-      ? "Your system is healthy"
-      : status.overallHealth === "needs-attention"
-        ? "Your system needs attention"
-        : "Your system has critical issues";
-
-  return (
-    <div className="glass rounded-lg p-5">
-      <div className="flex items-center gap-4">
-        <div
-          className={cn(
-            "flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 text-lg font-bold tabular-nums",
-            scoreColor
-          )}
-        >
-          {status.healthScore}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">{statusText}</p>
-          {status.lastRunAt && (
-            <p className="mt-0.5 text-xs text-fg-subtle">
-              Last checked {relativeTime(status.lastRunAt)}
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            {status.summary.errors > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger-fg">
-                <AlertCircle className="h-3 w-3" />
-                {status.summary.errors} error{status.summary.errors !== 1 ? "s" : ""}
-              </span>
-            )}
-            {status.summary.warnings > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning-fg">
-                <AlertTriangle className="h-3 w-3" />
-                {status.summary.warnings} warning{status.summary.warnings !== 1 ? "s" : ""}
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success-fg">
-              <CheckCircle className="h-3 w-3" />
-              {status.summary.healthy} healthy
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── IssueCard ─────────────────────────────────── */
-
-function IssueCard({
-  issue,
-  onFix,
-  running,
-}: {
-  issue: DoctorIssue;
-  onFix: (mode: RunMode) => void;
-  running: boolean;
-}) {
-  const cfg =
-    issue.severity === "error"
-      ? { icon: AlertCircle, border: "border-danger-border", bg: "bg-danger-bg", iconColor: "text-danger-fg" }
-      : issue.severity === "warning"
-        ? { icon: AlertTriangle, border: "border-warning-border", bg: "bg-warning-bg", iconColor: "text-warning-fg" }
-        : { icon: Info, border: "border-info-border", bg: "bg-info-bg", iconColor: "text-info-fg" };
-
-  const Icon = cfg.icon;
-
-  return (
-    <div className={cn("rounded-lg border p-3", cfg.border, cfg.bg)}>
-      <div className="flex items-start gap-2.5">
-        <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", cfg.iconColor)} />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-foreground">{issue.title}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{issue.detail}</p>
-        </div>
-        {issue.fixable && issue.fixMode && (
-          <button
-            type="button"
-            onClick={() => onFix(issue.fixMode === "restart" ? "restart-gateway" : issue.fixMode!)}
-            disabled={running}
-            className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.08] disabled:opacity-50"
-          >
-            Fix this
-            <ArrowRight className="h-3 w-3" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── IssueCards ─────────────────────────────────── */
-
-function IssueCards({
-  issues,
-  onFix,
-  running,
-}: {
-  issues: DoctorIssue[];
-  onFix: (mode: RunMode) => void;
-  running: boolean;
-}) {
-  // Only show errors and warnings in issue cards
-  const actionableIssues = issues.filter((i) => i.severity !== "info");
-
-  if (actionableIssues.length === 0) {
-    return (
-      <div className="glass-subtle rounded-lg p-6 text-center">
-        <CheckCircle className="mx-auto h-8 w-8 text-success-fg" />
-        <p className="mt-2 text-sm font-medium text-foreground">Everything looks good!</p>
-        <p className="mt-0.5 text-xs text-fg-subtle">No issues detected in your system.</p>
-      </div>
-    );
-  }
-
-  const grouped = groupByCategory(actionableIssues);
-
-  return (
-    <div className="space-y-4">
-      {Array.from(grouped.entries()).map(([category, catIssues]) => (
-        <div key={category}>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-            {category}
-          </h3>
-          <div className="space-y-2">
-            {catIssues.map((issue, idx) => (
-              <IssueCard
-                key={`${issue.checkId}-${idx}`}
-                issue={issue}
-                onFix={onFix}
-                running={running}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── StreamingOutputPanel ──────────────────────── */
-
-function StreamingOutputPanel({
-  lines,
-  running,
-  elapsed,
-  exitCode,
-  onCancel,
-}: {
-  lines: Array<{ type: string; text: string }>;
-  running: boolean;
-  elapsed: number;
-  exitCode: number | null;
-  onCancel: () => void;
-}) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || !autoScrollRef.current) return;
-    el.scrollTop = el.scrollHeight;
-  }, [lines]);
-
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    autoScrollRef.current = atBottom;
-  }, []);
-
-  return (
-    <div className="glass rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border/40 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          {running ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-          ) : exitCode === 0 ? (
-            <CheckCircle className="h-3.5 w-3.5 text-success-fg" />
-          ) : exitCode !== null ? (
-            <AlertCircle className="h-3.5 w-3.5 text-danger-fg" />
-          ) : null}
-          <span className="text-xs font-medium text-foreground">
-            {running ? "Running..." : exitCode !== null ? (exitCode === 0 ? "Completed" : `Exited (${exitCode})`) : "Output"}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs tabular-nums text-fg-subtle">
-            {formatDuration(elapsed)}
-          </span>
-          {running && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="inline-flex items-center gap-1 rounded border border-danger-border bg-danger-bg px-2 py-1 text-xs text-danger-fg transition-colors hover:bg-danger-bg"
-            >
-              <X className="h-3 w-3" />
-              Cancel
-            </button>
-          )}
-        </div>
-      </div>
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="max-h-[400px] overflow-y-auto bg-black/20 p-3 font-mono text-xs leading-relaxed"
-      >
-        {lines.map((line, idx) => (
-          <div
-            key={idx}
-            className={cn(
-              "whitespace-pre-wrap break-all",
-              line.type === "stderr" ? "text-danger-fg" : "text-foreground"
-            )}
-          >
-            {line.text}
-          </div>
-        ))}
-        {lines.length === 0 && (
-          <div className="text-fg-subtle">Waiting for output...</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── RunHistory ────────────────────────────────── */
-
-function RunHistory({
-  runs,
-  total,
-  onLoadMore,
-  timeFormat,
-}: {
-  runs: DoctorRunRecord[];
-  total: number;
-  onLoadMore: () => void;
-  timeFormat: TimeFormatPreference;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [expandedRun, setExpandedRun] = useState<string | null>(null);
-
-  if (runs.length === 0) return null;
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
-        )}
-        Past Runs ({total})
-      </button>
-
-      {expanded && (
-        <div className="space-y-1">
-          {runs.map((run) => {
-            const isExpanded = expandedRun === run.id;
-            const passed = run.exitCode === 0 && run.summary.errors === 0;
-            const hasIssues = run.summary.errors > 0 || run.summary.warnings > 0;
-
-            return (
-              <div key={run.id}>
-                <button
-                  type="button"
-                  onClick={() => setExpandedRun(isExpanded ? null : run.id)}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-foreground/[0.04]"
-                >
-                  <span className="text-xs tabular-nums text-fg-subtle w-32 shrink-0">
-                    {formatDate(run.completedAt, timeFormat)}
-                  </span>
-                  <span className="inline-flex items-center rounded bg-foreground/[0.06] px-1.5 py-0.5 text-xs font-medium text-fg-secondary">
-                    {MODE_LABELS[run.mode] || run.mode}
-                  </span>
-                  <span className="text-xs tabular-nums text-fg-subtle">
-                    {formatDuration(run.durationMs)}
-                  </span>
-                  <span className="flex-1" />
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1 text-xs font-medium",
-                      passed
-                        ? "text-success-fg"
-                        : run.exitCode !== 0
-                          ? "text-danger-fg"
-                          : hasIssues
-                            ? "text-warning-fg"
-                            : "text-muted-foreground"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "h-1.5 w-1.5 rounded-full",
-                        passed
-                          ? "bg-success"
-                          : run.exitCode !== 0
-                            ? "bg-danger"
-                            : hasIssues
-                              ? "bg-warning"
-                              : "bg-muted-foreground"
-                      )}
-                    />
-                    {passed ? "Passed" : run.exitCode !== 0 ? "Failed" : "Issues found"}
-                  </span>
-                  {isExpanded ? (
-                    <ChevronDown className="h-3 w-3 text-fg-subtle" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3 text-fg-subtle" />
-                  )}
-                </button>
-
-                {isExpanded && (
-                  <div className="ml-3 mt-1 mb-2 space-y-2 border-l-2 border-border/40 pl-4">
-                    <div className="flex flex-wrap gap-2">
-                      {run.summary.errors > 0 && (
-                        <span className="text-xs text-danger-fg">{run.summary.errors} errors</span>
-                      )}
-                      {run.summary.warnings > 0 && (
-                        <span className="text-xs text-warning-fg">{run.summary.warnings} warnings</span>
-                      )}
-                      {run.summary.healthy > 0 && (
-                        <span className="text-xs text-success-fg">{run.summary.healthy} healthy</span>
-                      )}
-                    </div>
-                    {run.issues.filter((i) => i.severity !== "info").length > 0 && (
-                      <div className="space-y-1">
-                        {run.issues
-                          .filter((i) => i.severity !== "info")
-                          .slice(0, 10)
-                          .map((issue, idx) => (
-                            <div
-                              key={`${issue.checkId}-${idx}`}
-                              className="flex items-start gap-2 text-xs"
-                            >
-                              {issue.severity === "error" ? (
-                                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-danger-fg" />
-                              ) : (
-                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning-fg" />
-                              )}
-                              <span className="text-muted-foreground">{issue.title}</span>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {runs.length < total && (
-            <button
-              type="button"
-              onClick={onLoadMore}
-              className="w-full rounded-lg py-2 text-center text-xs text-fg-subtle transition-colors hover:bg-foreground/[0.04] hover:text-muted-foreground"
-            >
-              Load more...
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── ActionBar ─────────────────────────────────── */
-
-function ActionBar({
-  running,
-  onRun,
-}: {
-  running: boolean;
-  onRun: (mode: RunMode, needsConfirm: boolean) => void;
-}) {
-  const [showMore, setShowMore] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showMore) return;
-    const handler = (e: PointerEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
-        setShowMore(false);
-      }
-    };
-    const escHandler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowMore(false);
-    };
-    document.addEventListener("pointerdown", handler);
-    window.addEventListener("keydown", escHandler);
-    return () => {
-      document.removeEventListener("pointerdown", handler);
-      window.removeEventListener("keydown", escHandler);
-    };
-  }, [showMore]);
-
-  const btnClass =
-    "inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.08] disabled:opacity-50";
-
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        onClick={() => onRun("scan", false)}
-        disabled={running}
-        className={cn(btnClass, "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20")}
-      >
-        {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-        Run Health Check
-      </button>
-
-      <button
-        type="button"
-        onClick={() => onRun("repair", true)}
-        disabled={running}
-        className={btnClass}
-      >
-        <Wrench className="h-3.5 w-3.5" />
-        Fix Known Issues
-      </button>
-
-      <button
-        type="button"
-        onClick={() => onRun("deep", false)}
-        disabled={running}
-        className={btnClass}
-      >
-        <Search className="h-3.5 w-3.5" />
-        Deep System Scan
-      </button>
-
-      <div className="relative" ref={moreRef}>
-        <button
-          type="button"
-          onClick={() => setShowMore(!showMore)}
-          disabled={running}
-          className={btnClass}
-        >
-          <MoreHorizontal className="h-3.5 w-3.5" />
-        </button>
-
-        {showMore && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-xl">
-            <button
-              type="button"
-              onClick={() => {
-                setShowMore(false);
-                onRun("repair-force", true);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-foreground/[0.06]"
-            >
-              <Zap className="h-3.5 w-3.5 text-danger-fg" />
-              Advanced Repair
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowMore(false);
-                onRun("generate-token", true);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-foreground/[0.06]"
-            >
-              <KeyRound className="h-3.5 w-3.5 text-warning-fg" />
-              Generate Security Token
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowMore(false);
-                onRun("restart-gateway", true);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-foreground/[0.06]"
-            >
-              <RefreshCw className="h-3.5 w-3.5 text-info-fg" />
-              Restart Gateway
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── main component ────────────────────────────── */
-
-const CONFIRM_CONFIG: Record<string, { title: string; description: string; serious: boolean }> = {
-  repair: {
-    title: "Fix Known Issues",
-    description:
-      "This will fix common issues like outdated settings and expired logins. Your settings are backed up first.",
-    serious: false,
-  },
-  "repair-force": {
-    title: "Advanced Repair",
-    description:
-      "This overwrites service configs and applies aggressive fixes. Only use if standard fix didn't help. On memory-constrained deployments this may cause high RAM usage — consider running from the host CLI instead.",
-    serious: true,
-  },
-  "generate-token": {
-    title: "Generate Security Token",
-    description:
-      "This will create a new gateway security token for authenticated communication between services.",
-    serious: false,
-  },
-  "restart-gateway": {
-    title: "Restart Gateway",
-    description:
-      "This will restart the gateway service. Connected clients will disconnect and the system will be briefly unavailable. On memory-constrained environments (e.g. Docker with limited RAM) this may cause cascading failures — consider running 'openclaw doctor' directly on the host instead.",
-    serious: true,
-  },
-};
+type Dialog =
+  | { kind: "fix"; fix: FixDescriptor; contextTitle: string | null }
+  | { kind: "guide"; finding: DoctorFinding }
+  | { kind: "report" }
+  | { kind: "confirm-run"; mode: Exclude<RunMode, "quick"> }
+  | null;
 
 export function DoctorView() {
   const timeFormat = useSyncExternalStore(
     subscribeTimeFormatPreference,
     getTimeFormatSnapshot,
-    getTimeFormatServerSnapshot,
+    getTimeFormatServerSnapshot
   );
-  const [status, setStatus] = useState<DoctorStatus | null>(null);
-  const [statusLoading, setStatusLoading] = useState(true);
+  const hour12 = is12HourTimeFormat(timeFormat);
+
+  const [status, setStatus] = useState<DoctorStatusResponse | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [initialising, setInitialising] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [history, setHistory] = useState<DoctorHistoryResponse | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLimit, setHistoryLimit] = useState(12);
+
+  const [fixes, setFixes] = useState<Record<string, FixPlanSummary>>({});
+
   const [running, setRunning] = useState(false);
-  const [outputLines, setOutputLines] = useState<Array<{ type: string; text: string }>>([]);
-  const [showOutput, setShowOutput] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [exitCode, setExitCode] = useState<number | null>(null);
-  const [confirm, setConfirm] = useState<ConfirmState>(null);
-  const [history, setHistory] = useState<DoctorRunRecord[]>([]);
-  const [historyTotal, setHistoryTotal] = useState(0);
-  const abortRef = useRef<AbortController | null>(null);
+  const [runMode, setRunMode] = useState<RunMode | null>(null);
+  const [phases, setPhases] = useState<RunPhase[]>([]);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [runError, setRunError] = useState<string | null>(null);
+  /** Live command output. Held in memory only — it is not redacted. */
+  const [runLog, setRunLog] = useState<string[]>([]);
+
+  const [dialog, setDialog] = useState<Dialog>(null);
+
+  const runAbortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingModeRef = useRef<RunMode | null>(null);
+  const runningRef = useRef(false);
 
-  // Fetch status on mount
-  const fetchStatus = useCallback(async () => {
-    setStatusLoading(true);
-    try {
-      const res = await fetch("/api/doctor/status", { cache: "no-store" });
-      if (res.ok) {
-        const data = (await res.json()) as DoctorStatus;
-        setStatus(data);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setStatusLoading(false);
-    }
-  }, []);
+  /* ── reads ─────────────────────────────────────────────────────────── */
 
-  const fetchHistory = useCallback(async (limit = 20) => {
-    try {
-      const res = await fetch(`/api/doctor/history?limit=${limit}`, { cache: "no-store" });
-      if (res.ok) {
-        const data = (await res.json()) as { runs: DoctorRunRecord[]; total: number };
-        setHistory(data.runs);
-        setHistoryTotal(data.total);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchStatus();
-    void fetchHistory();
-  }, [fetchStatus, fetchHistory]);
-
-  // Cleanup on unmount: abort any running fetch and clear interval
-  useEffect(() => {
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
-  // Run a doctor command via SSE
-  const runDoctor = useCallback(async (mode: RunMode) => {
-    if (mode === "restart-gateway") {
-      // Use existing gateway restart endpoint
+  const loadStatus = useCallback(
+    async (kind: "initial" | "peek" | "refresh") => {
+      if (kind === "refresh") setRefreshing(true);
       try {
-        await fetch("/api/gateway", {
+        const query = kind === "peek" ? "?peek=1" : kind === "refresh" ? "?refresh=1" : "";
+        const res = await fetch(`/api/doctor/status${query}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(await errorMessage(res, `The check could not be read (${res.status}).`));
+        const data = (await res.json()) as DoctorStatusResponse;
+        // A run in flight owns the snapshot; a background peek must not stomp on
+        // the narration the user is watching.
+        if (runningRef.current && kind === "peek") return;
+        setStatus(data);
+        setStatusError(null);
+      } catch (err) {
+        if (kind !== "peek") setStatusError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (kind === "refresh") setRefreshing(false);
+        if (kind === "initial") setInitialising(false);
+      }
+    },
+    []
+  );
+
+  const loadHistory = useCallback(async (limit: number) => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/doctor/history?summary=1&limit=${limit}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      setHistory((await res.json()) as DoctorHistoryResponse);
+    } catch {
+      // History is a nicety; its absence must not break the page.
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatus("initial");
+  }, [loadStatus]);
+
+  useEffect(() => {
+    void loadHistory(historyLimit);
+  }, [loadHistory, historyLimit]);
+
+  useEffect(() => {
+    fetch("/api/doctor/fix", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { fixes: FixPlanSummary[] } | null) => {
+        if (!data) return;
+        setFixes(Object.fromEntries(data.fixes.map((f) => [f.id, f])));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Background poll. `peek=1` only ever reads what is already stored, so this
+  // can never start a subprocess on the user's machine — it just notices when
+  // something else (another tab, a repair, a scheduled run) has moved on.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!runningRef.current) void loadStatus("peek");
+    }, PEEK_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !runningRef.current) {
+        void loadStatus("peek");
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [loadStatus]);
+
+  useEffect(
+    () => () => {
+      runAbortRef.current?.abort();
+      if (timerRef.current) clearInterval(timerRef.current);
+    },
+    []
+  );
+
+  /* ── running a check ───────────────────────────────────────────────── */
+
+  const runNow = useCallback(
+    async (mode: RunMode) => {
+      if (runningRef.current) return;
+      runningRef.current = true;
+      setRunning(true);
+      setRunMode(mode);
+      setPhases([]);
+      setRunLog([]);
+      setRunError(null);
+      setElapsedMs(0);
+
+      const startedAt = Date.now();
+      timerRef.current = setInterval(() => setElapsedMs(Date.now() - startedAt), 100);
+
+      const controller = new AbortController();
+      runAbortRef.current = controller;
+
+      try {
+        const res = await fetch("/api/doctor/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "restart" }),
+          body: JSON.stringify({ mode, acknowledgeMutation: mode !== "quick" }),
+          signal: controller.signal,
         });
-      } catch {
-        // ignore
-      }
-      // Refresh status after a delay
-      setTimeout(() => void fetchStatus(), 3000);
-      return;
-    }
 
-    setRunning(true);
-    setOutputLines([]);
-    setShowOutput(true);
-    setExitCode(null);
-    setElapsed(0);
-
-    const startTime = Date.now();
-    timerRef.current = setInterval(() => {
-      setElapsed(Date.now() - startTime);
-    }, 100);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      const res = await fetch("/api/doctor/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-        signal: controller.signal,
-      });
-
-      if (res.status === 409) {
-        setOutputLines([{ type: "stderr", text: "A doctor run is already in progress.\n" }]);
-        setRunning(false);
-        if (timerRef.current) clearInterval(timerRef.current);
-        return;
-      }
-
-      if (!res.ok || !res.body) {
-        setOutputLines([{ type: "stderr", text: `Failed to start: HTTP ${res.status}\n` }]);
-        setRunning(false);
-        if (timerRef.current) clearInterval(timerRef.current);
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || "";
-
-        for (const part of parts) {
-          const line = part.replace(/^data: /, "");
-          if (!line) continue;
-          try {
-            const event = JSON.parse(line) as StreamEvent;
-            if (event.type === "stdout" || event.type === "stderr") {
-              setOutputLines((prev) => {
-                const next = [...prev, { type: event.type, text: event.text }];
-                // Cap at 2000 lines to prevent unbounded growth
-                return next.length > 2000 ? next.slice(-2000) : next;
-              });
-            } else if (event.type === "exit") {
-              setExitCode(event.code);
-            } else if (event.type === "error") {
-              setOutputLines((prev) => [...prev, { type: "stderr", text: event.text + "\n" }]);
-            }
-          } catch {
-            // malformed JSON — skip
-          }
+        if (!res.ok) {
+          setRunError(
+            res.status === 409
+              ? "A check is already running somewhere else. Give it a moment and try again."
+              : res.status === 403
+                ? "This installation is set to read-only, so that check is not available here."
+                : await errorMessage(res, `The check could not start (${res.status}).`)
+          );
+          return;
         }
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setOutputLines((prev) => [...prev, { type: "stderr", text: "\nCancelled by user.\n" }]);
-      } else {
-        setOutputLines((prev) => [
-          ...prev,
-          { type: "stderr", text: `\nError: ${err instanceof Error ? err.message : String(err)}\n` },
-        ]);
-      }
-    } finally {
-      setRunning(false);
-      if (timerRef.current) clearInterval(timerRef.current);
-      setElapsed(Date.now() - startTime);
-      abortRef.current = null;
-      // Refresh status and history
-      setTimeout(() => {
-        void fetchStatus();
-        void fetchHistory();
-      }, 500);
-    }
-  }, [fetchStatus, fetchHistory]);
 
-  const handleRunRequest = useCallback(
-    (mode: RunMode, needsConfirm: boolean) => {
-      if (needsConfirm && CONFIRM_CONFIG[mode]) {
-        pendingModeRef.current = mode;
-        setConfirm({ mode, ...CONFIRM_CONFIG[mode] });
-      } else {
-        void runDoctor(mode);
+        await readEventStream<RunEvent>(
+          res,
+          (event) => {
+            if (event.type === "phase") {
+              setPhases((prev) => [
+                ...prev.filter((p) => p.phase !== event.phase),
+                {
+                  phase: event.phase,
+                  label: event.label,
+                  index: event.index,
+                  total: event.total,
+                  status: "running",
+                  durationMs: null,
+                  detail: null,
+                },
+              ]);
+            } else if (event.type === "phase-done") {
+              setPhases((prev) =>
+                prev.map((p) =>
+                  p.phase === event.phase
+                    ? {
+                        ...p,
+                        status: event.ok ? "ok" : "failed",
+                        durationMs: event.durationMs,
+                        detail: event.detail ?? null,
+                      }
+                    : p
+                )
+              );
+            } else if (event.type === "output") {
+              setRunLog((prev) => {
+                const next = [...prev, event.text];
+                return next.length > 300 ? next.slice(-300) : next;
+              });
+            } else if (event.type === "snapshot") {
+              setStatus((prev) => ({
+                ...event.snapshot,
+                diff: event.diff,
+                trend: prev?.trend ?? [],
+              }));
+              setStatusError(null);
+            } else if (event.type === "error") {
+              setRunError(event.message);
+            }
+          },
+          controller.signal
+        );
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          setRunError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (timerRef.current) clearInterval(timerRef.current);
+        runningRef.current = false;
+        setRunning(false);
+        runAbortRef.current = null;
+        // The run event carries no trend, so read it back once we are idle.
+        void loadStatus("peek");
+        void loadHistory(historyLimit);
       }
     },
-    [runDoctor]
+    [loadStatus, loadHistory, historyLimit]
   );
 
-  const handleConfirm = useCallback(() => {
-    const mode = pendingModeRef.current;
-    setConfirm(null);
-    pendingModeRef.current = null;
-    if (mode) void runDoctor(mode);
-  }, [runDoctor]);
+  const requestRun = useCallback(
+    (mode: RunMode) => {
+      if (mode === "quick") void runNow("quick");
+      else setDialog({ kind: "confirm-run", mode });
+    },
+    [runNow]
+  );
 
-  const handleCancel = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
+  /* ── repairs ───────────────────────────────────────────────────────── */
+
+  const openFix = useCallback((finding: DoctorFinding) => {
+    if (!finding.fix || finding.fix.blocked) return;
+    setDialog({ kind: "fix", fix: finding.fix, contextTitle: finding.title });
   }, []);
 
-  const handleFixIssue = useCallback(
-    (mode: RunMode) => {
-      handleRunRequest(mode, true);
+  const openGuide = useCallback((finding: DoctorFinding) => {
+    setDialog({ kind: "guide", finding });
+  }, []);
+
+  const onFixFinished = useCallback(
+    (_outcome: FixOutcome) => {
+      // The server invalidates its cache after any outcome, so this is a real
+      // re-check rather than a re-read of what we already had.
+      void loadStatus("refresh");
+      void loadHistory(historyLimit);
     },
-    [handleRunRequest]
+    [loadStatus, loadHistory, historyLimit]
   );
+
+  /* ── grouping ──────────────────────────────────────────────────────── */
+
+  const grouped = useMemo(() => {
+    const findings = status?.findings ?? [];
+    const ids = new Set(findings.map((f) => f.id));
+    const isConsequence = (f: DoctorFinding) => f.causedBy !== null && ids.has(f.causedBy);
+
+    const roots = findings.filter((f) => !isConsequence(f));
+    const needsYou = roots.filter((f) => !f.informational && f.severity !== "info");
+    const informational = roots.filter((f) => f.informational || f.severity === "info");
+    const consequenceCount = findings.filter(
+      (f) => isConsequence(f) && !f.informational && f.severity !== "info"
+    ).length;
+
+    const consequencesOf = (id: string) => findings.filter((f) => f.causedBy === id);
+
+    return { needsYou, informational, consequenceCount, consequencesOf };
+  }, [status]);
+
+  const fixDescriptors = useMemo<Record<string, FixDescriptor>>(() => fixes, [fixes]);
+
+  /* ── render ────────────────────────────────────────────────────────── */
 
   return (
     <SectionLayout>
       <SectionHeader
-        title="System Doctor"
-        description="Monitor and repair your OpenClaw installation"
-        actions={
-          <button
-            type="button"
-            onClick={() => void fetchStatus()}
-            disabled={statusLoading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-foreground/[0.08] disabled:opacity-60"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", statusLoading && "animate-spin")} />
-            Refresh
-          </button>
-        }
+        title="Doctor"
+        description="What Mission Control can actually tell you about the health of this installation — and what it cannot."
       />
 
-      <SectionBody width="content" padding="regular" innerClassName="space-y-5">
-        {/* Health Banner */}
-        <HealthBanner status={status} loading={statusLoading} />
+      <SectionBody width="content" padding="regular" innerClassName="space-y-6 pb-16">
+        {initialising && !status ? (
+          <LoadingVerdict />
+        ) : statusError && !status ? (
+          <Panel className="px-6 py-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger-fg" />
+              <div>
+                <h2 className="text-base font-semibold text-foreground">
+                  Mission Control could not read your system&rsquo;s health
+                </h2>
+                <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground">
+                  {statusError}
+                </p>
+              </div>
+            </div>
+          </Panel>
+        ) : status ? (
+          <>
+            <VerdictCard
+              snapshot={status}
+              diff={status.diff}
+              counts={{
+                needsYou: grouped.needsYou.length,
+                consequences: grouped.consequenceCount,
+                informational: grouped.informational.length,
+              }}
+              running={running}
+              runMode={runMode}
+              phases={phases}
+              elapsedMs={elapsedMs}
+              runLog={runLog}
+              onRun={requestRun}
+              onOpenReport={() => setDialog({ kind: "report" })}
+              refreshing={refreshing}
+            />
 
-        {/* Action Bar */}
-        <ActionBar running={running} onRun={handleRunRequest} />
+            {runError && (
+              <Panel className="flex items-start gap-3 border-danger-border px-5 py-4 md:px-6">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger-fg" />
+                <p className="text-sm leading-relaxed text-danger-fg">{runError}</p>
+              </Panel>
+            )}
 
-        {/* Issue Cards */}
-        {status && !statusLoading && (
-          <IssueCards issues={status.issues} onFix={handleFixIssue} running={running} />
-        )}
+            {grouped.needsYou.length > 0 && (
+              <section className="space-y-3">
+                <SectionTitle
+                  title="Needs you"
+                  hint="Each of these is something a person has to decide about. Nothing here changes until you press something."
+                />
+                <div className="space-y-3 stagger-cards">
+                  {grouped.needsYou.map((finding) => (
+                    <FindingCard
+                      key={finding.id}
+                      finding={finding}
+                      consequences={grouped.consequencesOf(finding.id)}
+                      onFix={openFix}
+                      onGuide={openGuide}
+                      busy={running}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
 
-        {/* Streaming Output Panel */}
-        {showOutput && (
-          <StreamingOutputPanel
-            lines={outputLines}
-            running={running}
-            elapsed={elapsed}
-            exitCode={exitCode}
-            onCancel={handleCancel}
-          />
-        )}
+            {status.prevention.length > 0 && (
+              <Panel>
+                <header className="px-5 pb-3 pt-5 md:px-6">
+                  <SectionTitle
+                    title="Worth heading off"
+                    hint="Nothing is broken here yet. These are the things that break next if nobody looks."
+                  />
+                </header>
+                <div className="divide-y divide-border-subtle border-t border-border-subtle">
+                  {status.prevention.map((finding) => (
+                    <PreventionRow
+                      key={finding.id}
+                      finding={finding}
+                      onFix={openFix}
+                      onGuide={openGuide}
+                      busy={running}
+                    />
+                  ))}
+                </div>
+              </Panel>
+            )}
 
-        {/* Run History */}
-        <RunHistory
-          runs={history}
-          total={historyTotal}
-          onLoadMore={() => void fetchHistory(history.length + 20)}
-          timeFormat={timeFormat}
-        />
+            {/* Nothing has ever been checked here, so "what changed" would be
+                a panel about the absence of a comparison. */}
+            {status.health.checkedAt !== null && (
+              <ChangesPanel
+                diff={status.diff}
+                hasHistory={(history?.total ?? 0) > 0}
+                hour12={hour12}
+              />
+            )}
+
+            <VitalsPanel vitals={status.vitals} />
+
+            {grouped.informational.length > 0 && (
+              <Panel>
+                <header className="px-5 pb-4 pt-5 md:px-6">
+                  <SectionTitle
+                    title="Everything else it noticed"
+                    hint="Real findings that are not problems. They are here so nothing is hidden from you, not because anything is wrong."
+                  />
+                </header>
+                <div className="divide-y divide-border-subtle border-t border-border-subtle">
+                  {grouped.informational.map((finding) => (
+                    <InformationalRow
+                      key={finding.id}
+                      finding={finding}
+                      onFix={openFix}
+                      onGuide={openGuide}
+                      busy={running}
+                    />
+                  ))}
+                </div>
+              </Panel>
+            )}
+
+            {grouped.needsYou.length === 0 &&
+              grouped.informational.length === 0 &&
+              status.health.state === "checked" && (
+                <Panel className="px-5 py-6 md:px-6">
+                  <SectionTitle title="Findings" />
+                  <QuietNote className="mt-2">
+                    Nothing was reported by any source that ran. The panel below shows exactly which
+                    sources those were.
+                  </QuietNote>
+                </Panel>
+              )}
+
+            <CoveragePanel coverage={status.coverage} provenance={status.provenance} />
+
+            <HistoryPanel
+              history={history}
+              trend={status.trend}
+              hour12={hour12}
+              loading={historyLoading}
+              onLoadMore={() => setHistoryLimit((n) => Math.min(50, n + 12))}
+            />
+          </>
+        ) : null}
       </SectionBody>
 
-      {/* Confirm Dialog */}
-      {confirm && (
-        <ConfirmDialog
-          confirm={confirm}
-          onConfirm={handleConfirm}
-          onCancel={() => {
-            setConfirm(null);
-            pendingModeRef.current = null;
+      {dialog?.kind === "fix" && (
+        <FixDialog
+          fix={dialog.fix}
+          contextTitle={dialog.contextTitle}
+          onClose={() => setDialog(null)}
+          onFinished={onFixFinished}
+        />
+      )}
+
+      {dialog?.kind === "guide" && (
+        <GuideDialog
+          finding={dialog.finding}
+          fixes={fixDescriptors}
+          onClose={() => setDialog(null)}
+          onRunFix={(fix, contextTitle) => setDialog({ kind: "fix", fix, contextTitle })}
+        />
+      )}
+
+      {dialog?.kind === "report" && <ReportDialog onClose={() => setDialog(null)} />}
+
+      {dialog?.kind === "confirm-run" && (
+        <RunConfirmDialog
+          mode={dialog.mode}
+          onClose={() => setDialog(null)}
+          onConfirm={() => {
+            const mode = dialog.mode;
+            setDialog(null);
+            void runNow(mode);
+          }}
+          onChooseQuick={() => {
+            setDialog(null);
+            void runNow("quick");
           }}
         />
       )}
     </SectionLayout>
+  );
+}
+
+/* ── first paint ───────────────────────────────────────────────────────── */
+
+/**
+ * The first read may genuinely be running a read-only collection on the server,
+ * which takes a few seconds. Saying so beats a skeleton that implies the answer
+ * is already known.
+ */
+function LoadingVerdict() {
+  return (
+    <Panel className="p-6 md:p-8">
+      <p className="flex items-center gap-2.5">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+        <span className="eyebrow !text-fg-secondary">Checking</span>
+      </p>
+      <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em] text-foreground md:text-[1.75rem]">
+        Reading your system…
+      </h2>
+      <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted-foreground">
+        Mission Control is asking OpenClaw how things are. Nothing is being changed.
+      </p>
+      <div className="mt-7 space-y-2.5">
+        <div className="h-3 w-2/3 animate-pulse rounded-full bg-muted" />
+        <div className="h-3 w-1/2 animate-pulse rounded-full bg-muted" />
+      </div>
+    </Panel>
   );
 }
