@@ -162,8 +162,16 @@ def main() -> None:
     sha = os.environ.get("GITHUB_SHA", "")
     commit_url = f"{server_url}/{repo}/commit/{sha}"
 
-    message = f"New Mission Control tweet drafts\nPushed: {commit_url}\n\n{tweets}"
-    send_telegram(message)
+    # `send_telegram` never existed: every push that produced drafts got all the
+    # way here, generated them, and then died with a NameError — so the drafts
+    # were only ever visible in the Actions log. `send_telegram_tweets` splits
+    # them into one message per tweet, which is why `parse_tweets` is here.
+    drafts = parse_tweets(tweets)
+    if not drafts:
+        print("Model output had no numbered tweets to parse, skipping Telegram send.")
+        return
+
+    send_telegram_tweets(drafts, commit_url)
 
 
 if __name__ == "__main__":
