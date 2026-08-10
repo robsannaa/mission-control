@@ -38,7 +38,7 @@ import {
 import dagre from "dagre";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import { InlineSpinner, ScreenLoadingState } from "@/components/ui/loading-state";
+import { InlineSpinner, ContentLoadingState } from "@/components/ui/loading-state";
 
 const DAGRE_NODE_WIDTH = 200;
 const DAGRE_NODE_HEIGHT = 72;
@@ -1768,7 +1768,7 @@ export function MemoryGraphView() {
   if (loading || !graph) {
     return (
       <div className="flex flex-1 flex-col">
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </div>
     );
   }

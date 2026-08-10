@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 
 /* ── types ────────────────────────────────────────── */
@@ -236,7 +236,7 @@ export function ActivityView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </SectionLayout>
     );
   }

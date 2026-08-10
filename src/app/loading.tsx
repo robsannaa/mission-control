@@ -1,7 +1,7 @@
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 
 export default function RootLoading() {
   return (
-    <ScreenLoadingState className="bg-muted dark:bg-background" />
+    <ContentLoadingState className="bg-muted dark:bg-background" />
   );
 }

@@ -13,7 +13,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { requestRestart } from "@/lib/restart-store";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
 
 type JsonObject = Record<string, unknown>;
@@ -1133,7 +1133,7 @@ export function HeartbeatManager() {
   if (loading) {
     return (
       <div className="flex flex-1 flex-col">
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </div>
     );
   }

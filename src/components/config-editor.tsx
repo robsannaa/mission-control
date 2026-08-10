@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { applyMergePatch, buildConfigDiff, type JsonObject } from "@/lib/config-diff";
 // The validator MUST come from config-schema-validate: config-schema-lookup
 // re-exports it but also pulls in the gateway transport (child_process/fs),
@@ -2418,7 +2418,7 @@ export function ConfigEditor() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState size="lg" />
+        <ContentLoadingState size="lg" />
       </SectionLayout>
     );
   }

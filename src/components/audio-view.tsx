@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
 
 /* ── Types ────────────────────────────────────────── */
@@ -1518,7 +1518,7 @@ export function AudioView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState size="lg" />
+        <ContentLoadingState size="lg" />
       </SectionLayout>
     );
   }

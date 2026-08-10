@@ -6,11 +6,11 @@ import { DashboardView } from "@/components/dashboard-view";
 import { ChatView } from "@/components/chat-view";
 import { PanelErrorBoundary } from "@/components/panel-error-boundary";
 import { GatewayOfflineBanner } from "@/components/gateway-offline-banner";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { setChatActive } from "@/lib/chat-store";
 
 function SectionLoading() {
-  return <ScreenLoadingState />;
+  return <ContentLoadingState />;
 }
 
 const TasksView = dynamic(

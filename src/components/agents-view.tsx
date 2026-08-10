@@ -59,7 +59,7 @@ import {
 import { cn } from "@/lib/utils";
 import { requestRestart } from "@/lib/restart-store";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { InlineSpinner, ScreenLoadingState } from "@/components/ui/loading-state";
+import { InlineSpinner, ContentLoadingState } from "@/components/ui/loading-state";
 import { SubagentsManagerView } from "@/components/subagents-manager-view";
 import { ModelsView } from "@/components/models-view";
 
@@ -4601,7 +4601,7 @@ export function AgentsView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </SectionLayout>
     );
   }

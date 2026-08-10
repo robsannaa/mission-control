@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { InlineSpinner, ScreenLoadingState } from "@/components/ui/loading-state";
+import { InlineSpinner, ContentLoadingState } from "@/components/ui/loading-state";
 import {
   getTimeFormatSnapshot,
   getTimeFormatServerSnapshot,
@@ -2562,7 +2562,7 @@ export function CronView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </SectionLayout>
     );
   }

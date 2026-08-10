@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { InlineSpinner, ScreenLoadingState } from "@/components/ui/loading-state";
+import { InlineSpinner, ContentLoadingState } from "@/components/ui/loading-state";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
@@ -628,7 +628,7 @@ export function IntegrationsView() {
   );
 
   if (loading && !data) {
-    return <ScreenLoadingState />;
+    return <ContentLoadingState />;
   }
 
   return (

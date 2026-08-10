@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
 
 type SourceCount = { source: string; files: number; chunks: number };
@@ -798,7 +798,7 @@ export function VectorView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState size="lg" />
+        <ContentLoadingState size="lg" />
       </SectionLayout>
     );
   }

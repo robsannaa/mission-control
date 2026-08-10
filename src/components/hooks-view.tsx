@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { LoadingState, ScreenLoadingState } from "@/components/ui/loading-state";
+import { LoadingState, ContentLoadingState } from "@/components/ui/loading-state";
 
 /* ── types ─────────────────────────────────────── */
 
@@ -531,7 +531,7 @@ export function HooksView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState size="lg" />
+        <ContentLoadingState size="lg" />
       </SectionLayout>
     );
   }

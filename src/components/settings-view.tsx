@@ -28,7 +28,7 @@ import {
   SectionHeader,
   SectionLayout,
 } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 
 import {
   setTimeFormatPreference,
@@ -312,7 +312,7 @@ export function SettingsView() {
     return (
       <SectionLayout>
         <SectionHeader title="Settings" />
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </SectionLayout>
     );
   }

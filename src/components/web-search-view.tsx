@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 
 /* ── Types ──────────────────────────────────────── */
 
@@ -530,7 +530,7 @@ export function WebSearchView() {
 
       <SectionBody width="wide" padding="regular" innerClassName="space-y-4">
         {loading && !status ? (
-          <ScreenLoadingState />
+          <ContentLoadingState />
         ) : error && !status ? (
           <div className="rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
             {error}

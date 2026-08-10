@@ -5,7 +5,7 @@ import { Trash2, RefreshCw, MessageSquare, Clock, Zap, DollarSign, AlertCircle }
 import { estimateCostUsd } from "@/lib/model-metadata";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { notifyError } from "@/lib/notification-store";
 import { classifySessionKind, sessionKindOf } from "@/lib/session-kinds";
@@ -140,7 +140,7 @@ export function SessionsView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </SectionLayout>
     );
   }

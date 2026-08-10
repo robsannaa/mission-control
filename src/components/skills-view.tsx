@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { Switch } from "@/components/ui/switch";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
 
@@ -797,7 +797,7 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </SectionLayout>
     );
   }
@@ -1730,7 +1730,7 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState size="lg" />
+        <ContentLoadingState size="lg" />
       </SectionLayout>
     );
   }

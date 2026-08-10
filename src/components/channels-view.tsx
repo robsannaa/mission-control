@@ -15,7 +15,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { cn } from "@/lib/utils";
 
@@ -426,7 +426,7 @@ export function ChannelsView() {
       <SectionLayout>
         <SectionHeader title="Channels" description="Manage your agents' chat channels after onboarding." bordered />
         <SectionBody>
-          <ScreenLoadingState />
+          <ContentLoadingState />
         </SectionBody>
       </SectionLayout>
     );
