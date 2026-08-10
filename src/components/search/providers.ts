@@ -272,13 +272,36 @@ export function unwrapExternalContent(text: unknown): string {
  * two-line snippet.
  */
 export function plainifySnippet(text: string): string {
-  return text
-    .replace(/^#{1,6}\s*/gm, "")
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/^\s*---+\s*$/gm, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return (
+    text
+      .replace(/^#{1,6}\s*/gm, "")
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/\*(.+?)\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/^\s*---+\s*$/gm, "")
+      // Markdown links: keep the words, drop the URL.
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      /*
+       * Tables. A scraped Wikipedia infobox arrives as one flattened row of
+       * pipes — `|Born|Samuel Harris Altman April 22, 1985|Title|- CEO of…|` —
+       * which is unreadable as prose. Separator rows (`|---|:--:|`) carry no
+       * words at all, so they go entirely; the remaining cell boundaries become
+       * a middot, which reads as the list of facts it actually is.
+       */
+      .replace(/\|\s*:?-{2,}:?\s*/g, "|")
+      .replace(/\s*\|\s*/g, " · ")
+      // The provider's own elisions, and the separators we just introduced,
+      // both arrive in runs.
+      .replace(/\s*\.{3,}\s*/g, " … ")
+      .replace(/(?:\s*·\s*){2,}/g, " · ")
+      .replace(/(?:\s*…\s*){2,}/g, " … ")
+      .replace(/·(\s*…)/g, "$1")
+      .replace(/(…\s*)·/g, "$1")
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      // Nothing should open or close on a bare separator.
+      .replace(/^[\s·…]+/, "")
+      .replace(/[\s·…]+$/, "")
+      .trim()
+  );
 }

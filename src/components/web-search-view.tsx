@@ -225,7 +225,15 @@ function ResultItem({ result }: { result: NormalizedSearchResult }) {
         </p>
       )}
       {result.snippet && (
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{result.snippet}</p>
+        /*
+         * Clamped to three lines. Providers return whatever they scraped — one
+         * result here ran to a dozen lines of flattened infobox — and a result
+         * list is for scanning, not reading. The full text is one click away on
+         * the page itself, which is where it belongs.
+         */
+        <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
+          {result.snippet}
+        </p>
       )}
     </li>
   );
