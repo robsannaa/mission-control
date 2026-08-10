@@ -28,6 +28,10 @@ If the diff is trivial (docs typo, dependency bump, CI tweak) with nothing genui
 
 Output ONLY the tweet drafts, one per line, numbered 1 to N, with emojis/bullets already formatted in. No preamble, no explanation."""
 
+# The exact answer the prompt above asks for when a push is not worth tweeting.
+# Compared against the model's whole reply, never searched for inside it.
+NOTHING_SENTINEL = "NOTHING_TWEET_WORTHY"
+
 
 def get_context() -> str:
     before = os.environ.get("GITHUB_EVENT_BEFORE", "")
@@ -153,10 +157,6 @@ def main() -> None:
     print("=== Draft tweets ===", file=sys.stderr)
     print(tweets, file=sys.stderr)
 
-    if "NOTHING_TWEET_WORTHY" in tweets:
-        print("Nothing tweet-worthy in this push, skipping Telegram send.")
-        return
-
     server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     sha = os.environ.get("GITHUB_SHA", "")
@@ -167,8 +167,17 @@ def main() -> None:
     # were only ever visible in the Actions log. `send_telegram_tweets` splits
     # them into one message per tweet, which is why `parse_tweets` is here.
     drafts = parse_tweets(tweets)
+
+    # The sentinel counts only when it is the model's WHOLE answer. The check
+    # used to be `if NOTHING_SENTINEL in tweets`, which silenced a good batch
+    # whenever a draft merely quoted the token — and one did, because a commit
+    # message about this very script mentioned it. A substring test cannot tell
+    # "there was nothing to say" from "one of the tweets is about the sentinel".
+    if len(drafts) == 1 and drafts[0].strip() == NOTHING_SENTINEL:
+        drafts = []
+
     if not drafts:
-        print("Model output had no numbered tweets to parse, skipping Telegram send.")
+        print("Nothing tweet-worthy in this push, skipping Telegram send.")
         return
 
     send_telegram_tweets(drafts, commit_url)
