@@ -12,6 +12,7 @@ import {
   Moon,
   Monitor,
   ChevronDown,
+  ChevronRight,
   ExternalLink,
   Trash2,
   Check,
@@ -21,6 +22,14 @@ import {
   ShieldAlert,
   RefreshCw,
   Search,
+  KeyRound,
+  ShieldCheck,
+  Webhook,
+  Stethoscope,
+  SquareTerminal,
+  Settings as SettingsIcon,
+  Volume2,
+  Waypoints,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -121,6 +130,90 @@ const COMMON_TIMEZONES = [
   "Pacific/Auckland",
   "UTC",
 ];
+
+/* ── Settings hub — a directory, done beautifully ───
+ * Grouped rows that navigate to existing routes. None of the destination
+ * pages are rebuilt here; they keep their routes and their content. */
+
+type HubRowDef = {
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  description: string;
+};
+
+const HUB_GENERAL: HubRowDef[] = [
+  { href: "#settings-preferences", icon: SlidersHorizontal, label: "Preferences", description: "Theme, time zone, and how times are displayed." },
+  { href: "/security", icon: ShieldCheck, label: "Security", description: "Review sessions and permission policies for this OpenClaw." },
+  { href: "/accounts", icon: KeyRound, label: "API Keys", description: "Add and rotate the API keys your agents use." },
+];
+
+const HUB_AUTOMATION: HubRowDef[] = [
+  { href: "/hooks", icon: Webhook, label: "Webhooks", description: "Send live events to Slack, Discord, or any URL." },
+  { href: "/doctor", icon: Stethoscope, label: "Doctor", description: "Check this OpenClaw's health and fix problems." },
+];
+
+const HUB_INFRASTRUCTURE: HubRowDef[] = [
+  { href: "/terminal", icon: SquareTerminal, label: "Terminal", description: "Run shell commands directly on this machine." },
+  { href: "/config", icon: SettingsIcon, label: "Config", description: "Edit openclaw.json, the raw configuration file." },
+  { href: "/browser", icon: Globe, label: "Browser Automation", description: "Let agents drive a real browser for you." },
+  { href: "/audio", icon: Volume2, label: "Audio & Voice", description: "Manage voice input and spoken replies." },
+  { href: "/tailscale", icon: Waypoints, label: "Tailscale", description: "Reach this OpenClaw securely from anywhere." },
+];
+
+function HubRow({ href, icon: Icon, label, description }: HubRowDef) {
+  const isAnchor = href.startsWith("#");
+  const rowClass = "group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-foreground/[0.03]";
+  const content = (
+    <>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-foreground">{label}</span>
+        <span className="block text-xs text-fg-subtle">{description}</span>
+      </span>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform group-hover:translate-x-0.5" />
+    </>
+  );
+  if (isAnchor) {
+    return (
+      <a href={href} className={rowClass}>
+        {content}
+      </a>
+    );
+  }
+  return (
+    <Link href={href} className={rowClass}>
+      {content}
+    </Link>
+  );
+}
+
+function HubGroup({ title, rows }: { title: string; rows: HubRowDef[] }) {
+  return (
+    <div>
+      <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle">
+        {title}
+      </p>
+      <div className="divide-y divide-border rounded-xl border border-border bg-card overflow-hidden">
+        {rows.map((row) => (
+          <HubRow key={row.label} {...row} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsHub({ hosted }: { hosted: boolean }) {
+  return (
+    <div className="space-y-5 pb-2">
+      <HubGroup title="General" rows={HUB_GENERAL} />
+      <HubGroup title="Automation" rows={HUB_AUTOMATION} />
+      {!hosted && <HubGroup title="Infrastructure" rows={HUB_INFRASTRUCTURE} />}
+    </div>
+  );
+}
 
 function getLocalTimezone(): string {
   try {
@@ -324,7 +417,7 @@ export function SettingsView() {
     <SectionLayout>
       <SectionHeader
         title="Settings"
-        description="Manage preferences, gateway configuration, and diagnostics."
+        description="Everything OpenClaw, in one place — plus your preferences, gateway, and diagnostics below."
       />
       <SectionBody width="content" padding="regular" innerClassName="space-y-4 pb-8">
         {/* Toast */}
@@ -341,9 +434,13 @@ export function SettingsView() {
           </div>
         )}
 
-        {/* ── General ──────────────────────────────── */}
+        {/* ── Hub — a directory, done beautifully ─── */}
+        <SettingsHub hosted={isAgentbayHosted} />
+
+        {/* ── Preferences ──────────────────────────── */}
+        <div id="settings-preferences" className="scroll-mt-6">
         <SettingsSection
-          title="General"
+          title="Preferences"
           icon={SlidersHorizontal}
           iconColor="text-foreground"
           defaultOpen
@@ -517,6 +614,7 @@ export function SettingsView() {
           </SettingRow>
 
         </SettingsSection>
+        </div>
 
         {/* ── Gateway ──────────────────────────────── */}
         <SettingsSection

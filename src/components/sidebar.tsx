@@ -16,27 +16,18 @@ import {
   Wrench,
   MessageCircle,
   Terminal,
-  SquareTerminal,
   Cpu,
-  Volume2,
   Database,
   Users,
   Users2,
   BarChart3,
   Menu,
   X,
-  ShieldCheck,
   Package,
   ChevronRight,
   ChevronLeft,
-  Waypoints,
-  Globe,
-  KeyRound,
   Search,
   Heart,
-  Settings2,
-  Webhook,
-  Stethoscope,
   HelpCircle,
   Puzzle,
   Radio,
@@ -112,89 +103,85 @@ type NavItem = {
   comingSoon?: boolean;
   beta?: boolean;
   group?: string;
+  /** Hidden entirely on the hosted (Agentbay) deployment. */
+  selfHostedOnly?: true;
+  /** Sits below the hairline separator pinned to the bottom of the rail. */
+  pinnedBottom?: true;
 };
 
 const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
 
-const defaultNavItems: NavItem[] = [
-  // ── Overview ──
-  { group: "Overview", section: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+/**
+ * ONE nav tree. Hosted degrades by omission (via `selfHostedOnly`), never by
+ * maintaining a second hand-written tree — that's how Calendar silently
+ * vanished from the old `hostedNavItems` and API Keys got promoted there
+ * against its own page's advice. See e2e/sidebar-nav verification for the
+ * filtered hosted set.
+ */
+const ALL_NAV_ITEMS: NavItem[] = [
+  // ── top of the rail — no group label, this IS the product ──
+  { section: "chat", label: "Chat", icon: MessageCircle, href: "/chat" },
+  { section: "tasks", label: "Tasks", icon: ListChecks, href: "/tasks" },
+  { section: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { section: "activity", label: "Activity", icon: Activity, href: "/activity" },
   { section: "usage", label: "Usage", icon: BarChart3, href: "/usage" },
+  { section: "sessions", label: "Sessions", icon: MessageSquare, href: "/sessions" },
+  // Self-hosted only for now — hosted lacks a Google-connect flow. Product
+  // gap, not an oversight; the flag stays until that flow exists.
+  { section: "calendar", label: "Calendar", icon: Calendar, href: "/calendar", beta: true, selfHostedOnly: true },
+
   // ── Agents ──
   { group: "Agents", section: "agents", label: "Agents", icon: Users, href: "/agents" },
   { section: "agents", label: "Subagents", icon: Users2, href: "/agents?tab=subagents", tab: "subagents", isSubItem: true },
   { section: "agents", label: "Models", icon: Cpu, href: "/agents?tab=models", tab: "models", isSubItem: true },
-  { section: "chat", label: "Chat", icon: MessageCircle, href: "/chat" },
-  { section: "sessions", label: "Sessions", icon: MessageSquare, href: "/sessions" },
-  // ── Work ──
-  { group: "Work", section: "tasks", label: "Tasks", icon: ListChecks, href: "/tasks" },
-  ...(!isAgentbayHosting ? [{ section: "calendar", label: "Calendar", icon: Calendar, href: "/calendar", beta: true } as NavItem] : []),
-  ...(!isAgentbayHosting ? [{ section: "integrations", label: "Integrations", icon: Puzzle, href: "/integrations", beta: true } as NavItem] : []),
-  { section: "cron", label: "Cron Jobs", icon: TickingClockIcon, href: "/cron" },
-  { section: "cron", label: "Heartbeat", icon: Heart, href: "/heartbeat", tab: "heartbeat", isSubItem: true },
   { section: "skills", label: "Skills", icon: Wrench, href: "/skills" },
-  { section: "skills", label: "ClawHub", icon: Package, href: "/skills?tab=clawhub", tab: "clawhub", isSubItem: true },
+  { section: "skills", label: "Marketplace", icon: Package, href: "/skills?tab=clawhub", tab: "clawhub", isSubItem: true },
+  { section: "cron", label: "Scheduled Tasks", icon: TickingClockIcon, href: "/cron" },
+  { section: "cron", label: "Heartbeat", icon: Heart, href: "/heartbeat", tab: "heartbeat", isSubItem: true },
+
   // ── Knowledge ──
   { group: "Knowledge", section: "memory", label: "Memory", icon: Brain, href: "/memory" },
   { section: "docs", label: "Documents", icon: FolderOpen, href: "/documents" },
   { section: "vectors", label: "Vector DB", icon: Database, href: "/vectors" },
-  // ── Configure ──
-  { section: "accounts", label: "API Keys", icon: KeyRound, href: "/accounts" },
-  { section: "channels", label: "Channels", icon: Radio, href: "/channels" },
-  { section: "security", label: "Security", icon: ShieldCheck, href: "/security" },
-  { section: "hooks", label: "Hooks", icon: Webhook, href: "/hooks" },
-  { section: "settings", label: "Preferences", icon: Settings2, href: "/settings" },
-  // ── System ──
-  ...(!isAgentbayHosting ? [{ section: "doctor", label: "Doctor", icon: Stethoscope, href: "/doctor", group: "System" } as NavItem] : []),
-  { group: isAgentbayHosting ? "System" : undefined, section: "terminal", label: "Terminal", icon: SquareTerminal, href: "/terminal" },
-  { section: "logs", label: "Logs", icon: Terminal, href: "/logs" },
-  { section: "browser", label: "Browser Relay", icon: Globe, href: "/browser" },
-  { section: "audio", label: "Audio & Voice", icon: Volume2, href: "/audio" },
   { section: "search", label: "Web Search", icon: Search, href: "/search" },
-  ...(!isAgentbayHosting ? [{ section: "tailscale", label: "Tailscale", icon: Waypoints, href: "/tailscale", beta: true } as NavItem] : []),
-  { section: "config", label: "Config", icon: Settings, href: "/config" },
+
+  // ── Connections ──
+  { group: "Connections", section: "channels", label: "Channels", icon: Radio, href: "/channels" },
+  { section: "integrations", label: "Integrations", icon: Puzzle, href: "/integrations", beta: true },
+
+  // ── pinned bottom, below a hairline separator ──
+  { section: "logs", label: "Logs", icon: Terminal, href: "/logs", pinnedBottom: true, selfHostedOnly: true },
+  { section: "settings", label: "Settings", icon: Settings, href: "/settings", pinnedBottom: true },
+  { section: "help", label: "Help & Support", icon: HelpCircle, href: "/help", pinnedBottom: true },
 ];
 
-const hostedNavItems: NavItem[] = [
-  // ── Core ──
-  { group: "Core", section: "chat", label: "Chat", icon: MessageCircle, href: "/chat" },
-  { section: "channels", label: "Channels", icon: Radio, href: "/channels" },
-  { section: "tasks", label: "Tasks", icon: ListChecks, href: "/tasks" },
-  { section: "skills", label: "Skills", icon: Wrench, href: "/skills" },
-  { section: "accounts", label: "API Keys", icon: KeyRound, href: "/accounts" },
-  { section: "help", label: "Help & Support", icon: HelpCircle, href: "/help" },
-  // ── Overview ──
-  { group: "Overview", section: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { section: "activity", label: "Activity", icon: Activity, href: "/activity" },
-  { section: "usage", label: "Usage", icon: BarChart3, href: "/usage" },
-  // ── Agents ──
-  { group: "Agents", section: "agents", label: "Agents", icon: Users, href: "/agents" },
-  { section: "agents", label: "Models", icon: Cpu, href: "/agents?tab=models", tab: "models", isSubItem: true },
-  { section: "sessions", label: "Sessions", icon: MessageSquare, href: "/sessions" },
-  // ── Work ──
-  { group: "Work", section: "cron", label: "Cron Jobs", icon: TickingClockIcon, href: "/cron" },
-  // ── Knowledge ──
-  { group: "Knowledge", section: "memory", label: "Memory", icon: Brain, href: "/memory" },
-  { section: "docs", label: "Documents", icon: FolderOpen, href: "/documents" },
-  // ── Configure ──
-  { group: "Configure", section: "settings", label: "Preferences", icon: Settings2, href: "/settings" },
-  // ── Advanced ──
-  { group: "Advanced", section: "agents", label: "Subagents", icon: Users2, href: "/agents?tab=subagents", tab: "subagents" },
-  { section: "skills", label: "ClawHub", icon: Package, href: "/skills?tab=clawhub", tab: "clawhub", group: "Advanced" },
-  { section: "cron", label: "Heartbeat", icon: Heart, href: "/heartbeat", tab: "heartbeat", group: "Advanced" },
-  { section: "vectors", label: "Vector DB", icon: Database, href: "/vectors", group: "Advanced" },
-  { section: "security", label: "Security", icon: ShieldCheck, href: "/security", group: "Advanced" },
-  { section: "hooks", label: "Hooks", icon: Webhook, href: "/hooks", group: "Advanced" },
-  { section: "terminal", label: "Terminal", icon: SquareTerminal, href: "/terminal", group: "Advanced" },
-  { section: "logs", label: "Logs", icon: Terminal, href: "/logs", group: "Advanced" },
-  { section: "browser", label: "Browser Relay", icon: Globe, href: "/browser", group: "Advanced" },
-  { section: "audio", label: "Audio & Voice", icon: Volume2, href: "/audio", group: "Advanced" },
-  { section: "search", label: "Web Search", icon: Search, href: "/search", group: "Advanced" },
-  { section: "config", label: "Config", icon: Settings, href: "/config", group: "Advanced" },
-];
+/** Pure filter — kept separate from the module-level `isAgentbayHosting`
+ * read so it can be exercised both ways in tests without re-importing the
+ * module under a different env. */
+export function filterNavItemsForHosting(items: NavItem[], hosted: boolean): NavItem[] {
+  return items.filter((item) => !item.selfHostedOnly || !hosted);
+}
 
-const navItems = isAgentbayHosting ? hostedNavItems : defaultNavItems;
+export { ALL_NAV_ITEMS };
+export type { NavItem };
+
+const navItems = filterNavItemsForHosting(ALL_NAV_ITEMS, isAgentbayHosting);
+
+/** Sections that no longer have their own rail row — they live in the
+ * Settings hub now, so visiting them should still light up "Settings". */
+const SETTINGS_HUB_SECTIONS = new Set([
+  "settings",
+  "accounts",
+  "security",
+  "permissions",
+  "hooks",
+  "doctor",
+  "terminal",
+  "config",
+  "browser",
+  "audio",
+  "tailscale",
+]);
 
 const SIDEBAR_COLLAPSED_KEY = "sidebar_collapsed";
 const SIDEBAR_WIDTH_KEY = "sidebar_width";
@@ -277,7 +264,6 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
   const [skillsExpanded, setSkillsExpanded] = useState(false);
   const [agentsExpanded, setAgentsExpanded] = useState(false);
   const [cronExpanded, setCronExpanded] = useState(false);
-  const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const isClawHubActive = section === "skills" && tab === "clawhub";
   const showSkillsChildren = isClawHubActive ? true : skillsExpanded;
   const isSubagentsActive = section === "agents" && tab === "subagents";
@@ -296,20 +282,25 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
   return (
     <nav className={cn("flex flex-1 flex-col gap-0.5 overflow-y-auto pt-2", collapsed ? "px-2" : "px-3")}>
       {navItems.map((item, index) => {
-        const isSkillsParent = item.section === "skills" && item.label === "Skills";
-        const isAgentsParent = item.section === "agents" && item.label === "Agents";
-        const isCronParent = item.section === "cron" && item.label === "Cron Jobs";
-        const isAdvancedItem = isAgentbayHosting && item.group === "Advanced";
-        const previousGroup = index > 0 ? navItems[index - 1]?.group : undefined;
-        const showGroupHeader = item.group && item.group !== previousGroup;
+        const isSkillsParent = item.section === "skills" && !item.isSubItem;
+        const isAgentsParent = item.section === "agents" && !item.isSubItem;
+        const isCronParent = item.section === "cron" && !item.isSubItem;
+        const previousItem = index > 0 ? navItems[index - 1] : undefined;
+        const showGroupHeader = Boolean(item.group) && item.group !== previousItem?.group;
+        const showPinnedSeparator = Boolean(item.pinnedBottom) && !previousItem?.pinnedBottom;
         const Icon = item.icon;
-        const isActive =
+        let isActive =
           !item.comingSoon &&
           section === item.section &&
           (item.tab
             ? tab === item.tab
             : (item.section !== "skills" || tab !== "clawhub") &&
               (item.section !== "agents" || (tab !== "subagents" && tab !== "models")));
+        // Rows that moved into the Settings hub no longer have their own
+        // row — a visit to any of them should still light up "Settings".
+        if (item.section === "settings" && !item.isSubItem) {
+          isActive = !item.comingSoon && SETTINGS_HUB_SECTIONS.has(section);
+        }
         const tourId =
           !item.isSubItem && item.section === "dashboard"
             ? "nav-dashboard"
@@ -319,8 +310,8 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
                 ? "nav-tasks"
                 : !item.isSubItem && item.section === "skills" && item.label === "Skills"
                   ? "nav-skills"
-                  : !item.isSubItem && item.section === "accounts"
-                    ? "nav-accounts"
+                  : !item.isSubItem && item.section === "settings"
+                    ? "nav-settings"
                     : !item.isSubItem && item.section === "channels"
                       ? "nav-channels"
                       : undefined;
@@ -329,8 +320,6 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
         if (item.isSubItem && item.section === "skills" && !showSkillsChildren) return null;
         if (item.isSubItem && item.section === "agents" && !showAgentsChildren) return null;
         if (item.isSubItem && item.section === "cron" && !showCronChildren) return null;
-        const shouldHideAdvancedItem = isAdvancedItem && !advancedExpanded && !isActive;
-        if (shouldHideAdvancedItem && !showGroupHeader) return null;
 
         const showBadge = item.section === "chat" && chatUnread > 0;
         const isDisabled = item.comingSoon;
@@ -349,34 +338,27 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
         return (
           <div key={`${item.section}:${item.label}`}>
             {showGroupHeader && !collapsed && (
-              isAgentbayHosting && item.group === "Advanced" ? (
-                <button
-                  type="button"
-                  onClick={() => setAdvancedExpanded((prev) => !prev)}
-                  className={cn(
-                    "mb-1.5 flex w-full items-center justify-between rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle transition-colors hover:bg-sidebar-accent hover:text-fg-secondary",
-                    index === 0 ? "mt-0" : "mt-6",
-                  )}
-                  aria-expanded={advancedExpanded}
-                >
-                  <span>Advanced</span>
-                  <ChevronRight className={cn("h-3 w-3 transition-transform", advancedExpanded && "rotate-90")} />
-                </button>
-              ) : (
-                <div
-                  className={cn(
-                    "mb-1.5 px-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle",
-                    index === 0 ? "mt-0" : "mt-6",
-                  )}
-                >
-                  {item.group}
-                </div>
-              )
+              <div
+                className={cn(
+                  "mb-1.5 px-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle",
+                  index === 0 ? "mt-0" : "mt-6",
+                )}
+              >
+                {item.group}
+              </div>
             )}
-            {showGroupHeader && collapsed && (
+            {showPinnedSeparator && !collapsed && (
+              <div
+                className={cn(
+                  "mx-2.5 border-t border-sidebar-border",
+                  index === 0 ? "mt-0 mb-2" : "mt-6 mb-2",
+                )}
+              />
+            )}
+            {(showGroupHeader || showPinnedSeparator) && collapsed && (
               <div className="my-2 mx-1 border-t border-sidebar-border" />
             )}
-            {shouldHideAdvancedItem ? null : isDisabled ? (
+            {isDisabled ? (
               <span className={linkClass} aria-disabled>
                 <Icon className="h-3 w-3 shrink-0 opacity-60" />
                 {!collapsed && (

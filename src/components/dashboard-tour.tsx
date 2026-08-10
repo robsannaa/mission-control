@@ -71,11 +71,11 @@ const TOUR_STEPS: TourStep[] = [
     placement: "right",
   },
   {
-    id: "keys",
-    title: "Control API Credentials",
-    description: "API Keys is where you add and rotate provider keys securely.",
-    target: "[data-tour='nav-accounts']",
-    route: "/accounts",
+    id: "settings-hub",
+    title: "Everything Else Lives in Settings",
+    description: "API keys, security, webhooks, and advanced tools are one click away — behind the gear icon at the bottom of the rail.",
+    target: "[data-tour='nav-settings']",
+    route: "/settings",
     placement: "right",
   },
   {

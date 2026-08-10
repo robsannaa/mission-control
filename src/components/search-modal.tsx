@@ -21,6 +21,7 @@ import {
   Calendar,
   Puzzle,
   Clock,
+  Heart,
   Wrench,
   Package,
   FolderOpen,
@@ -37,6 +38,8 @@ import {
   Volume2,
   Waypoints,
   Settings,
+  Radio,
+  HelpCircle,
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -61,6 +64,8 @@ type QuickAction = {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   keywords: string[];
+  /** Hidden on the hosted (Agentbay) deployment — mirrors sidebar.tsx. */
+  selfHostedOnly?: true;
 };
 
 type UnifiedItem =
@@ -72,38 +77,54 @@ type Props = {
   onClose: () => void;
 };
 
-/* ── quick actions (sidebar nav as command palette) ── */
+/* ── quick actions (sidebar nav as command palette) ──
+ * Mirrors the sidebar's IA (src/components/sidebar.tsx) — same renames,
+ * same grouping, same hosted-only gaps. Ordered Chat-first so the empty-query
+ * default (first 6) matches what the rail leads with. */
 
-const quickActions: QuickAction[] = [
+const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
+
+const ALL_QUICK_ACTIONS: QuickAction[] = [
+  { id: "chat", label: "Chat", group: "Overview", href: "/chat", icon: MessageCircle, keywords: ["message", "talk", "ping"] },
+  { id: "tasks", label: "Tasks", group: "Overview", href: "/tasks", icon: ListChecks, keywords: ["todo", "jobs", "queue"] },
   { id: "dashboard", label: "Dashboard", group: "Overview", href: "/dashboard", icon: LayoutDashboard, keywords: ["home", "overview", "main"] },
   { id: "activity", label: "Activity", group: "Overview", href: "/activity", icon: Activity, keywords: ["log", "events", "history"] },
   { id: "usage", label: "Usage", group: "Overview", href: "/usage", icon: BarChart3, keywords: ["stats", "metrics", "analytics"] },
+  { id: "sessions", label: "Sessions", group: "Overview", href: "/sessions", icon: MessageSquare, keywords: ["conversations", "threads"] },
+  { id: "calendar", label: "Calendar", group: "Overview", href: "/calendar", icon: Calendar, keywords: ["schedule", "events", "date"], selfHostedOnly: true },
+
   { id: "agents", label: "Agents", group: "Agents", href: "/agents", icon: Users, keywords: ["bots", "assistants"] },
-  { id: "chat", label: "Chat", group: "Agents", href: "/chat", icon: MessageCircle, keywords: ["message", "talk", "ping"] },
-  { id: "sessions", label: "Sessions", group: "Agents", href: "/sessions", icon: MessageSquare, keywords: ["conversations", "threads"] },
-  { id: "tasks", label: "Tasks", group: "Work", href: "/tasks", icon: ListChecks, keywords: ["todo", "jobs", "queue"] },
-  { id: "calendar", label: "Calendar", group: "Work", href: "/calendar", icon: Calendar, keywords: ["schedule", "events", "date"] },
-  { id: "integrations", label: "Integrations", group: "Work", href: "/integrations", icon: Puzzle, keywords: ["connect", "apps", "plugins"] },
-  { id: "cron", label: "Cron Jobs", group: "Work", href: "/cron", icon: Clock, keywords: ["schedule", "timer", "recurring"] },
-  { id: "skills", label: "Skills", group: "Work", href: "/skills", icon: Wrench, keywords: ["tools", "capabilities"] },
-  { id: "clawhub", label: "ClawHub", group: "Work", href: "/skills?tab=clawhub", icon: Package, keywords: ["marketplace", "store", "plugins"] },
+  { id: "models", label: "Models", group: "Agents", href: "/agents?tab=models", icon: Cpu, keywords: ["llm", "ai", "gpt", "claude"] },
+  { id: "skills", label: "Skills", group: "Agents", href: "/skills", icon: Wrench, keywords: ["tools", "capabilities"] },
+  { id: "clawhub", label: "Marketplace", group: "Agents", href: "/skills?tab=clawhub", icon: Package, keywords: ["marketplace", "store", "plugins", "clawhub"] },
+  { id: "cron", label: "Scheduled Tasks", group: "Agents", href: "/cron", icon: Clock, keywords: ["schedule", "timer", "recurring", "cron", "cron jobs"] },
+  { id: "heartbeat", label: "Heartbeat", group: "Agents", href: "/heartbeat", icon: Heart, keywords: ["pulse", "keep-alive", "recurring"] },
+
   { id: "memory", label: "Memory", group: "Knowledge", href: "/memory", icon: Brain, keywords: ["knowledge", "notes", "journal"] },
   { id: "docs", label: "Documents", group: "Knowledge", href: "/documents", icon: FolderOpen, keywords: ["files", "uploads"] },
   { id: "vectors", label: "Vector DB", group: "Knowledge", href: "/vectors", icon: Database, keywords: ["embeddings", "semantic", "index"] },
-  { id: "models", label: "Models", group: "Agents", href: "/agents?tab=models", icon: Cpu, keywords: ["llm", "ai", "gpt", "claude"] },
-  { id: "accounts", label: "API Keys", group: "Configure", href: "/accounts", icon: KeyRound, keywords: ["credentials", "tokens", "auth", "keys", "api", "secrets"] },
-  { id: "security", label: "Security", group: "Configure", href: "/security", icon: ShieldCheck, keywords: ["permissions", "access"] },
-  { id: "hooks", label: "Hooks", group: "Configure", href: "/hooks", icon: Webhook, keywords: ["events", "triggers", "automation"] },
-  { id: "settings", label: "Preferences", group: "Configure", href: "/settings", icon: Settings2, keywords: ["config", "options"] },
-  { id: "doctor", label: "Doctor", group: "System", href: "/doctor", icon: Stethoscope, keywords: ["health", "diagnostics", "debug"] },
-  { id: "terminal", label: "Terminal", group: "System", href: "/terminal", icon: SquareTerminal, keywords: ["shell", "console", "cli"] },
-  { id: "logs", label: "Logs", group: "System", href: "/logs", icon: Terminal, keywords: ["output", "debug", "trace"] },
-  { id: "browser", label: "Browser Relay", group: "System", href: "/browser", icon: Globe, keywords: ["web", "proxy", "remote"] },
-  { id: "audio", label: "Audio & Voice", group: "System", href: "/audio", icon: Volume2, keywords: ["speech", "microphone", "tts"] },
-  { id: "web-search", label: "Web Search", group: "System", href: "/search", icon: Search, keywords: ["perplexity", "brave", "internet"] },
-  { id: "tailscale", label: "Tailscale", group: "System", href: "/tailscale", icon: Waypoints, keywords: ["vpn", "network", "tunnel"] },
-  { id: "config", label: "Config", group: "System", href: "/config", icon: Settings, keywords: ["configuration", "system"] },
+  { id: "web-search", label: "Web Search", group: "Knowledge", href: "/search", icon: Search, keywords: ["perplexity", "brave", "internet"] },
+
+  { id: "channels", label: "Channels", group: "Connections", href: "/channels", icon: Radio, keywords: ["telegram", "discord", "slack"] },
+  { id: "integrations", label: "Integrations", group: "Connections", href: "/integrations", icon: Puzzle, keywords: ["connect", "apps", "plugins", "gmail", "drive"] },
+
+  { id: "logs", label: "Logs", group: "Settings", href: "/logs", icon: Terminal, keywords: ["output", "debug", "trace"], selfHostedOnly: true },
+  { id: "accounts", label: "API Keys", group: "Settings", href: "/accounts", icon: KeyRound, keywords: ["credentials", "tokens", "auth", "keys", "api", "secrets"] },
+  { id: "security", label: "Security", group: "Settings", href: "/security", icon: ShieldCheck, keywords: ["permissions", "access"] },
+  { id: "hooks", label: "Webhooks", group: "Settings", href: "/hooks", icon: Webhook, keywords: ["events", "triggers", "automation", "hooks"] },
+  { id: "settings", label: "Preferences", group: "Settings", href: "/settings", icon: Settings2, keywords: ["config", "options"] },
+  { id: "doctor", label: "Doctor", group: "Settings", href: "/doctor", icon: Stethoscope, keywords: ["health", "diagnostics", "debug"] },
+  { id: "terminal", label: "Terminal", group: "Settings", href: "/terminal", icon: SquareTerminal, keywords: ["shell", "console", "cli"], selfHostedOnly: true },
+  { id: "browser", label: "Browser Automation", group: "Settings", href: "/browser", icon: Globe, keywords: ["web", "proxy", "remote", "browser relay"], selfHostedOnly: true },
+  { id: "audio", label: "Audio & Voice", group: "Settings", href: "/audio", icon: Volume2, keywords: ["speech", "microphone", "tts"], selfHostedOnly: true },
+  { id: "tailscale", label: "Tailscale", group: "Settings", href: "/tailscale", icon: Waypoints, keywords: ["vpn", "network", "tunnel"], selfHostedOnly: true },
+  { id: "config", label: "Config", group: "Settings", href: "/config", icon: Settings, keywords: ["configuration", "system"], selfHostedOnly: true },
+  { id: "help", label: "Help & Support", group: "Settings", href: "/help", icon: HelpCircle, keywords: ["support", "faq", "contact"] },
 ];
+
+const quickActions: QuickAction[] = ALL_QUICK_ACTIONS.filter(
+  (action) => !action.selfHostedOnly || !isAgentbayHosting,
+);
 
 /* ── helpers ──────────────────────────────────────── */
 
