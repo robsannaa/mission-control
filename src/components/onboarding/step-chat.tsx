@@ -5,6 +5,7 @@ import { Loader2, PartyPopper, Send, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Celebration } from "./celebration";
 import { inputClass, primaryBtnClass, secondaryBtnClass } from "./types";
+import { splitOnboardChatFrame } from "./error-frame";
 
 const SUGGESTED_PROMPTS = [
   "Introduce yourself — what can you do for me?",
@@ -37,32 +38,26 @@ export function StepChat({
       setTurns((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "" }]);
       setStreaming(true);
 
-      const appendAssistant = (chunk: string) => {
+      // Only the content BEFORE an error marker is ever shown as if the agent
+      // said it — an error frame never reaches the transcript as prose.
+      const setAssistantContent = (content: string) => {
         setTurns((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
           if (last?.role === "assistant") {
-            next[next.length - 1] = { ...last, text: last.text + chunk };
+            next[next.length - 1] = { ...last, text: content };
           }
           return next;
         });
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
       };
 
+      let raw = "";
       try {
-        const res = await fetch("/api/chat", {
+        const res = await fetch("/api/onboarding/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            agentId: "main",
-            messages: [
-              {
-                id: `onboarding-${Date.now()}`,
-                role: "user",
-                parts: [{ type: "text", text }],
-              },
-            ],
-          }),
+          body: JSON.stringify({ prompt: text }),
         });
         if (!res.ok || !res.body) {
           const detail = await res.text().catch(() => "");
@@ -70,22 +65,23 @@ export function StepChat({
         }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let sawContent = false;
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           if (chunk) {
-            appendAssistant(chunk);
-            if (!sawContent && chunk.trim()) {
-              sawContent = true;
-              setGotReply(true);
-            }
+            raw += chunk;
+            setAssistantContent(splitOnboardChatFrame(raw).content);
           }
         }
-        if (!sawContent) {
+        const { content, error: frameError } = splitOnboardChatFrame(raw);
+        if (frameError) {
+          throw new Error(frameError);
+        }
+        if (!content.trim()) {
           throw new Error("The agent sent an empty reply. Try again in a moment.");
         }
+        setGotReply(true);
       } catch (err) {
         setTurns((prev) => prev.slice(0, -1));
         setError(err instanceof Error ? err.message : "Chat failed. Please try again.");

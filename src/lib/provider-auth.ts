@@ -50,7 +50,12 @@ const PROVIDER_PROBES: Record<string, ProviderProbe> = {
     treatClientErrorAsReachable: true,
   },
   openrouter: {
-    url: "https://openrouter.ai/api/v1/models",
+    // `/api/v1/models` is a public catalog endpoint — it returns 200 for ANY
+    // Authorization header, including garbage, so it never actually checks the
+    // key. `/api/v1/key` is the authenticated "who am I" endpoint: it 401s on
+    // a bad/missing key and 200s only for a real one. Verified live against
+    // OpenRouter — a garbage key gets `{"error":{"code":401}}` from this URL.
+    url: "https://openrouter.ai/api/v1/key",
     method: "GET",
     buildHeaders: (token) => ({ Authorization: `Bearer ${token}` }),
   },
@@ -152,6 +157,18 @@ function parseStandardDataModels(provider: string, data: unknown): ProviderModel
       };
     })
     .filter((row): row is ProviderModelItem => row !== null);
+}
+
+/**
+ * The URL `validateProviderToken` probes for a given provider — exported so
+ * this choice (an authenticated endpoint that genuinely rejects a bad key,
+ * not a public catalog that returns 200 for anything) is unit-testable
+ * without a network call. See the openrouter entry in PROVIDER_PROBES for
+ * the live-verified reasoning.
+ */
+export function getProviderProbeUrl(provider: string): string | null {
+  const probe = PROVIDER_PROBES[String(provider || "").trim().toLowerCase()];
+  return probe?.url ?? null;
 }
 
 function truncateProviderError(body: string): string {

@@ -82,12 +82,20 @@ export async function GET() {
   try {
     const home = getOpenClawHome();
     const configPath = join(home, "openclaw.json");
-    const authPath = join(home, "agents", "main", "agent", "auth-profiles.json");
+    // `auth-profiles.json` is legacy — current OpenClaw stores per-agent auth
+    // profiles (paste-token, OAuth login) in `openclaw-agent.sqlite` instead
+    // (verified live: `models status --json`'s `auth.storePath` points at the
+    // sqlite file, and a fresh agent has neither file until a profile-store
+    // credential is actually saved). Check both so a subscription-token auth
+    // that never touches config.auth.profiles isn't reported as unconfigured.
+    const authJsonPath = join(home, "agents", "main", "agent", "auth-profiles.json");
+    const authSqlitePath = join(home, "agents", "main", "agent", "openclaw-agent.sqlite");
 
-    const [binPath, configExists, authExists, gatewayUrl] = await Promise.all([
+    const [binPath, configExists, authJsonExists, authSqliteExists, gatewayUrl] = await Promise.all([
       getOpenClawBin().catch(() => null),
       fileExists(configPath),
-      fileExists(authPath),
+      fileExists(authJsonPath),
+      fileExists(authSqlitePath),
       getGatewayUrl(),
     ]);
 
@@ -160,14 +168,22 @@ export async function GET() {
       }
     }
 
-    // Tier 3: per-agent auth-profiles.json
-    if (!hasApiKey && authExists) {
+    // Tier 3: per-agent auth store (legacy JSON, or the sqlite file that
+    // replaced it — see the comment above where these paths are resolved).
+    if (!hasApiKey && authJsonExists) {
       try {
-        const auth = await readJsonSafe<{ profiles?: Record<string, unknown> }>(authPath);
+        const auth = await readJsonSafe<{ profiles?: Record<string, unknown> }>(authJsonPath);
         hasApiKey = Boolean(auth?.profiles && Object.keys(auth.profiles).length > 0);
       } catch {
         // auth unreadable
       }
+    }
+    // The sqlite store is created lazily — it only exists once a real
+    // profile-store credential (paste-token, OAuth login) has been saved, so
+    // its mere presence is already a reliable signal without needing a
+    // sqlite driver to count rows.
+    if (!hasApiKey && authSqliteExists) {
+      hasApiKey = true;
     }
 
     // Tier 4: process.env
@@ -177,7 +193,11 @@ export async function GET() {
       );
     }
 
-    // Detect Ollama
+    // Ambient Ollama detection — informational only. This probes the host's
+    // default Ollama port directly; it says nothing about whether OpenClaw's
+    // config actually points at it, so it must never feed a "configured"
+    // decision. A machine with Ollama running for something unrelated would
+    // otherwise report setup as complete with zero real agent configuration.
     let hasOllama = false;
     try {
       const ollamaRes = await fetch("http://127.0.0.1:11434/api/tags", {
@@ -188,7 +208,7 @@ export async function GET() {
       // not running
     }
 
-    const hasCredentials = hasApiKey || hasLocalProvider || hasOllama;
+    const hasCredentials = hasApiKey || hasLocalProvider;
 
     return NextResponse.json({
       installed,

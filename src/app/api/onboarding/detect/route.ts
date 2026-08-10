@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { gatewayCall } from "@/lib/openclaw";
 import { getOpenClawBin, getGatewayUrl } from "@/lib/paths";
 import { probeGatewayLiveness } from "@/lib/gateway-liveness";
+import { bootstrapFreshMachine, configFileExists } from "../_lib/bootstrap";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +105,13 @@ export async function GET() {
 
 /* ── POST /api/onboarding/detect ──
  * Actions:
- *   start — start the gateway via the service manager (openclaw gateway start).
+ *   start — bring the gateway online, whatever that actually takes:
+ *     - no config yet (truly fresh machine): `openclaw gateway start` has
+ *       nothing installed to start, so this bootstraps first (creates the
+ *       config and, outside hosted containers, installs + starts the local
+ *       service — verified in a sandboxed gateway, see _lib/bootstrap.ts).
+ *     - config already exists: start the gateway via the service manager
+ *       (openclaw gateway start), same as before.
  *           Pass dryRun: true to preview the command without executing it. */
 
 export async function POST(request: NextRequest) {
@@ -135,11 +142,28 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const hadConfig = await configFileExists();
+
+    if (!hadConfig) {
+      const bootstrap = await bootstrapFreshMachine();
+      if (!bootstrap.ok) {
+        return json({ ok: false, error: `Could not set up OpenClaw: ${bootstrap.error}` }, 500);
+      }
+    }
+
     try {
-      const { stdout, stderr } = await exec(binPath, ["gateway", "start"], {
-        timeout: 30000,
-        env: { ...process.env, NO_COLOR: "1", OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: "1" },
-      });
+      // A machine that just got bootstrapped already has its service
+      // installed and started (outside hosted containers) — calling `start`
+      // again would just be redundant. Only reach for the service manager
+      // when a config (and possibly a service) already existed.
+      if (hadConfig) {
+        await exec(binPath, ["gateway", "start"], {
+          timeout: 30000,
+          env: { ...process.env, NO_COLOR: "1", OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: "1" },
+        }).catch(() => {
+          // Non-fatal — the liveness poll below is the real signal.
+        });
+      }
 
       // Poll for liveness so the caller gets a definitive answer.
       const url = await getGatewayUrl();
@@ -149,12 +173,7 @@ export async function POST(request: NextRequest) {
         if (!running) await new Promise((resolve) => setTimeout(resolve, 1500));
       }
 
-      return json({
-        ok: true,
-        action: "start",
-        running,
-        output: `${stdout}\n${stderr}`.trim(),
-      });
+      return json({ ok: true, action: "start", running });
     } catch (err) {
       return json({ ok: false, error: `Gateway start failed: ${String(err)}` }, 500);
     }

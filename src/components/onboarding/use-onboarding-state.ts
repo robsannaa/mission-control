@@ -7,6 +7,7 @@ type StatePatch = {
   currentStep?: OnboardingStepId;
   startedAt?: string | null;
   completedAt?: string | null;
+  dismissedAt?: string | null;
   steps?: Partial<Record<OnboardingStepId, Partial<OnboardingStepState>>>;
 };
 

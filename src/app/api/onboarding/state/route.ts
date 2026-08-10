@@ -23,6 +23,7 @@ type OnboardingState = {
   version: 1;
   startedAt: string | null;
   completedAt: string | null;
+  dismissedAt: string | null;
   currentStep: OnboardingStepId;
   steps: Record<OnboardingStepId, OnboardingStepState>;
   updatedAt: string;
@@ -39,6 +40,7 @@ function defaultState(): OnboardingState {
     version: 1,
     startedAt: null,
     completedAt: null,
+    dismissedAt: null,
     currentStep: "gateway",
     steps: {
       gateway: { status: "pending" },
@@ -75,6 +77,7 @@ async function readState(): Promise<OnboardingState> {
     }
     base.startedAt = typeof raw.startedAt === "string" ? raw.startedAt : null;
     base.completedAt = typeof raw.completedAt === "string" ? raw.completedAt : null;
+    base.dismissedAt = typeof raw.dismissedAt === "string" ? raw.dismissedAt : null;
     base.updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : base.updatedAt;
     return base;
   } catch {
@@ -131,6 +134,9 @@ export async function POST(request: NextRequest) {
     }
     if (patch.completedAt !== undefined) {
       state.completedAt = typeof patch.completedAt === "string" ? patch.completedAt : null;
+    }
+    if (patch.dismissedAt !== undefined) {
+      state.dismissedAt = typeof patch.dismissedAt === "string" ? patch.dismissedAt : null;
     }
 
     if (patch.steps !== undefined) {

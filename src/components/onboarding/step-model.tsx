@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, Copy, ExternalLink, Key, Loader2 } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, Key, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getFriendlyModelName } from "@/lib/model-metadata";
 import { Celebration } from "./celebration";
@@ -29,29 +29,6 @@ function isAdvisedModel(provider: string, modelId: string): boolean {
   return modelId === advised || modelId.endsWith(advised.replace(/^[^/]+\//, ""));
 }
 
-function CopyableCommand({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        void navigator.clipboard?.writeText(command).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-      className="flex w-full items-center gap-2 rounded-lg border border-border bg-card dark:bg-sidebar px-3 py-2 text-left font-mono text-[11px] text-fg-secondary dark:text-muted-foreground hover:border-border-strong dark:hover:border-border transition-colors"
-    >
-      <span className="min-w-0 flex-1 truncate">{command}</span>
-      {copied ? (
-        <Check className="h-3 w-3 shrink-0 text-success-fg" />
-      ) : (
-        <Copy className="h-3 w-3 shrink-0" />
-      )}
-    </button>
-  );
-}
-
 export function StepModel({
   onDone,
   onSkip,
@@ -72,6 +49,15 @@ export function StepModel({
   const [error, setError] = useState<string | null>(null);
   const validateSeq = useRef(0);
 
+  // "I have a subscription" — the paste-token path some providers support
+  // instead of an API key. First-class, not buried behind a CLI disclosure:
+  // it never shows a terminal command, just a token field.
+  const [authMode, setAuthMode] = useState<"api-key" | "subscription">("api-key");
+  const [subToken, setSubToken] = useState("");
+  const [subSaving, setSubSaving] = useState(false);
+  const [subVerified, setSubVerified] = useState(false);
+  const [subError, setSubError] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/onboarding/model-auth", { cache: "no-store" })
       .then((r) => r.json())
@@ -90,6 +76,13 @@ export function StepModel({
     setSelectedModel("");
     setVerified(false);
     setError(null);
+  }, []);
+
+  const resetSubscriptionState = useCallback(() => {
+    setSubToken("");
+    setSubSaving(false);
+    setSubVerified(false);
+    setSubError(null);
   }, []);
 
   const validateKey = useCallback(
@@ -159,24 +152,14 @@ export function StepModel({
         return;
       }
 
-      // Live-verify: ask OpenClaw itself whether auth is now usable
-      try {
-        const statusRes = await fetch("/api/onboarding/model-auth", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "status" }),
-        });
-        const status = await statusRes.json();
-        if (
-          status.ok &&
-          Array.isArray(status.authenticatedProviders) &&
-          !status.authenticatedProviders.includes(providerId)
-        ) {
-          // Saved but not yet visible — config reload can lag; still celebrate,
-          // the credentials were validated against the provider directly.
-        }
-      } catch {
-        // Verification is best-effort; the save itself succeeded
+      // Honest verification: the route already polled `models status` after
+      // saving, so `authenticated` means OpenClaw itself can use the
+      // credential — not just that the write didn't throw.
+      if (!data.authenticated) {
+        setError(
+          "The key was saved, but OpenClaw hasn't picked it up yet. The gateway may still be restarting — try again in a few seconds.",
+        );
+        return;
       }
       setVerified(true);
     } catch {
@@ -186,8 +169,41 @@ export function StepModel({
     }
   }, [validated, selectedModel, saving, providerId, apiKey]);
 
+  const handleSubscriptionConnect = useCallback(async () => {
+    const trimmed = subToken.trim();
+    if (!trimmed || subSaving) return;
+    setSubSaving(true);
+    setSubError(null);
+    try {
+      const model = ADVISED_MODELS[providerId] || "";
+      const res = await fetch("/api/onboarding/model-auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "paste-token", provider: providerId, token: trimmed, model }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setSubError(data.error || "Could not save the subscription token.");
+        return;
+      }
+      if (!data.authenticated) {
+        setSubError(
+          "The token was saved, but OpenClaw hasn't picked it up yet. The gateway may still be restarting — try again in a few seconds.",
+        );
+        return;
+      }
+      setSubVerified(true);
+    } catch {
+      setSubError("Network error while connecting. Please try again.");
+    } finally {
+      setSubSaving(false);
+    }
+  }, [subToken, subSaving, providerId]);
+
   /* Already configured? Offer the fast path. */
-  const alreadyConfigured = Boolean(existingDefault) && !verified && !apiKey;
+  const alreadyConfigured =
+    Boolean(existingDefault) && !verified && !subVerified && !apiKey && !subToken;
+  const supportsSubscription = Boolean(activeProvider?.authMethods.includes("paste-token"));
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -234,6 +250,8 @@ export function StepModel({
                 setProviderId(p.id);
                 setApiKey("");
                 resetKeyState();
+                setAuthMode("api-key");
+                resetSubscriptionState();
               }}
               disabled={validating || saving}
               className={cn(
@@ -265,71 +283,97 @@ export function StepModel({
       {activeProvider && (
         <p className="text-xs leading-relaxed text-muted-foreground">
           {activeProvider.hint}{" "}
-          <a
-            href={activeProvider.keyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-foreground underline underline-offset-2 hover:opacity-90"
-          >
-            Get your key
-            <ExternalLink className="h-2.5 w-2.5" />
-          </a>
+          {authMode === "api-key" && (
+            <a
+              href={activeProvider.keyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-foreground underline underline-offset-2 hover:opacity-90"
+            >
+              Get your key
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          )}
         </p>
       )}
 
-      {/* Key input with instant validation */}
-      <div className="space-y-1.5">
-        <label className={labelClass}>{activeProvider?.label || "Provider"} API key</label>
-        <div className="relative flex items-center gap-2">
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => {
-              setApiKey(e.target.value);
-              resetKeyState();
-            }}
-            onPaste={(e) => {
-              const pasted = e.clipboardData.getData("text").trim();
-              if (pasted) {
-                e.preventDefault();
-                setApiKey(pasted);
-                resetKeyState();
-                setTimeout(() => void validateKey(pasted), 0);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !validated && !validating && apiKey.trim()) {
-                void validateKey(apiKey);
-              }
-            }}
-            placeholder={activeProvider?.placeholder || "sk-..."}
-            disabled={validating || saving}
-            className={cn(inputClass, "flex-1")}
-          />
-          {(validating || validated) && (
-            <div
+      {/* API key vs. subscription — first-class, no CLI commands either way */}
+      {supportsSubscription && (
+        <div className="inline-flex rounded-full border border-border bg-muted dark:bg-sidebar p-0.5">
+          {(["api-key", "subscription"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setAuthMode(mode)}
+              disabled={validating || saving || subSaving}
               className={cn(
-                "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-300",
-                validating
-                  ? "bg-muted dark:bg-secondary text-muted-foreground"
-                  : "bg-success-bg text-success-fg ring-1 ring-success-border",
+                "rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200",
+                authMode === mode
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-fg-subtle hover:text-fg-secondary",
               )}
             >
-              {validating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-              {validating ? "Checking" : "Verified"}
-            </div>
+              {mode === "api-key" ? "API key" : "I have a Claude subscription"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Key input with instant validation */}
+      {authMode === "api-key" && (
+        <div className="space-y-1.5">
+          <label className={labelClass}>{activeProvider?.label || "Provider"} API key</label>
+          <div className="relative flex items-center gap-2">
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                resetKeyState();
+              }}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData("text").trim();
+                if (pasted) {
+                  e.preventDefault();
+                  setApiKey(pasted);
+                  resetKeyState();
+                  setTimeout(() => void validateKey(pasted), 0);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !validated && !validating && apiKey.trim()) {
+                  void validateKey(apiKey);
+                }
+              }}
+              placeholder={activeProvider?.placeholder || "sk-..."}
+              disabled={validating || saving}
+              className={cn(inputClass, "flex-1")}
+            />
+            {(validating || validated) && (
+              <div
+                className={cn(
+                  "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-300",
+                  validating
+                    ? "bg-muted dark:bg-secondary text-muted-foreground"
+                    : "bg-success-bg text-success-fg ring-1 ring-success-border",
+                )}
+              >
+                {validating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                {validating ? "Checking" : "Verified"}
+              </div>
+            )}
+          </div>
+          {error && (
+            <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+              <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-danger" />
+              {error}
+            </p>
           )}
         </div>
-        {error && (
-          <p className="flex items-center gap-1.5 text-xs text-danger-fg">
-            <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-danger" />
-            {error}
-          </p>
-        )}
-      </div>
+      )}
 
       {/* Model picker */}
-      {validated && models.length > 0 && (
+      {authMode === "api-key" && validated && models.length > 0 && (
         <div className="space-y-1.5 animate-in fade-in duration-300">
           <label className={labelClass}>Model</label>
           <select
@@ -348,36 +392,89 @@ export function StepModel({
         </div>
       )}
 
-      {/* Advanced: OAuth flows that need a terminal */}
-      {activeProvider?.oauthCommand && (
-        <details className="group">
-          <summary className="cursor-pointer text-[11px] font-medium uppercase tracking-wide text-fg-subtle hover:text-fg-secondary dark:hover:text-muted-foreground">
-            Advanced: sign in with your {activeProvider.label} subscription
-          </summary>
-          <div className="mt-2 space-y-2">
-            <p className="text-[11px] leading-relaxed text-muted-foreground dark:text-fg-subtle">
-              OAuth sign-in opens a browser but must be launched from a terminal on the machine
-              running OpenClaw. Copy and run:
+      {/* Subscription token — no API key, no terminal on this machine */}
+      {authMode === "subscription" && (
+        <div className="space-y-1.5">
+          <label className={labelClass}>Setup token</label>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            On a machine where you&apos;re signed in to Claude Code, run{" "}
+            <span className="font-mono text-foreground dark:text-fg-secondary">claude setup-token</span>{" "}
+            and paste the result here. Needs a Claude Pro or Max plan.{" "}
+            <a
+              href="https://support.claude.com/en/articles/11145838-using-claude-code-with-your-pro-or-max-plan"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-foreground underline underline-offset-2 hover:opacity-90"
+            >
+              How to get a token
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          </p>
+          <input
+            type="password"
+            value={subToken}
+            onChange={(e) => {
+              setSubToken(e.target.value);
+              setSubVerified(false);
+              setSubError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && subToken.trim() && !subSaving) void handleSubscriptionConnect();
+            }}
+            placeholder="sk-ant-oat..."
+            disabled={subSaving}
+            className={inputClass}
+          />
+          {subError && (
+            <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+              <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-danger" />
+              {subError}
             </p>
-            <CopyableCommand command={activeProvider.oauthCommand} />
-          </div>
-        </details>
+          )}
+        </div>
       )}
 
-      {verified && <Celebration message="Model connected and verified. Your agent can think now!" />}
+      {(verified || subVerified) && (
+        <Celebration message="Model connected and verified. Your agent can think now!" />
+      )}
 
       <div className="flex items-center justify-between gap-2 pt-1">
         <button type="button" onClick={onSkip} className={secondaryBtnClass}>
           Skip for now
         </button>
-        {verified ? (
+        {verified || subVerified ? (
           <button
             type="button"
-            onClick={() => onDone({ provider: providerId, model: selectedModel })}
+            onClick={() =>
+              onDone({
+                provider: providerId,
+                model: verified ? selectedModel : ADVISED_MODELS[providerId] || null,
+                via: verified ? "api-key" : "subscription",
+              })
+            }
             className={primaryBtnClass}
           >
             Continue
             <ChevronRight className="h-4 w-4" />
+          </button>
+        ) : authMode === "subscription" ? (
+          <button
+            type="button"
+            onClick={handleSubscriptionConnect}
+            disabled={!subToken.trim() || subSaving}
+            className={primaryBtnClass}
+          >
+            {subSaving ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Connecting…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-3.5 w-3.5" />
+                Connect subscription
+              </>
+            )}
           </button>
         ) : (
           <button

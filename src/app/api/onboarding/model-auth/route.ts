@@ -6,6 +6,7 @@ import {
   buildProviderCredentialPatch,
 } from "@/lib/provider-auth";
 import { patchConfig } from "@/lib/gateway-config";
+import { bootstrapFreshMachine, configFileExists } from "../_lib/bootstrap";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,16 @@ type ModelsStatusJson = {
   auth?: {
     providers?: Array<{
       provider?: string;
+      // Non-null exactly when the provider currently resolves a usable
+      // credential — via env var, profile store, or OAuth. This is the
+      // signal that matters: `profiles.count` only tracks credentials saved
+      // through the profile store (paste-token, OAuth login), and stays 0
+      // for the env-var + auth.profiles-metadata shape the wizard's plain
+      // "paste an API key" flow writes. Verified live against a sandbox
+      // gateway: an env-only credential shows `effective.kind: "env"` with
+      // `profiles.count: 0` — filtering on count alone would report it as
+      // unauthenticated even though `runtimeAuthRoutes[].status` is "usable".
+      effective?: { kind?: string } | null;
       profiles?: { count?: number };
     }>;
   };
@@ -91,12 +102,39 @@ async function readAuthStatus(): Promise<{
   const parsed: ModelsStatusJson = JSON.parse(jsonStart >= 0 ? stdout.slice(jsonStart) : stdout);
   const providers = Array.isArray(parsed.auth?.providers) ? parsed.auth!.providers! : [];
   const authenticatedProviders = providers
-    .filter((p) => (p?.profiles?.count ?? 0) > 0 && typeof p?.provider === "string")
+    .filter(
+      (p) =>
+        typeof p?.provider === "string" &&
+        (Boolean(p?.effective?.kind) || (p?.profiles?.count ?? 0) > 0),
+    )
     .map((p) => String(p.provider));
   return {
     defaultModel: typeof parsed.defaultModel === "string" ? parsed.defaultModel : null,
     authenticatedProviders,
   };
+}
+
+/**
+ * Live-verify a saved credential: the gateway restarts itself in-process when
+ * env/auth config changes (confirmed live in a sandboxed gateway — no
+ * `restartDelayMs` needed to trigger it, and the brief WS close that happens
+ * during that restart is already retried by `patchConfig`'s transient-error
+ * handling). Poll `models status` until OpenClaw itself reports the
+ * credential usable, so "Verified" means the agent can actually use it —
+ * never just "the write didn't throw".
+ */
+async function pollProviderAuthenticated(provider: string, budgetMs = 20_000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < budgetMs) {
+    try {
+      const status = await readAuthStatus();
+      if (status.authenticatedProviders.includes(provider)) return true;
+    } catch {
+      // Gateway may be mid-restart — keep polling within budget.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  return false;
 }
 
 /* ── GET /api/onboarding/model-auth ──
@@ -211,18 +249,31 @@ export async function POST(request: NextRequest) {
           return json({ ok: false, error: validation.error || "Invalid API key" }, 400);
         }
 
+        // A truly fresh machine has no gateway config to patch yet — bootstrap
+        // creates one (and, outside hosted containers, installs + starts the
+        // local service) before we try to write credentials into it.
+        if (!(await configFileExists())) {
+          const bootstrap = await bootstrapFreshMachine();
+          if (!bootstrap.ok) {
+            return json({ ok: false, error: `Could not set up OpenClaw: ${bootstrap.error}` }, 500);
+          }
+        }
+
         const patch = buildProviderCredentialPatch(provider, token);
         if (model) {
           patch.agents = { defaults: { model: { primary: model } } };
         }
         await patchConfig(patch);
-        return json({ ok: true, provider, modelSet: model || null });
+
+        const authenticated = await pollProviderAuthenticated(provider);
+        return json({ ok: true, provider, modelSet: model || null, authenticated });
       }
 
       case "paste-token": {
         const provider = String(body.provider || "").trim().toLowerCase();
         const token = String(body.token || "").trim();
         const expiresIn = String(body.expiresIn || "").trim();
+        const model = String(body.model || "").trim();
         if (!provider || !PROVIDER_ID_RE.test(provider)) {
           return json({ error: "A valid provider id is required" }, 400);
         }
@@ -244,9 +295,36 @@ export async function POST(request: NextRequest) {
             stdin: "<token>",
           });
         }
+
+        // Same fresh-machine gap as save-api-key: a subscription token still
+        // needs somewhere to land.
+        if (!(await configFileExists())) {
+          const bootstrap = await bootstrapFreshMachine();
+          if (!bootstrap.ok) {
+            return json({ ok: false, error: `Could not set up OpenClaw: ${bootstrap.error}` }, 500);
+          }
+        }
+
         // paste-token reads the token from stdin so it never hits argv.
-        const output = await runCli(args, 60000, `${token}\n`);
-        return json({ ok: true, provider, output: output.trim() });
+        let output: string;
+        try {
+          output = await runCli(args, 60000, `${token}\n`);
+        } catch (err) {
+          return json(
+            { ok: false, error: err instanceof Error ? err.message : "Could not save the subscription token." },
+            400,
+          );
+        }
+
+        // paste-token writes credentials to the profile store, not env/auth
+        // config — no gateway restart needed for the credential itself. The
+        // default model, if requested, still goes through a config patch.
+        if (model) {
+          await patchConfig({ agents: { defaults: { model: { primary: model } } } });
+        }
+
+        const authenticated = await pollProviderAuthenticated(provider);
+        return json({ ok: true, provider, modelSet: model || null, authenticated, output: output.trim() });
       }
 
       case "status": {

@@ -13,6 +13,9 @@ export type OnboardingState = {
   version: 1;
   startedAt: string | null;
   completedAt: string | null;
+  /** Set when the user explicitly dismisses the "finish setting up" pointer
+   * without completing the wizard — stops it from reappearing. */
+  dismissedAt: string | null;
   currentStep: OnboardingStepId;
   steps: Record<OnboardingStepId, OnboardingStepState>;
   updatedAt: string;

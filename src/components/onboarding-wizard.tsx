@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOnboardingState } from "@/components/onboarding/use-onboarding-state";
@@ -12,8 +12,9 @@ import { ONBOARDING_STEP_IDS, type OnboardingStepId } from "@/components/onboard
 import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { OnboardingWelcome } from "@/components/onboarding/welcome";
 
-/** chat-view reads this to show its post-onboarding welcome. */
-const POST_ONBOARDING_KEY = "mc-post-onboarding";
+const isHosted =
+  process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true" ||
+  process.env.AGENTBAY_HOSTED === "true";
 
 const STEP_LABELS: Record<OnboardingStepId, string> = {
   gateway: "Gateway",
@@ -22,11 +23,19 @@ const STEP_LABELS: Record<OnboardingStepId, string> = {
   chat: "First chat",
 };
 
+// A hosted container guarantees a running, healthy gateway — showing a step
+// that just confirms that is noise, not reassurance. Auto-passed, not hidden
+// from progress: it still counts as "done" in the rail.
+const VISIBLE_STEP_IDS: OnboardingStepId[] = isHosted
+  ? ONBOARDING_STEP_IDS.filter((id) => id !== "gateway")
+  : [...ONBOARDING_STEP_IDS];
+
 type Props = { onComplete: () => void };
 
 /**
  * Guided, terminal-free onboarding:
- *   1. Detect the gateway (live status, one-click start if stopped)
+ *   1. Detect the gateway (live status, one-click start if stopped) — skipped
+ *      on hosted deployments, where the container guarantees it
  *   2. Authenticate a model provider (paste a key, live-verified)
  *   3. Connect Telegram (token paste → QR → first inbound message)
  *   4. First chat (streaming reply — the wow moment)
@@ -40,15 +49,7 @@ export function OnboardingWizard({ onComplete }: Props) {
   const [chosenStep, setChosenStep] = useState<OnboardingStepId | null>(null);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const activeStep: OnboardingStepId | null = chosenStep ?? (loaded ? state?.currentStep ?? "gateway" : null);
-
-  const finishWizard = useCallback(() => {
-    try {
-      localStorage.setItem(POST_ONBOARDING_KEY, "1");
-    } catch {
-      // ignore storage failures in private mode
-    }
-    onComplete();
-  }, [onComplete]);
+  const autoSkippedGateway = useRef(false);
 
   const advance = useCallback(
     async (from: OnboardingStepId, status: "done" | "skipped", meta?: Record<string, unknown>) => {
@@ -56,7 +57,10 @@ export function OnboardingWizard({ onComplete }: Props) {
       const next = ONBOARDING_STEP_IDS[idx + 1] ?? null;
       const now = new Date().toISOString();
 
-      void patch({
+      // Awaited (not fire-and-forget): the gate re-checks completedAt the
+      // moment onComplete() fires, so it must already be durably persisted —
+      // racing it is what used to make the wizard flash back open.
+      await patch({
         ...(next ? { currentStep: next } : { completedAt: now }),
         steps: {
           [from]: {
@@ -70,11 +74,24 @@ export function OnboardingWizard({ onComplete }: Props) {
       if (next) {
         setChosenStep(next);
       } else {
-        finishWizard();
+        onComplete();
       }
     },
-    [patch, finishWizard],
+    [patch, onComplete],
   );
+
+  // Hosted: the container already guarantees a running gateway, so the step
+  // that only confirms that is auto-passed rather than shown. Fires once,
+  // after the welcome screen, the moment the gateway step would render.
+  useEffect(() => {
+    if (!isHosted || !loaded || autoSkippedGateway.current) return;
+    if (!welcomeDismissed && !state?.startedAt) return;
+    if (activeStep !== "gateway") return;
+    autoSkippedGateway.current = true;
+    queueMicrotask(() => {
+      void advance("gateway", "done", { auto: true, reason: "hosted" });
+    });
+  }, [loaded, welcomeDismissed, state?.startedAt, activeStep, advance]);
 
   if (!loaded || activeStep === null) {
     return <ScreenLoadingState className="bg-muted dark:bg-background" />;
@@ -91,7 +108,14 @@ export function OnboardingWizard({ onComplete }: Props) {
     );
   }
 
-  const activeIdx = ONBOARDING_STEP_IDS.indexOf(activeStep);
+  // Past the welcome screen: the auto-skip effect above is about to advance
+  // past "gateway" on hosted deployments — a brief spinner beats flashing the
+  // gateway step it's already skipping.
+  if (isHosted && activeStep === "gateway") {
+    return <ScreenLoadingState className="bg-muted dark:bg-background" />;
+  }
+
+  const activeIdx = VISIBLE_STEP_IDS.indexOf(activeStep);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 dark:bg-black/70 backdrop-blur-sm">
@@ -99,7 +123,7 @@ export function OnboardingWizard({ onComplete }: Props) {
         {/* Step rail */}
         <div className="px-8 pt-7 pb-5">
           <div className="flex items-center gap-0">
-            {ONBOARDING_STEP_IDS.map((id, i) => {
+            {VISIBLE_STEP_IDS.map((id, i) => {
               const persisted = state?.steps[id]?.status;
               const done = persisted === "done" || (persisted !== "skipped" && i < activeIdx);
               const active = id === activeStep;
@@ -138,7 +162,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                       {STEP_LABELS[id]}
                     </span>
                   </button>
-                  {i < ONBOARDING_STEP_IDS.length - 1 && (
+                  {i < VISIBLE_STEP_IDS.length - 1 && (
                     <div className="relative mx-2 mb-4 flex-1">
                       <div className="h-px w-full bg-secondary" />
                       <div

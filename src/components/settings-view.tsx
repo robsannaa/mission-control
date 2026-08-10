@@ -30,6 +30,7 @@ import {
   Settings as SettingsIcon,
   Volume2,
   Waypoints,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -47,6 +48,7 @@ import {
   type TimeFormatPreference,
 } from "@/lib/time-format-preference";
 import { chatStore } from "@/lib/chat-store";
+import { RELAUNCH_ONBOARDING_EVENT } from "@/components/setup-gate";
 
 const isAgentbayHosted = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
 const missionControlVersion = process.env.NEXT_PUBLIC_APP_VERSION || "";
@@ -136,16 +138,23 @@ const COMMON_TIMEZONES = [
  * pages are rebuilt here; they keep their routes and their content. */
 
 type HubRowDef = {
-  href: string;
+  href?: string;
+  onClick?: () => void;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   description: string;
 };
 
+/** Reopens the onboarding wizard from anywhere in the app — see setup-gate.tsx. */
+function relaunchOnboarding(): void {
+  window.dispatchEvent(new Event(RELAUNCH_ONBOARDING_EVENT));
+}
+
 const HUB_GENERAL: HubRowDef[] = [
   { href: "#settings-preferences", icon: SlidersHorizontal, label: "Preferences", description: "Theme, time zone, and how times are displayed." },
   { href: "/security", icon: ShieldCheck, label: "Security", description: "Review sessions and permission policies for this OpenClaw." },
   { href: "/accounts", icon: KeyRound, label: "API Keys", description: "Add and rotate the API keys your agents use." },
+  { onClick: relaunchOnboarding, icon: Sparkles, label: "Run setup again", description: "Reopen the guided setup wizard." },
 ];
 
 const HUB_AUTOMATION: HubRowDef[] = [
@@ -161,9 +170,8 @@ const HUB_INFRASTRUCTURE: HubRowDef[] = [
   { href: "/tailscale", icon: Waypoints, label: "Tailscale", description: "Reach this OpenClaw securely from anywhere." },
 ];
 
-function HubRow({ href, icon: Icon, label, description }: HubRowDef) {
-  const isAnchor = href.startsWith("#");
-  const rowClass = "group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-foreground/[0.03]";
+function HubRow({ href, onClick, icon: Icon, label, description }: HubRowDef) {
+  const rowClass = "group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-foreground/[0.03]";
   const content = (
     <>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
@@ -176,7 +184,14 @@ function HubRow({ href, icon: Icon, label, description }: HubRowDef) {
       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform group-hover:translate-x-0.5" />
     </>
   );
-  if (isAnchor) {
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={rowClass}>
+        {content}
+      </button>
+    );
+  }
+  if (href?.startsWith("#")) {
     return (
       <a href={href} className={rowClass}>
         {content}
@@ -184,7 +199,7 @@ function HubRow({ href, icon: Icon, label, description }: HubRowDef) {
     );
   }
   return (
-    <Link href={href} className={rowClass}>
+    <Link href={href ?? "#"} className={rowClass}>
       {content}
     </Link>
   );
