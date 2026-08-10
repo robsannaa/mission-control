@@ -77,6 +77,15 @@ type AgentHeartbeatRow = {
   heartbeat: JsonObject | null;
 };
 
+/**
+ * Every field under `agents.defaults.heartbeat`, `agents.list[].heartbeat`, and
+ * `channels.*.heartbeat` reports `reloadKind: "hot"` from
+ * `config.schema.lookup` on this OpenClaw build (verified 2026-08-10 against a
+ * live gateway at 127.0.0.1:18789, OpenClaw 2026.7.1-2). A saved heartbeat
+ * change takes effect on the next tick with no gateway restart.
+ */
+const HEARTBEAT_RELOAD_KIND = "hot" as const;
+
 type VisibilityShape = {
   defaults: JsonObject | null;
   channels: Record<string, { heartbeat: JsonObject | null; accounts: Record<string, JsonObject | null> }>;
@@ -152,11 +161,22 @@ function buildHeartbeatResponse(configData: Record<string, unknown>) {
     });
   }
 
+  // A fresh OpenClaw install has no `agents.list` at all — there is still a
+  // real, running "main" agent (OpenClaw creates it implicitly; confirmed
+  // live via the `agents.list` RPC, which reports it with
+  // `agentRuntime.source: "implicit"`). Without this fallback the page would
+  // report zero agents while a "main" agent is actually running heartbeats,
+  // which is exactly the state this machine was in before this fix.
+  if (agentRows.length === 0) {
+    agentRows.push({ id: "main", name: "Main agent", heartbeat: null });
+  }
+
   const parsedChannels = isRecord(parsed.channels) ? parsed.channels : {};
   const visibility = extractVisibility(parsedChannels);
 
   return {
     docsUrl: "https://docs.openclaw.ai/gateway/heartbeat#heartbeat",
+    reloadKind: HEARTBEAT_RELOAD_KIND,
     defaultsHeartbeat,
     effectiveDefaultsHeartbeat,
     agents: agentRows,
@@ -181,6 +201,7 @@ export async function GET() {
     return jsonNoStore({
       ok: true,
       docsUrl: "https://docs.openclaw.ai/gateway/heartbeat#heartbeat",
+      reloadKind: HEARTBEAT_RELOAD_KIND,
       defaultsHeartbeat: null,
       effectiveDefaultsHeartbeat: null,
       agents: [],
