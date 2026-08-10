@@ -71,6 +71,10 @@ export type KanbanTask = {
   attachments?: string[];
   /** Which agent owns this task. Unchanged meaning — existing boards keep working. */
   agentId?: string;
+  /** Epoch ms. Backfilled on first write for boards that predate these. */
+  createdAt?: number;
+  /** Epoch ms, bumped only when a person edits the card — not by run activity. */
+  updatedAt?: number;
   /** Run target. Absent means "agent" (the pre-existing behaviour). */
   dispatchAssignee?: DispatchAssignee;
   dispatchStatus?: DispatchStatus;
@@ -216,16 +220,46 @@ export class KanbanConflictError extends Error {
  * old copy. So: user fields from the request, engine fields from disk — except
  * on a card the user is dispatching for the first time, which has none.
  */
+/**
+ * Fields a person edits. `updatedAt` tracks these and not the engine's own
+ * writes — otherwise a running card would restamp itself every few seconds and
+ * "last edited" would mean nothing.
+ */
+const AUTHORED_FIELDS: (keyof KanbanTask)[] = [
+  "title",
+  "description",
+  "column",
+  "priority",
+  "assignee",
+  "agentId",
+  "attachments",
+];
+
+function authoredContentChanged(next: KanbanTask, prev: KanbanTask): boolean {
+  return AUTHORED_FIELDS.some(
+    (field) => JSON.stringify(next[field]) !== JSON.stringify(prev[field]),
+  );
+}
+
 export function mergeBoardWrite(incoming: KanbanData, current: KanbanData): KanbanData {
+  const now = Date.now();
   const byId = new Map(current.tasks.map((t) => [t.id, t]));
   const tasks = incoming.tasks.map((task) => {
     const disk = byId.get(task.id);
-    if (!disk) return task;
+    if (!disk) return { ...task, createdAt: task.createdAt ?? now, updatedAt: now };
+
     const merged: KanbanTask = { ...task };
     for (const field of ENGINE_OWNED_FIELDS) {
       if (disk[field] === undefined) delete merged[field];
       else Object.assign(merged, { [field]: disk[field] });
     }
+
+    // A board is stored as a file, so these can be missing on older boards or
+    // on cards an agent wrote by hand. Backfill rather than leaving a gap.
+    merged.createdAt = disk.createdAt ?? task.createdAt ?? now;
+    merged.updatedAt = authoredContentChanged(merged, disk)
+      ? now
+      : (disk.updatedAt ?? task.updatedAt);
     return merged;
   });
 

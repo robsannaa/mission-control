@@ -107,4 +107,33 @@ test.describe("mergeBoardWrite", () => {
     const merged = mergeBoardWrite(board([], 0), board([], 9));
     expect(merged.rev).toBe(9);
   });
+
+  test("a new card is stamped, and older boards are backfilled", () => {
+    const fresh = mergeBoardWrite(board([task({ id: 1 })]), board([]));
+    expect(fresh.tasks[0].createdAt).toBeGreaterThan(0);
+    expect(fresh.tasks[0].updatedAt).toBeGreaterThan(0);
+
+    // A card that predates these fields keeps its identity but gains stamps.
+    const backfilled = mergeBoardWrite(board([task({ id: 1 })]), board([task({ id: 1 })]));
+    expect(backfilled.tasks[0].createdAt).toBeGreaterThan(0);
+  });
+
+  test("editing a card bumps updatedAt but never createdAt", () => {
+    const current = board([task({ id: 1, title: "Before", createdAt: 1000, updatedAt: 1000 })]);
+    const merged = mergeBoardWrite(board([task({ id: 1, title: "After" })]), current);
+
+    expect(merged.tasks[0].createdAt).toBe(1000);
+    expect(merged.tasks[0].updatedAt).toBeGreaterThan(1000);
+  });
+
+  test("run activity alone does not restamp updatedAt", () => {
+    // Engine-owned fields change constantly while an agent works. If they
+    // counted as edits, "last edited" would just mean "recently running".
+    const current = board([
+      task({ id: 1, title: "Same", createdAt: 1000, updatedAt: 1000, dispatchStatus: "running" }),
+    ]);
+    const merged = mergeBoardWrite(board([task({ id: 1, title: "Same" })]), current);
+
+    expect(merged.tasks[0].updatedAt).toBe(1000);
+  });
 });
