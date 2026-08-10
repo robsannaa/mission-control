@@ -30,6 +30,7 @@ import {
   ENGINE_OWNED_FIELDS,
   agentLabel,
   columnTitle,
+  shouldDispatchOnMove,
   isAwaitingUser,
   isRunActive,
   type AgentInfo,
@@ -304,6 +305,8 @@ export function TasksView() {
    * Moving a card that is mid-run means stopping the run. That is destructive,
    * so it is always confirmed; the move happens only once the run is settled.
    */
+  const defaultAgentId = agents[0]?.id ?? "";
+
   const requestMove = useCallback(
     (id: number, columnId: string) => {
       const board = dataRef.current;
@@ -321,8 +324,24 @@ export function TasksView() {
         return;
       }
       updateTask(id, { column: columnId });
+
+      // Dropping a card into In Progress IS the request to start it — see
+      // `shouldDispatchOnMove` for exactly when that does and does not fire.
+      if (
+        shouldDispatchOnMove({
+          columns: board.columns,
+          fromColumnId: task.column,
+          toColumnId: columnId,
+          status,
+        })
+      ) {
+        void sendDispatchRef.current?.(id, {
+          agentId: task.agentId || defaultAgentId,
+          assignee: task.dispatchAssignee ?? "agent",
+        });
+      }
     },
-    [agents, runs, updateTask]
+    [agents, defaultAgentId, runs, updateTask]
   );
 
   const moveTaskByStep = useCallback(
@@ -604,6 +623,7 @@ export function TasksView() {
           return (
             <div
               key={col.id}
+              data-column-id={col.id}
               className={cn(
                 "flex w-full min-w-0 flex-col overflow-hidden rounded-xl border border-foreground/5 bg-muted/30 px-3 py-3 transition-all",
                 isDragTarget && "bg-muted-foreground/10 border-border-strong ring-1 ring-inset ring-border-strong"

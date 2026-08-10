@@ -236,6 +236,36 @@ export function columnHasRole(
 }
 
 /**
+ * Should moving a card from `fromColumnId` to `toColumnId` start a run?
+ *
+ * The board's promise is that In Progress means an agent is working right now.
+ * A card dropped there with nothing running breaks that promise, so the drop
+ * IS the request to start. Pure and exported because it decides whether a real
+ * agent runs on the user's machine, which is not a rule to leave implicit
+ * inside a drag handler.
+ *
+ * Three things must stay true:
+ *   - only a move that ENTERS in-progress starts anything, so reordering inside
+ *     the column (or between two in-progress-ish columns) never double-runs;
+ *   - a card that is already running is never dispatched again — the caller
+ *     offers to stop it instead;
+ *   - custom column names count, because the board is user-editable and a
+ *     column called "Doing" carries the same meaning.
+ */
+export function shouldDispatchOnMove(input: {
+  columns: Column[];
+  fromColumnId: string;
+  toColumnId: string;
+  status?: DispatchStatus;
+}): boolean {
+  const { columns, fromColumnId, toColumnId, status } = input;
+  if (fromColumnId === toColumnId) return false;
+  if (isRunActive(status) || isAwaitingUser(status)) return false;
+  if (!columnHasRole(columns, toColumnId, "in-progress")) return false;
+  return !columnHasRole(columns, fromColumnId, "in-progress");
+}
+
+/**
  * Whether the status earns a label of its own next to the column name.
  *
  * The column already carries most of this: `completed` in Done and `running` in

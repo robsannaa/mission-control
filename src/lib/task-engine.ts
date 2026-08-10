@@ -962,6 +962,29 @@ function applyBoard(state: RunState, task: KanbanTask): void {
   state.turns = task.dispatchTurns ?? state.turns;
 }
 
+/**
+ * The gateway's default agent id, or "" if it cannot say.
+ *
+ * Cached: this is asked on every agent-less dispatch and the answer only
+ * changes when the user reconfigures their agents.
+ */
+let cachedDefaultAgentId: string | null = null;
+
+async function defaultAgentId(): Promise<string> {
+  if (cachedDefaultAgentId !== null) return cachedDefaultAgentId;
+  try {
+    const list = await gatewayCall<{ defaultId?: string; agents?: { id?: string }[] }>(
+      "agents.list",
+      {},
+    );
+    cachedDefaultAgentId = list?.defaultId || list?.agents?.[0]?.id || "";
+  } catch {
+    // Leave it uncached so a transient gateway failure can be retried.
+    return "";
+  }
+  return cachedDefaultAgentId;
+}
+
 /* ── public actions ───────────────────────────────── */
 
 export type DispatchInput = {
@@ -993,7 +1016,16 @@ export async function dispatchTask(input: DispatchInput): Promise<DispatchResult
   const task = board.tasks.find((t) => t.id === input.taskId);
   if (!task) return { ok: false, status: 404, error: `Task ${input.taskId} not found` };
 
-  const agentId = input.agentId || task.agentId;
+  /*
+   * Fall back to the gateway's own default agent.
+   *
+   * Dragging a card into In Progress is a dispatch with no agent named, and the
+   * board may not have loaded its agent list yet when the user drops — so
+   * requiring one here meant the drop silently did nothing, depending on a race
+   * the user cannot see. The gateway already knows which agent is default;
+   * asking it is better than refusing the work.
+   */
+  const agentId = input.agentId || task.agentId || (await defaultAgentId());
   if (!agentId) {
     return {
       ok: false,

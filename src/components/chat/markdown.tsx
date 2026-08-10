@@ -272,6 +272,138 @@ const SLASH_COMMAND_RE = /(^|[^\w/])(\/[a-z][a-z0-9-]*)(?![\w/-])/g;
 const FILE_TOKEN_RE =
   /(^|[\s(\[])((?:[\w.-]+\/)*[\w.-]+\.(?:md|markdown|txt|json|ya?ml|toml|csv|log|tsx?|jsx?|py|sh|rs|go|sql|css|html|pdf|xlsx?|docx?|png|jpe?g|gif|svg))(?=$|[\s),.:;\]])/g;
 
+/* ── loose JSON ───────────────────────────────────────────────────────────
+ *
+ * Agents and programmatic callers routinely paste a JSON schema or an example
+ * payload into a message with no code fence around it. Markdown then renders it
+ * as ordinary prose: braces and quotes reflow into the paragraph, keys wrap
+ * mid-token, and a compact object becomes a wall of unreadable text.
+ *
+ * So we find unfenced JSON and fence it. The test for "is this JSON" is
+ * `JSON.parse`, not a regex — anything that does not actually parse is left
+ * exactly as the author wrote it, which is what keeps ordinary prose containing
+ * a stray brace safe.
+ */
+
+/** Shortest run worth fencing. Below this, `{}` and `{"a":1}` read fine inline. */
+const MIN_JSON_CHARS = 60;
+
+/** Long enough that it deserves its own block rather than an inline span. */
+const JSON_BLOCK_CHARS = 120;
+
+/**
+ * Index of the bracket closing the one at `start`, or -1.
+ *
+ * String-aware: a brace inside a JSON string value (`"a}b"`) must not count
+ * toward depth, or the scan closes early and the slice fails to parse.
+ */
+function matchingClose(text: string, start: number): number {
+  const open = text[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === open) depth++;
+    else if (ch === close && --depth === 0) return i;
+  }
+  return -1;
+}
+
+function isJsonObject(text: string): boolean {
+  try {
+    return typeof JSON.parse(text) === "object";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Is the brace at `i` in a position where a payload plausibly starts — the
+ * beginning of a line, or right after a label like `Example output:`?
+ *
+ * Walks backwards over whitespace rather than slicing the string, so scanning a
+ * 12 KB prompt stays linear instead of quadratic.
+ */
+function startsPayload(text: string, i: number): boolean {
+  let j = i - 1;
+  while (j >= 0 && (text[j] === " " || text[j] === "\t")) j--;
+  if (j < 0 || text[j] === "\n") return true;
+  return text[j] === ":" || text[j] === "=";
+}
+
+export type JsonSpan = { start: number; end: number; text: string; block: boolean };
+
+/** Every unfenced JSON value in `segment`, in order, non-overlapping. */
+export function findJsonSpans(segment: string): JsonSpan[] {
+  const spans: JsonSpan[] = [];
+  let i = 0;
+
+  while (i < segment.length) {
+    const ch = segment[i];
+    if ((ch !== "{" && ch !== "[") || !startsPayload(segment, i)) {
+      i++;
+      continue;
+    }
+
+    const end = matchingClose(segment, i);
+    const text = end < 0 ? "" : segment.slice(i, end + 1);
+    if (!text || text.length < MIN_JSON_CHARS || !isJsonObject(text)) {
+      i++;
+      continue;
+    }
+
+    spans.push({
+      start: i,
+      end: end + 1,
+      text,
+      block: text.includes("\n") || text.length > JSON_BLOCK_CHARS,
+    });
+    i = end + 1;
+  }
+
+  return spans;
+}
+
+/**
+ * How the span should read on screen.
+ *
+ * Minified payloads get indented — that is the whole readability win, and it is
+ * safe because the span only exists if it parsed. JSON the author already
+ * formatted is left exactly as they wrote it.
+ */
+export function formatJsonSpan(span: JsonSpan): string {
+  if (span.text.includes("\n")) return span.text;
+  try {
+    return JSON.stringify(JSON.parse(span.text), null, 2);
+  } catch {
+    return span.text;
+  }
+}
+
+function fenceLooseJson(segment: string): string {
+  const spans = findJsonSpans(segment);
+  if (spans.length === 0) return segment;
+
+  let out = "";
+  let cursor = 0;
+  for (const span of spans) {
+    out += segment.slice(cursor, span.start);
+    out += span.block
+      ? `\n\n\`\`\`json\n${formatJsonSpan(span)}\n\`\`\`\n\n`
+      : `\`${span.text}\``;
+    cursor = span.end;
+  }
+  return out + segment.slice(cursor);
+}
+
 function markUpProse(segment: string): string {
   return segment
     .replace(FILE_TOKEN_RE, (_m, before, file) => `${before}\`${file}\``)
@@ -284,16 +416,29 @@ function preserveLineBreaks(segment: string): string {
   return segment.replace(/([^\n])\n(?!\n)/g, "$1  \n");
 }
 
+/** Splits text into alternating prose / already-coded parts. */
+const CODE_SPLIT_RE = /(```[\s\S]*?```|`[^`\n]*`)/g;
+
 function prepareMarkdown(text: string): string {
-  const segments = text.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
-  return segments
+  return text
+    .split(CODE_SPLIT_RE)
     .map((segment, i) => {
       // Odd indices are captured code spans/blocks — never touch them.
       if (i % 2 === 1) return segment;
-      return preserveLineBreaks(markUpProse(segment));
+
+      // Fence loose JSON first, then split again: the fences it just added have
+      // to be protected from prose mark-up too, or a key like `total_tokens`
+      // gets backticked inside its own code block.
+      return fenceLooseJson(segment)
+        .split(CODE_SPLIT_RE)
+        .map((part, j) => (j % 2 === 1 ? part : preserveLineBreaks(markUpProse(part))))
+        .join("");
     })
     .join("");
 }
+
+/** Exposed for tests only — the transform is pure and worth pinning directly. */
+export const __testables = { prepareMarkdown, fenceLooseJson };
 
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (

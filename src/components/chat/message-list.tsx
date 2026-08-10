@@ -5,7 +5,12 @@ import { memo, useState } from "react";
 import type { FileUIPart, UIMessage } from "ai";
 import { Check, ChevronRight, Loader2, Paperclip, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CopyButton, Markdown } from "@/components/chat/markdown";
+import {
+  CopyButton,
+  Markdown,
+  findJsonSpans,
+  formatJsonSpan,
+} from "@/components/chat/markdown";
 import { EntityPill } from "@/components/chat/entity-pill";
 import { FileHoverCard } from "@/components/chat/file-hover-card";
 
@@ -345,7 +350,45 @@ function mentionTokensFor(path: string): string[] {
  * The reference then appears exactly once — in the sentence where it was
  * written — instead of once as text and again as a chip below.
  */
+/**
+ * User messages are deliberately NOT rendered as markdown — someone typing
+ * `# note` should see `# note`. But a message can still arrive carrying a JSON
+ * schema or payload, because programmatic callers send prompts through this
+ * same surface, and as plain text those reflow into the paragraph and become
+ * unreadable. So JSON is pulled out and shown as code; everything else is left
+ * exactly as typed.
+ */
 function renderUserBody(body: string, paths: string[]): React.ReactNode {
+  const spans = findJsonSpans(body);
+  if (spans.length === 0) return renderWithPills(body, paths);
+
+  const nodes: React.ReactNode[] = [];
+  let cursor = 0;
+
+  spans.forEach((span, index) => {
+    if (span.start > cursor) {
+      nodes.push(
+        <span key={`prose-${index}`}>{renderWithPills(body.slice(cursor, span.start), paths)}</span>,
+      );
+    }
+    nodes.push(
+      <pre
+        key={`json-${index}`}
+        className="my-2 max-w-full overflow-x-auto rounded-lg border border-border bg-background/60 px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre"
+      >
+        <code>{formatJsonSpan(span)}</code>
+      </pre>,
+    );
+    cursor = span.end;
+  });
+
+  if (cursor < body.length) {
+    nodes.push(<span key="prose-tail">{renderWithPills(body.slice(cursor), paths)}</span>);
+  }
+  return nodes;
+}
+
+function renderWithPills(body: string, paths: string[]): React.ReactNode {
   if (paths.length === 0) return body;
 
   const tokens = paths
