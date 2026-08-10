@@ -7,6 +7,9 @@ import { HeartbeatManager } from "@/components/heartbeat-manager";
 export function HeartbeatView() {
   return (
     <SectionLayout>
+      {/* One statement per screen. The card below explains heartbeat with the
+          real numbers from this machine, so a second paragraph up here saying
+          the same thing in vaguer words is just noise ahead of it. */}
       <SectionHeader
         title={
           <span className="flex items-center gap-2 text-xs">
@@ -14,7 +17,7 @@ export function HeartbeatView() {
             Heartbeat
           </span>
         }
-        description="Stay on top of important updates automatically, without checking in manually. Heartbeat is a scheduled check-in that lets your agent watch for what matters and notify you when needed."
+        description="A scheduled check-in that watches for what matters and tells you when something needs you."
       />
       <SectionBody width="content" padding="compact" innerClassName="space-y-4">
         <HeartbeatManager />

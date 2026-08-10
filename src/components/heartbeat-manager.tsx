@@ -462,7 +462,10 @@ export function HeartbeatManager() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      {/* Utility actions, not content: pulled up tight against the page header
+          so they read as part of it rather than as a floating band with dead
+          space above the first card. */}
+      <div className="-mt-2 flex flex-wrap items-center justify-end gap-2">
         <ApiWarningBadge warning={warning} degraded={degraded} />
         {data.docsUrl && (
           <a

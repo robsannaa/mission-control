@@ -9,7 +9,7 @@
  */
 
 import { useState } from "react";
-import { Heart, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { ChoicePill, Panel, fieldInputClass } from "./primitives";
 import { CADENCE_PRESETS } from "./lib";
 import type { ChannelOption, HeartbeatEvent } from "./types";
@@ -47,12 +47,10 @@ export function GetStartedCard({
   const effectiveEvery = isCustom ? customCadence.trim() || "30m" : cadence;
 
   return (
+    // No icon here: the page header already carries the heart, and repeating it
+    // a second time on the same screen is decoration, not information.
     <Panel className="p-6 md:p-7">
-      <div className="flex items-start gap-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-danger-bg">
-          <Heart className="h-5 w-5 text-danger-fg" />
-        </div>
-        <div className="min-w-0 flex-1">
+      <div className="min-w-0">
           <h3 className="text-base font-semibold tracking-[-0.01em] text-foreground">
             Never miss what matters
           </h3>
@@ -131,7 +129,6 @@ export function GetStartedCard({
             </button>
             <span className="text-xs text-fg-subtle">Takes effect immediately — no restart needed.</span>
           </div>
-        </div>
       </div>
     </Panel>
   );
