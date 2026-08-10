@@ -197,6 +197,21 @@ function ProviderRow({
 
 /* ── result item ────────────────────────────────── */
 
+/**
+ * `2008-06-03` is a machine's way of writing a date. Providers send whatever
+ * they scraped, so anything unparseable is shown exactly as it arrived rather
+ * than guessed at.
+ */
+function formatPublished(raw: string): string {
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 function ResultItem({ result }: { result: NormalizedSearchResult }) {
   let host = "";
   try {
@@ -220,9 +235,25 @@ function ResultItem({ result }: { result: NormalizedSearchResult }) {
         <p className="text-sm font-medium text-foreground">{result.title}</p>
       )}
       {(host || result.siteName || result.published) && (
-        <p className="mt-0.5 text-xs text-fg-subtle">
-          {[result.siteName || host, result.published].filter(Boolean).join(" · ")}
-        </p>
+        /*
+         * Where it came from and when, as two pills rather than one run of
+         * dot-separated text: they are separate facts, and a reader scanning a
+         * list wants to compare source against source and date against date.
+         * Fully rounded with a hairline border, matching the pill language used
+         * across the rest of the app.
+         */
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {(result.siteName || host) && (
+            <span className="inline-flex items-center rounded-full border border-border-subtle px-2 py-0.5 text-[11px] text-muted-foreground">
+              {result.siteName || host}
+            </span>
+          )}
+          {result.published && (
+            <span className="inline-flex items-center rounded-full border border-border-subtle px-2 py-0.5 text-[11px] text-muted-foreground">
+              {formatPublished(result.published)}
+            </span>
+          )}
+        </div>
       )}
       {result.snippet && (
         /*
