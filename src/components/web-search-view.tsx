@@ -1,398 +1,371 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+/**
+ * Web Search settings — rebuilt around three outcomes, not settings:
+ *   1. changes here genuinely land in OpenClaw's config (writes go through
+ *      the same `/api/config` control plane every other settings pane uses,
+ *      so the same rate limit, restart planning and conflict handling apply);
+ *   2. there is a real search box that proves it, using the actual agent
+ *      `web_search` tool through the live gateway;
+ *   3. everything is described by what a person gets, not what the field is
+ *      called — cost, whether a key is needed, what happens without one.
+ *
+ * The provider list only ever offers what this OpenClaw can really run: the
+ * status API filters the full documented catalog down to plugins that are
+ * actually installed (`openclaw plugins list --json`), because setting an
+ * uninstalled provider is rejected by config validation outright — proven
+ * live while building this page, not assumed from the docs.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   RefreshCw,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Play,
-  Copy,
-  ExternalLink,
   Globe,
-  Zap,
-  Shield,
+  ExternalLink,
+  ChevronRight,
+  Loader2,
+  CircleAlert,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
 import { ContentLoadingState } from "@/components/ui/loading-state";
+import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { requestRestart } from "@/lib/restart-store";
+import type { AuthKind, NormalizedSearchResult, ProviderMeta } from "@/components/search/providers";
 
-/* ── Types ──────────────────────────────────────── */
+/* ── types ──────────────────────────────────────── */
 
-type ProviderInfo = {
-  configured: boolean;
+type ProviderStatus = ProviderMeta & {
+  installed: true;
+  ready: boolean | null;
   keySource: string | null;
   keyPreview: string | null;
+  note?: string;
 };
 
-type SearchStatus = {
+type StatusResponse = {
   ok: boolean;
-  activeProvider: "perplexity" | "brave" | "none";
-  model: string;
-  cacheTtlMinutes: number;
-  providers: {
-    perplexity: ProviderInfo;
-    openrouter: ProviderInfo;
-    brave: ProviderInfo;
-  };
+  enabled: boolean;
+  activeProviderId: string | null;
+  autoResolvedProviderId: string | null;
+  providers: ProviderStatus[];
+  uninstalledCount: number;
+  degraded: boolean;
+  baseHash: string;
+  error?: string;
 };
 
-type SearchResult = {
-  ok: boolean;
-  query: string;
-  agentId: string;
-  resultCount: number;
-  output: string;
-  durationMs: number;
-};
+type Notice = { tone: "success" | "error" | "info"; text: string };
 
-type AgentOption = { id: string; name: string };
+/* ── small local bits (match the Doctor page's shared vocabulary) ─────── */
 
-const PERPLEXITY_MODELS = [
-  { id: "perplexity/sonar", label: "Sonar", description: "Quick Q&A lookups" },
-  { id: "perplexity/sonar-pro", label: "Sonar Pro", description: "Complex multi-step reasoning (default)" },
-  { id: "perplexity/sonar-reasoning-pro", label: "Sonar Reasoning Pro", description: "Deep chain-of-thought analysis" },
-] as const;
+function StatusDot({ tone }: { tone: "neutral" | "attention" | "positive" | "unknown" }) {
+  const cls =
+    tone === "positive"
+      ? "bg-success"
+      : tone === "attention"
+        ? "bg-warning"
+        : tone === "unknown"
+          ? "bg-fg-placeholder"
+          : "bg-fg-subtle";
+  return <span className={cn("inline-block h-2 w-2 shrink-0 rounded-full", cls)} aria-hidden />;
+}
 
-/* ── Provider Card ──────────────────────────────── */
+function Pill({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "attention" }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium leading-none",
+        tone === "attention"
+          ? "border-warning-border bg-warning-bg text-warning-fg"
+          : "border-border bg-muted text-muted-foreground",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
 
-function ProviderCard({
-  name,
-  icon,
-  description,
-  configured,
-  keySource,
-  keyPreview,
-  isActive,
-  envKey,
-  onActivate,
-  activating,
+/* ── provider row ───────────────────────────────── */
+
+function ProviderRow({
+  meta,
+  selected,
+  expanded,
+  busy,
+  draft,
+  onDraftChange,
+  onSelect,
+  onSave,
+  onCollapse,
 }: {
-  name: string;
-  icon: React.ReactNode;
-  description: string;
-  configured: boolean;
-  keySource: string | null;
-  keyPreview: string | null;
-  isActive: boolean;
-  envKey: string;
-  onActivate?: () => void;
-  activating?: boolean;
+  meta: ProviderStatus;
+  selected: boolean;
+  expanded: boolean;
+  busy: boolean;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSelect: () => void;
+  onSave: () => void;
+  onCollapse: () => void;
 }) {
+  const needsInput = meta.authKind === "key" || meta.authKind === "baseUrl";
+  const canActivateDirectly = !needsInput || meta.ready === true;
+
   return (
     <div
       className={cn(
-        "rounded-xl border p-3.5 transition-all",
-        isActive
-          ? "border-success-border bg-success-bg"
-          : configured
-            ? "border-foreground/10 bg-foreground/5"
-            : "border-foreground/5 bg-foreground/5 opacity-60"
+        "rounded-xl border transition-colors",
+        selected ? "border-border-strong bg-card" : "border-border-subtle bg-card/60",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          {icon}
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold text-foreground">{name}</p>
-              {isActive && (
-                <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-success-fg">
-                  Active
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-          </div>
-        </div>
-        {configured ? (
-          <CheckCircle className="h-4 w-4 shrink-0 text-success-fg" />
-        ) : (
-          <XCircle className="h-4 w-4 shrink-0 text-fg-subtle" />
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={busy || (selected && !expanded)}
+        className={cn(
+          "flex w-full items-start gap-3 rounded-xl px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          !selected && "hover:bg-accent",
         )}
-      </div>
-      <div className="mt-2.5 rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <code className="text-xs font-medium text-muted-foreground">{envKey}</code>
-          {configured ? (
-            <span className="text-xs text-muted-foreground">{keySource}</span>
-          ) : (
-            <span className="text-xs text-danger-fg">Not set</span>
+      >
+        <span
+          className={cn(
+            "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+            selected ? "border-foreground" : "border-border-strong",
           )}
-        </div>
-        {configured && keyPreview && (
-          <p className="mt-1 font-mono text-xs text-fg-secondary">{keyPreview}</p>
+          aria-hidden
+        >
+          {selected && <span className="h-1.5 w-1.5 rounded-full bg-foreground" />}
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-medium text-foreground">{meta.label}</span>
+            <Pill>{meta.cost}</Pill>
+            {meta.authKind === "key" && meta.ready === false && <Pill tone="attention">Needs a key</Pill>}
+            {meta.authKind === "baseUrl" && meta.ready === false && <Pill tone="attention">Needs a server address</Pill>}
+          </span>
+          <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{meta.tagline}</span>
+          {meta.note && <span className="mt-1 block text-xs leading-relaxed text-fg-subtle">{meta.note}</span>}
+          {meta.ready === true && meta.keySource && (
+            <span className="mt-1 block text-xs text-fg-subtle">Key found in {meta.keySource}.</span>
+          )}
+        </span>
+
+        {busy ? (
+          <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+        ) : (
+          !canActivateDirectly && (
+            <ChevronRight
+              className={cn("mt-0.5 h-4 w-4 shrink-0 text-fg-subtle transition-transform", expanded && "rotate-90")}
+            />
+          )
         )}
-        {!configured && (
-          <p className="mt-1 text-xs text-fg-subtle">
-            Set via <code className="text-xs">openclaw.json</code> config, env block, or system environment
-          </p>
-        )}
-      </div>
-      {configured && !isActive && onActivate && (
-        <div className="mt-2">
-          <button
-            type="button"
-            onClick={onActivate}
-            disabled={Boolean(activating)}
-            className="inline-flex items-center gap-1 rounded-md border border-foreground/10 bg-foreground/5 px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-foreground/10 disabled:opacity-60"
-          >
-            {activating ? (
-              <span className="inline-flex items-center gap-0.5">
-                <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-              </span>
-            ) : null}
-            Make active
-          </button>
+      </button>
+
+      {expanded && needsInput && (
+        <div className="border-t border-border-subtle px-4 py-3">
+          <p className="mb-2 text-xs leading-relaxed text-muted-foreground">{meta.detail}</p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              type={meta.authKind === "baseUrl" ? "url" : "password"}
+              value={draft}
+              onChange={(e) => onDraftChange(e.target.value)}
+              placeholder={meta.authKind === "baseUrl" ? "https://searx.example.com" : `Paste your ${meta.label} API key`}
+              disabled={busy}
+              autoFocus
+              className="min-w-0 flex-1"
+            />
+            <div className="flex shrink-0 gap-2">
+              <Button type="button" size="sm" onClick={onSave} disabled={busy || !draft.trim()}>
+                {busy ? "Saving…" : "Save & use this"}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={onCollapse} disabled={busy}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-/* ── Search Playground ──────────────────────────── */
+/* ── result item ────────────────────────────────── */
 
-function SearchPlayground({
-  activeProvider,
-  disabled,
-}: {
-  activeProvider: string;
-  disabled: boolean;
-}) {
-  const [agents, setAgents] = useState<AgentOption[]>([]);
-  const [agentId, setAgentId] = useState("main");
+function ResultItem({ result }: { result: NormalizedSearchResult }) {
+  let host = "";
+  try {
+    host = result.url ? new URL(result.url).hostname.replace(/^www\./, "") : "";
+  } catch {
+    host = "";
+  }
+  return (
+    <li className="py-3">
+      {result.url ? (
+        <a
+          href={result.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group inline-flex items-start gap-1.5 text-sm font-medium text-foreground hover:underline"
+        >
+          {result.title}
+          <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" />
+        </a>
+      ) : (
+        <p className="text-sm font-medium text-foreground">{result.title}</p>
+      )}
+      {(host || result.siteName || result.published) && (
+        <p className="mt-0.5 text-xs text-fg-subtle">
+          {[result.siteName || host, result.published].filter(Boolean).join(" · ")}
+        </p>
+      )}
+      {result.snippet && (
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{result.snippet}</p>
+      )}
+    </li>
+  );
+}
+
+/* ── search playground ──────────────────────────── */
+
+function SearchPlayground({ disabled, disabledReason }: { disabled: boolean; disabledReason: string | null }) {
   const [query, setQuery] = useState("");
-  const [resultCount, setResultCount] = useState(5);
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<SearchResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [results, setResults] = useState<NormalizedSearchResult[] | null>(null);
+  const [meta, setMeta] = useState<{ provider: string; tookMs: number | null; cached: boolean } | null>(null);
+  const [error, setError] = useState<{ reason: string; technical?: string } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const commandPreview = useMemo(() => {
-    const q = query.trim() || "<your query>";
-    return `openclaw agent --agent ${agentId} --message "web_search: ${q}"`;
-  }, [agentId, query]);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/agents", { cache: "no-store" });
-        const data = await res.json();
-        if (!mounted) return;
-        const rows = Array.isArray(data?.agents) ? data.agents : [];
-        const options: AgentOption[] = rows
-          .map((row: { id?: string; name?: string }) => ({
-            id: String(row?.id || "").trim(),
-            name: String(row?.name || row?.id || "").trim(),
-          }))
-          .filter((row: AgentOption) => row.id.length > 0);
-        if (options.length === 0) {
-          setAgents([{ id: "main", name: "main" }]);
-          setAgentId("main");
-          return;
-        }
-        setAgents(options);
-        if (!options.some((opt) => opt.id === "main")) {
-          setAgentId(options[0].id);
-        }
-      } catch {
-        if (!mounted) return;
-        setAgents([{ id: "main", name: "main" }]);
-        setAgentId("main");
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
-
-  const runSearch = useCallback(async () => {
-    if (!query.trim()) return;
+  const run = useCallback(async () => {
+    const q = query.trim();
+    if (!q || running) return;
     setRunning(true);
     setError(null);
-    setResult(null);
+    setResults(null);
+    setMeta(null);
     try {
-      const res = await fetch("/api/web-search", {
+      const res = await fetch("/api/search/web/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), agentId, resultCount }),
+        body: JSON.stringify({ query: q, count: 6 }),
       });
       const data = await res.json();
-      if (!res.ok || !data?.ok) {
-        setError(String(data?.error || "Search failed"));
+      if (!data.ok) {
+        setError({ reason: data.reason || "Search failed.", technical: data.technical });
         return;
       }
-      setResult(data as SearchResult);
+      setResults(data.results || []);
+      setMeta({ provider: data.provider, tookMs: data.tookMs, cached: data.cached });
     } catch (err) {
-      setError(String(err));
+      setError({ reason: "Mission Control couldn't reach OpenClaw to run this search.", technical: String(err) });
     } finally {
       setRunning(false);
     }
-  }, [agentId, query, resultCount]);
-
-  const copyCommand = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(commandPreview);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
-    }
-  }, [commandPreview]);
+  }, [query, running]);
 
   return (
-    <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-xs font-semibold text-foreground">
-          <Search className="h-4 w-4 text-info-fg" />
-          Search Playground
-        </h3>
-        <span className="rounded border border-info-border bg-info-bg px-2 py-0.5 text-xs font-medium text-info-fg">
-          Browser test runner
-        </span>
+    <div className="rounded-2xl border border-border bg-card p-5 md:p-6">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-fg-secondary" />
+        <h2 className="text-sm font-semibold text-foreground">Try it</h2>
       </div>
-
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Run a live web search through your configured provider. Results come from the agent&apos;s web_search tool.
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+        Search the web the same way your agent does. This is the real thing — if results come back, web search
+        works; if it fails, you&rsquo;ll see the actual reason below.
       </p>
 
-      {disabled && (
-        <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning-fg">
-          <div className="flex items-center gap-1.5">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            No search provider configured. Set an API key above to enable web search.
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <label className="space-y-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agent</span>
-          <select
-            value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
-            disabled={running || disabled}
-            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-2 text-xs text-foreground outline-none transition-colors focus:border-info-border disabled:opacity-50"
-          >
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="space-y-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Search query</span>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
           <input
+            ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !running && !disabled && query.trim()) void runSearch(); }}
-            placeholder="e.g. latest Next.js 16 features"
-            disabled={running || disabled}
-            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground outline-none transition-colors focus:border-info-border disabled:opacity-50"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !disabled) void run();
+            }}
+            placeholder={disabled ? "Set up a provider above first" : "Ask anything — try “weather in Lisbon this week”"}
+            disabled={disabled || running}
+            className="h-11 w-full rounded-full border border-border bg-card pl-10 pr-4 text-sm text-foreground outline-none transition-colors placeholder:text-fg-placeholder focus-visible:border-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
           />
-        </label>
-
-        <label className="space-y-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Results</span>
-          <select
-            value={resultCount}
-            onChange={(e) => setResultCount(Number(e.target.value))}
-            disabled={running || disabled}
-            className="w-full rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-2 text-xs text-foreground outline-none transition-colors focus:border-info-border disabled:opacity-50"
-          >
-            {[3, 5, 7, 10].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {/* Command preview */}
-      <div className="rounded-lg border border-foreground/10 bg-foreground/5 p-2.5">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Command preview</p>
-        <div className="mt-1 flex items-start gap-2">
-          <code className="min-w-0 flex-1 break-all rounded bg-foreground/5 px-2 py-1 text-xs text-foreground">
-            {commandPreview}
-          </code>
-          <button
-            type="button"
-            onClick={() => void copyCommand()}
-            className="inline-flex items-center gap-1 rounded-md border border-foreground/10 bg-foreground/5 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Copy className="h-3 w-3" />
-            {copied ? "Copied" : "Copy"}
-          </button>
         </div>
+        <Button
+          type="button"
+          size="lg"
+          onClick={() => void run()}
+          disabled={disabled || running || !query.trim()}
+          className="rounded-full sm:w-auto"
+        >
+          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          {running ? "Searching…" : "Search"}
+        </Button>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => void runSearch()}
-          disabled={running || disabled || !query.trim()}
-          className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/88 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-        >
-          {running ? (
-                <span className="inline-flex items-center gap-0.5">
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                </span>
-              ) : <Play className="h-3.5 w-3.5" />}
-          {running ? "Searching..." : "Run Search"}
-        </button>
-      </div>
+      {disabled && disabledReason && (
+        <p className="mt-3 text-xs leading-relaxed text-fg-subtle">{disabledReason}</p>
+      )}
 
       {error && (
-        <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
-          {error}
+        <div className="mt-4 rounded-xl border border-danger-border bg-danger-bg px-4 py-3">
+          <p className="flex items-start gap-2 text-sm text-danger-fg">
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            {error.reason}
+          </p>
+          {error.technical && (
+            <p className="mt-1.5 pl-6 font-mono text-xs leading-relaxed text-danger-fg/70">{error.technical}</p>
+          )}
         </div>
       )}
 
-      {result && (
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="rounded border border-success-border bg-success-bg px-1.5 py-0.5 text-success-fg">
-              completed
-            </span>
-            <span>provider: {activeProvider}</span>
-            <span>agent: {result.agentId}</span>
-            <span>duration: {(result.durationMs / 1000).toFixed(1)}s</span>
-          </div>
-          <pre className="max-h-96 overflow-auto rounded-lg border border-foreground/10 bg-surface-inset p-3 text-xs leading-relaxed text-info-fg whitespace-pre-wrap wrap-break-word">
-            {result.output || "(no output)"}
-          </pre>
+      {results && (
+        <div className="mt-4">
+          {meta && (
+            <p className="text-xs text-fg-subtle">
+              Answered by <span className="font-medium text-fg-secondary">{meta.provider}</span>
+              {typeof meta.tookMs === "number" ? ` in ${(meta.tookMs / 1000).toFixed(1)}s` : ""}
+              {meta.cached ? " · from cache" : ""}
+            </p>
+          )}
+          {results.length === 0 ? (
+            <p className="mt-2 text-sm text-muted-foreground">No results for that search. Try different words.</p>
+          ) : (
+            <ul className="mt-1 divide-y divide-border-subtle">
+              {results.map((r, i) => (
+                <ResultItem key={`${r.url}-${i}`} result={r} />
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-/* ── Main View ──────────────────────────────────── */
+/* ── main view ──────────────────────────────────── */
 
 export function WebSearchView() {
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<SearchStatus | null>(null);
+  const [status, setStatus] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [switchingModel, setSwitchingModel] = useState(false);
-  const [savingProvider, setSavingProvider] = useState(false);
-  const [savingBraveKey, setSavingBraveKey] = useState(false);
-  const [braveApiKeyDraft, setBraveApiKeyDraft] = useState("");
-  const [configMessage, setConfigMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/web-search", { cache: "no-store" });
+      const res = await fetch("/api/search/web/status", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-      setStatus(data as SearchStatus);
+      setStatus(data as StatusResponse);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -404,109 +377,169 @@ export function WebSearchView() {
     void load();
   }, [load]);
 
-  const switchModel = useCallback(async (modelId: string) => {
-    setSwitchingModel(true);
-    try {
-      const res = await fetch("/api/web-search", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: modelId }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "Failed to switch model");
-      // Refresh status to reflect the change
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSwitchingModel(false);
-    }
-  }, [load]);
+  const friendlyError = useCallback((message: string) => {
+    const lower = message.toLowerCase();
+    if (lower.includes("rate limit")) return "OpenClaw is briefly limiting config changes. Wait a few seconds and try again.";
+    if (lower.includes("invalid config")) return "OpenClaw rejected that change. Mission Control tried to repair the config automatically, but it still didn't take.";
+    if (lower.includes("hash") || lower.includes("conflict")) return "This changed somewhere else at the same moment. Refreshing — please try again.";
+    return message;
+  }, []);
 
-  const setProvider = useCallback(
-    async (provider: "brave" | "perplexity") => {
-      setSavingProvider(true);
-      setError(null);
-      setConfigMessage(null);
+  const applyPatch = useCallback(
+    async (patch: Record<string, unknown>, savingKey: string, successText: string) => {
+      if (!status?.baseHash) {
+        setNotice({ tone: "error", text: "Still loading — try again in a moment." });
+        return false;
+      }
+      setSavingId(savingKey);
+      setNotice(null);
       try {
-        const res = await fetch("/api/web-search", {
+        const res = await fetch("/api/config", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "set-provider", provider }),
+          body: JSON.stringify({ patch, baseHash: status.baseHash }),
         });
         const data = await res.json();
-        if (!res.ok || !data?.ok) throw new Error(data?.error || "Failed to set provider");
-        setConfigMessage({
-          type: "success",
-          text: `Active provider set to ${provider === "brave" ? "Brave" : "Perplexity"}.`,
-        });
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+        if (data.restartRequired) {
+          requestRestart("Web search configuration changed.");
+          setNotice({ tone: "info", text: "Saved. This needs OpenClaw to restart to take effect — restarting now." });
+        } else {
+          setNotice({ tone: "success", text: successText });
+        }
         await load();
+        return true;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-        setConfigMessage({ type: "error", text: msg });
+        setNotice({ tone: "error", text: friendlyError(msg) });
+        return false;
       } finally {
-        setSavingProvider(false);
+        setSavingId(null);
       }
     },
-    [load]
+    [status?.baseHash, load, friendlyError],
   );
 
-  const saveBraveKey = useCallback(async () => {
-    const apiKey = braveApiKeyDraft.trim();
-    if (!apiKey) {
-      setConfigMessage({ type: "error", text: "Please paste a Brave API key first." });
-      return;
-    }
-    setSavingBraveKey(true);
-    setError(null);
-    setConfigMessage(null);
-    try {
-      const res = await fetch("/api/web-search", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "set-brave",
-          apiKey,
-          makeDefault: true,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "Failed to save Brave API key");
-      setBraveApiKeyDraft("");
-      setConfigMessage({
-        type: "success",
-        text: "Brave key saved and Brave is now the active web search provider.",
-      });
-      await load();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-      setConfigMessage({ type: "error", text: msg });
-    } finally {
-      setSavingBraveKey(false);
-    }
-  }, [braveApiKeyDraft, load]);
+  const selectedId = status?.activeProviderId ?? "auto";
 
-  const activeModel = useMemo(() => {
-    if (!status) return null;
-    return PERPLEXITY_MODELS.find((m) => m.id === status.model) || null;
+  const handleSelect = useCallback(
+    async (meta: ProviderStatus) => {
+      const needsInput = meta.authKind === "key" || meta.authKind === "baseUrl";
+      if (needsInput && meta.ready !== true) {
+        setExpandedId((cur) => (cur === meta.id ? null : meta.id));
+        return;
+      }
+      setExpandedId(null);
+      await applyPatch(
+        {
+          tools: { web: { search: { provider: meta.id } } },
+          plugins: { entries: { [meta.pluginId]: { enabled: true } } },
+        },
+        meta.id,
+        `Switched to ${meta.label}. It's live — try a search below.`,
+      );
+    },
+    [applyPatch],
+  );
+
+  const handleSelectAuto = useCallback(async () => {
+    setExpandedId(null);
+    await applyPatch(
+      { tools: { web: { search: { provider: null } } } },
+      "auto",
+      "OpenClaw will now pick automatically. It's live — try a search below.",
+    );
+  }, [applyPatch]);
+
+  const handleSaveDraft = useCallback(
+    async (meta: ProviderStatus) => {
+      const value = (drafts[meta.id] || "").trim();
+      if (!value) return;
+      const configField = meta.authKind === "baseUrl" ? { baseUrl: value } : { apiKey: value };
+      const ok = await applyPatch(
+        {
+          plugins: { entries: { [meta.pluginId]: { enabled: true, config: { webSearch: configField } } } },
+          tools: { web: { search: { provider: meta.id } } },
+        },
+        meta.id,
+        `Saved and switched to ${meta.label}. Try a search below to make sure it works.`,
+      );
+      if (ok) {
+        setExpandedId(null);
+        setDrafts((d) => ({ ...d, [meta.id]: "" }));
+      }
+    },
+    [applyPatch, drafts],
+  );
+
+  const handleToggleEnabled = useCallback(
+    async (next: boolean) => {
+      setTogglingEnabled(true);
+      await applyPatch(
+        { tools: { web: { search: { enabled: next } } } },
+        "enabled",
+        next ? "Web search turned on." : "Web search turned off.",
+      );
+      setTogglingEnabled(false);
+    },
+    [applyPatch],
+  );
+
+  const activeProviderMeta = useMemo(
+    () => status?.providers.find((p) => p.id === status.activeProviderId) || null,
+    [status],
+  );
+
+  const headline = useMemo(() => {
+    if (!status) return { tone: "neutral" as const, text: "" };
+    if (!status.enabled) {
+      return { tone: "neutral" as const, text: "Web search is turned off." };
+    }
+    if (status.activeProviderId === null) {
+      if (status.autoResolvedProviderId) {
+        const label = status.providers.find((p) => p.id === status.autoResolvedProviderId)?.label;
+        return { tone: "positive" as const, text: `Web search is on, automatically using ${label}.` };
+      }
+      return { tone: "attention" as const, text: "Web search is on, but nothing is set up to answer yet." };
+    }
+    if (activeProviderMeta?.ready === true) {
+      return { tone: "positive" as const, text: `Web search is on, using ${activeProviderMeta.label}.` };
+    }
+    if (activeProviderMeta?.ready === false) {
+      return { tone: "attention" as const, text: `Web search is set to ${activeProviderMeta.label}, but it's missing a key.` };
+    }
+    return { tone: "neutral" as const, text: `Web search is set to ${activeProviderMeta?.label ?? status.activeProviderId}.` };
+  }, [status, activeProviderMeta]);
+
+  const searchDisabled = !status || !status.enabled || (status.activeProviderId === null ? !status.autoResolvedProviderId : activeProviderMeta?.ready === false);
+  const searchDisabledReason = !status
+    ? null
+    : !status.enabled
+      ? "Turn web search on above to try it."
+      : searchDisabled
+        ? "Pick a provider that's ready above, then come back here."
+        : null;
+
+  const groups = useMemo(() => {
+    const providers = status?.providers || [];
+    return {
+      free: providers.filter((p) => p.authKind === "keyless" || p.authKind === "connection"),
+      keyed: providers.filter((p) => p.authKind === "key"),
+      hosted: providers.filter((p) => p.authKind === "baseUrl"),
+    };
   }, [status]);
-
-  const anyConfigured = status
-    ? status.providers.perplexity.configured || status.providers.openrouter.configured || status.providers.brave.configured
-    : false;
 
   return (
     <SectionLayout>
       <SectionHeader
         title={
           <span className="inline-flex items-center gap-2">
-            <Search className="h-5 w-5 text-fg-secondary dark:text-foreground" />
+            <Globe className="h-5 w-5 text-fg-secondary dark:text-foreground" />
             Web Search
           </span>
         }
-        description="Configure and test real-time web search providers for your agents."
+        description="Let your agent look things up on the web before it answers, instead of relying only on what it already knows."
         meta={null}
         actions={
           <button
@@ -514,254 +547,192 @@ export function WebSearchView() {
             onClick={() => void load()}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-card"
           >
-            {loading ? (
-                <span className="inline-flex items-center gap-0.5">
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                  <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                </span>
-              ) : (
-                <RefreshCw className="h-3 w-3" />
-              )}
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
             Refresh
           </button>
         }
       />
 
-      <SectionBody width="wide" padding="regular" innerClassName="space-y-4">
+      <SectionBody width="content" padding="regular" innerClassName="space-y-5 pb-16">
         {loading && !status ? (
           <ContentLoadingState />
         ) : error && !status ? (
-          <div className="rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
-            {error}
-          </div>
+          <div className="rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">{error}</div>
         ) : status ? (
           <>
-            {/* Status overview */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-              <div className={cn(
-                "rounded-lg border px-2.5 py-1.5",
-                anyConfigured
-                  ? "border-success-border bg-success-bg"
-                  : "border-danger-border bg-danger-bg"
-              )}>
-                <p className={cn("text-xs font-semibold leading-tight", anyConfigured ? "text-success-fg" : "text-danger-fg")}>
-                  {status.activeProvider === "none" ? "None" : status.activeProvider === "perplexity" ? "Perplexity" : "Brave"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">Active provider</p>
-              </div>
-              <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-1.5">
-                <p className="text-xs font-semibold leading-tight text-foreground">
-                  {activeModel?.label || status.model}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">Model</p>
-              </div>
-              <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-1.5">
-                <p className="text-xs font-semibold leading-tight text-foreground">{status.cacheTtlMinutes}m</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Cache TTL</p>
-              </div>
-              <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-2.5 py-1.5">
-                <p className="text-xs font-semibold leading-tight text-foreground">
-                  {[status.providers.perplexity.configured, status.providers.openrouter.configured, status.providers.brave.configured].filter(Boolean).length}/3
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">Keys configured</p>
+            {/* Status */}
+            <div className="rounded-2xl border border-border bg-card p-5 md:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2">
+                    <StatusDot tone={headline.tone} />
+                    <span className="text-base font-medium text-foreground">{headline.text}</span>
+                  </p>
+                  <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-muted-foreground">
+                    {status.enabled
+                      ? "When it's on, your agent can pull in current information from the web as part of its answers."
+                      : "Your agent will only use what it already knows — nothing is fetched from the web."}
+                  </p>
+                </div>
+                <label className="flex shrink-0 items-center gap-2.5">
+                  <span className="text-sm text-muted-foreground">{status.enabled ? "On" : "Off"}</span>
+                  <Switch
+                    checked={status.enabled}
+                    disabled={togglingEnabled}
+                    onCheckedChange={(v) => void handleToggleEnabled(v)}
+                  />
+                </label>
               </div>
             </div>
 
-            {/* Provider cards */}
-            <div>
-              <h2 className="text-xs font-semibold text-foreground mb-2">Search Providers</h2>
-              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
-                <ProviderCard
-                  name="Perplexity (Direct)"
-                  icon={<Zap className="h-5 w-5 text-fg-secondary" />}
-                  description="AI-synthesized answers with citations from real-time web search"
-                  configured={status.providers.perplexity.configured}
-                  keySource={status.providers.perplexity.keySource}
-                  keyPreview={status.providers.perplexity.keyPreview}
-                  isActive={status.activeProvider === "perplexity" && status.providers.perplexity.configured}
-                  envKey="PERPLEXITY_API_KEY"
-                  onActivate={
-                    status.providers.perplexity.configured
-                      ? () => {
-                          void setProvider("perplexity");
-                        }
-                      : undefined
-                  }
-                  activating={savingProvider}
-                />
-                <ProviderCard
-                  name="OpenRouter"
-                  icon={<Globe className="h-5 w-5 text-info-fg" />}
-                  description="Access Perplexity models via OpenRouter (alternative billing)"
-                  configured={status.providers.openrouter.configured}
-                  keySource={status.providers.openrouter.keySource}
-                  keyPreview={status.providers.openrouter.keyPreview}
-                  isActive={status.activeProvider === "perplexity" && !status.providers.perplexity.configured && status.providers.openrouter.configured}
-                  envKey="OPENROUTER_API_KEY"
-                />
-                <ProviderCard
-                  name="Brave Search"
-                  icon={<Shield className="h-5 w-5 text-warning-fg" />}
-                  description="Structured search results (default fallback provider)"
-                  configured={status.providers.brave.configured}
-                  keySource={status.providers.brave.keySource}
-                  keyPreview={status.providers.brave.keyPreview}
-                  isActive={status.activeProvider === "brave"}
-                  envKey="BRAVE_API_KEY"
-                  onActivate={
-                    status.providers.brave.configured
-                      ? () => {
-                          void setProvider("brave");
-                        }
-                      : undefined
-                  }
-                  activating={savingProvider}
-                />
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-2">
-              <h3 className="text-xs font-semibold text-foreground">Quick setup: Brave (recommended fallback)</h3>
-              <p className="text-xs text-muted-foreground">
-                Paste a Brave API key to save it in <code className="text-xs">openclaw.json</code> and make Brave the default search provider.
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="password"
-                  value={braveApiKeyDraft}
-                  onChange={(e) => setBraveApiKeyDraft(e.target.value)}
-                  placeholder="BSA... (Brave API key)"
-                  disabled={savingBraveKey || loading}
-                  className="min-w-0 flex-1 rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground outline-none transition-colors focus:border-info-border disabled:opacity-60"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    void saveBraveKey();
-                  }}
-                  disabled={savingBraveKey || loading}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/88 disabled:opacity-60"
-                >
-                  {savingBraveKey ? "Saving..." : "Save key + Use Brave"}
-                </button>
-              </div>
-            </div>
-
-            {configMessage && (
+            {notice && (
               <div
                 className={cn(
-                  "rounded-xl border p-3 text-xs",
-                  configMessage.type === "success"
+                  "rounded-xl border px-4 py-3 text-sm",
+                  notice.tone === "success"
                     ? "border-success-border bg-success-bg text-success-fg"
-                    : "border-danger-border bg-danger-bg text-danger-fg"
+                    : notice.tone === "error"
+                      ? "border-danger-border bg-danger-bg text-danger-fg"
+                      : "border-info-border bg-info-bg text-info-fg",
                 )}
               >
-                {configMessage.text}
+                {notice.text}
               </div>
             )}
 
-            {/* Model selector (perplexity only) */}
-            {status.activeProvider === "perplexity" && (
-              <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4 space-y-2">
-                <h3 className="text-xs font-semibold text-foreground">Perplexity Models</h3>
-                <p className="text-xs text-muted-foreground">
-                  Select a model below. Currently using{" "}
-                  <code className="rounded bg-foreground/10 px-1 text-fg-secondary">{status.model}</code>.
-                  {switchingModel && (
-                    <span className="ml-1.5 inline-flex items-center gap-0.5">
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
-                      <span className="h-1 w-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
-                    </span>
-                  )}
-                </p>
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-                  {PERPLEXITY_MODELS.map((m) => {
-                    const isSelected = status.model === m.id;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        disabled={switchingModel || isSelected}
-                        onClick={() => void switchModel(m.id)}
-                        className={cn(
-                          "rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          isSelected
-                            ? "border-border-strong bg-muted-foreground/10"
-                            : "border-foreground/5 bg-foreground/5 hover:border-border-strong hover:bg-muted-foreground/5 cursor-pointer",
-                          switchingModel && !isSelected && "opacity-50"
-                        )}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <p className={cn("text-xs font-medium", isSelected ? "text-fg-secondary" : "text-fg-secondary")}>
-                            {m.label}
-                          </p>
-                          {isSelected && (
-                            <CheckCircle className="h-3 w-3 text-fg-secondary" />
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{m.description}</p>
-                        <code className="mt-1 block text-xs text-fg-subtle">{m.id}</code>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* No provider warning */}
-            {!anyConfigured && (
-              <div className="rounded-xl border border-warning-border bg-warning-bg p-4">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 shrink-0 text-warning-fg mt-0.5" />
-                  <div>
-                    <p className="text-xs font-semibold text-warning-fg">No search provider configured</p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      To enable web search, set at least one API key. Go to{" "}
-                      <Link href="/accounts" className="text-foreground hover:underline">Keys & Access</Link>{" "}
-                      to add <code className="text-xs">PERPLEXITY_API_KEY</code>, <code className="text-xs">OPENROUTER_API_KEY</code>,
-                      or <code className="text-xs">BRAVE_API_KEY</code>.
-                    </p>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      <a
-                        href="https://docs.openclaw.ai/tools/web#setting-up-perplexity-search"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-foreground hover:underline"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        Setup guide
-                      </a>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Search playground */}
-            <SearchPlayground
-              activeProvider={status.activeProvider}
-              disabled={!anyConfigured}
-            />
-
-            {/* Docs link */}
-            <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-4">
-              <h3 className="text-xs font-semibold text-foreground">Documentation</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                For full setup instructions, supported parameters (query, country, language, freshness filters), and
-                configuration details:
+            {/* Providers */}
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Who does the searching</h2>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Pick one. Some work right away; others need a key from that provider first.
               </p>
-              <a
-                href="https://docs.openclaw.ai/tools/web#setting-up-perplexity-search"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1.5 rounded-control border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs font-medium text-info-fg transition-colors hover:bg-foreground/10"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                OpenClaw Web Search Docs
-              </a>
+
+              <div className="mt-3 space-y-3">
+                <div
+                  className={cn(
+                    "rounded-xl border px-4 py-3",
+                    selectedId === "auto" ? "border-border-strong bg-card" : "border-border-subtle bg-card/60",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void handleSelectAuto()}
+                    disabled={savingId !== null || selectedId === "auto"}
+                    className="flex w-full items-start gap-3 text-left"
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                        selectedId === "auto" ? "border-foreground" : "border-border-strong",
+                      )}
+                    >
+                      {selectedId === "auto" && <span className="h-1.5 w-1.5 rounded-full bg-foreground" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="text-sm font-medium text-foreground">Let OpenClaw choose (recommended)</span>
+                      <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                        {status.autoResolvedProviderId
+                          ? `Right now that means ${status.providers.find((p) => p.id === status.autoResolvedProviderId)?.label}.`
+                          : "Nothing is set up yet, so this won't answer until you add a key to one option below."}
+                      </span>
+                    </span>
+                    {savingId === "auto" && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
+                  </button>
+                </div>
+
+                {groups.free.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="eyebrow px-1">No setup needed</p>
+                    <div className="space-y-2">
+                      {groups.free.map((p) => (
+                        <ProviderRow
+                          key={p.id}
+                          meta={p}
+                          selected={selectedId === p.id}
+                          expanded={expandedId === p.id}
+                          busy={savingId === p.id}
+                          draft={drafts[p.id] || ""}
+                          onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
+                          onSelect={() => void handleSelect(p)}
+                          onSave={() => void handleSaveDraft(p)}
+                          onCollapse={() => setExpandedId(null)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {groups.keyed.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="eyebrow px-1">Bring your own key</p>
+                    <div className="space-y-2">
+                      {groups.keyed.map((p) => (
+                        <ProviderRow
+                          key={p.id}
+                          meta={p}
+                          selected={selectedId === p.id}
+                          expanded={expandedId === p.id}
+                          busy={savingId === p.id}
+                          draft={drafts[p.id] || ""}
+                          onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
+                          onSelect={() => void handleSelect(p)}
+                          onSave={() => void handleSaveDraft(p)}
+                          onCollapse={() => setExpandedId(null)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {groups.hosted.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="eyebrow px-1">Self-hosted</p>
+                    <div className="space-y-2">
+                      {groups.hosted.map((p) => (
+                        <ProviderRow
+                          key={p.id}
+                          meta={p}
+                          selected={selectedId === p.id}
+                          expanded={expandedId === p.id}
+                          busy={savingId === p.id}
+                          draft={drafts[p.id] || ""}
+                          onDraftChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
+                          onSelect={() => void handleSelect(p)}
+                          onSave={() => void handleSaveDraft(p)}
+                          onCollapse={() => setExpandedId(null)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {status.uninstalledCount > 0 && (
+                <p className="mt-3 text-xs leading-relaxed text-fg-subtle">
+                  {status.uninstalledCount} more provider{status.uninstalledCount === 1 ? "" : "s"} (like Brave or
+                  Exa) exist but need an extra install step on this OpenClaw before they can show up here.
+                </p>
+              )}
+              {status.degraded && (
+                <p className="mt-2 text-xs leading-relaxed text-warning-fg">
+                  Mission Control couldn&rsquo;t check which providers are installed just now, so this list may be
+                  incomplete.
+                </p>
+              )}
             </div>
+
+            {/* Search box */}
+            <SearchPlayground disabled={Boolean(searchDisabled)} disabledReason={searchDisabledReason} />
+
+            <a
+              href="https://docs.openclaw.ai/tools/web"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Read OpenClaw&rsquo;s web search documentation
+            </a>
           </>
         ) : null}
       </SectionBody>
