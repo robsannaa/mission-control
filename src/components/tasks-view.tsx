@@ -1,113 +1,121 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { CSSProperties } from "react";
 import {
   Plus,
-  ChevronLeft,
-  ChevronRight,
   Trash2,
-  Pencil,
   X,
   Check,
   ListChecks,
   Rocket,
   CheckCircle,
-  GripVertical,
   Copy,
   Play,
-  AlertCircle,
-  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import { SectionLayout } from "@/components/section-layout";
 import { useFocusTrap, useBodyScrollLock } from "@/hooks/use-modal-accessibility";
+import { notifyError, notifyWarning } from "@/lib/notification-store";
+import { TaskCard } from "@/components/tasks/task-card";
+import { TaskDetailDialog } from "@/components/tasks/task-detail-dialog";
+import { StopRunDialog, type StopIntent } from "@/components/tasks/stop-run-dialog";
+import { AnswerDialog, type AnswerIntent } from "@/components/tasks/answer-dialog";
+import { DispatchDialog, type DispatchIntent } from "@/components/tasks/dispatch-dialog";
+import { LiveDot } from "@/components/tasks/run-strip";
+import { useAllRuns, useKanbanSignal, useStreamEvents } from "@/components/tasks/run-store";
+import { useCardFlip } from "@/components/tasks/use-card-flip";
 import {
-  getTimeFormatSnapshot,
-  getTimeFormatServerSnapshot,
-  subscribeTimeFormatPreference,
-  withTimeFormat,
-} from "@/lib/time-format-preference";
+  ENGINE_OWNED_FIELDS,
+  agentLabel,
+  columnTitle,
+  isAwaitingUser,
+  isRunActive,
+  type AgentInfo,
+  type Column,
+  type DispatchAssignee,
+  type KanbanData,
+  type Task,
+} from "@/components/tasks/types";
 
-/* ── types ─────────────────────────────────────── */
+const PRIORITIES = [
+  { value: "high", label: "High priority" },
+  { value: "medium", label: "Medium priority" },
+  { value: "low", label: "Low priority" },
+];
 
-type Column = { id: string; title: string; color: string };
-type Task = {
-  id: number;
-  title: string;
-  description?: string;
-  column: string;
-  priority: string;
-  assignee?: string;
-  attachments?: string[];
-  agentId?: string;
-  dispatchStatus?: "idle" | "dispatching" | "running" | "completed" | "failed";
-  dispatchRunId?: string;
-  dispatchedAt?: number;
-  completedAt?: number;
-  dispatchError?: string;
-};
+/** A change to the board, expressed so it can be replayed onto a fresher copy. */
+type Mutator = (board: KanbanData) => KanbanData;
 
-type AgentInfo = {
-  id: string;
-  name: string;
-  emoji: string;
-};
-type KanbanData = { columns: Column[]; tasks: Task[]; _fileExists?: boolean };
-
-const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
-function isImageAttachment(path: string): boolean {
-  return IMAGE_EXTENSIONS.test(path);
-}
-function attachmentUrl(path: string): string {
-  const trimmed = path.trim();
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `/api/workspace/file?path=${encodeURIComponent(trimmed)}`;
+/**
+ * The engine owns these and takes them from disk regardless. Sending them back
+ * would mean echoing a run's state from whenever this tab last read it.
+ */
+function stripEngineFields(task: Task): Task {
+  const clean = { ...task } as Record<string, unknown>;
+  for (const field of ENGINE_OWNED_FIELDS) delete clean[field];
+  return clean as Task;
 }
 
-const PRIORITY_COLORS: Record<string, string> = {
-  high: "bg-danger",
-  medium: "bg-warning",
-  low: "bg-info",
-};
-const PRIORITY_TEXT: Record<string, string> = {
-  high: "text-danger-fg",
-  medium: "text-warning-fg",
-  low: "text-info-fg",
-};
-const PRIORITIES = ["high", "medium", "low"];
+function forWire(board: KanbanData) {
+  return {
+    columns: board.columns,
+    tasks: board.tasks.map(stripEngineFields),
+    rev: board.rev,
+  };
+}
 
 /* ── component ─────────────────────────────────── */
 
 export function TasksView() {
-  const timeFormat = useSyncExternalStore(
-    subscribeTimeFormatPreference,
-    getTimeFormatSnapshot,
-    getTimeFormatServerSnapshot,
-  );
   const [data, setData] = useState<KanbanData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | null>(null);
   const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<number | null>(null);
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevDataRef = useRef<KanbanData | null>(null);
   const savingRef = useRef(false);
+  const dataRef = useRef<KanbanData | null>(null);
+  /** Changes not yet acknowledged by the server, ready to replay onto a conflict. */
+  const pending = useRef<Mutator[]>([]);
+  /**
+   * A card added with "Add & run", waiting for its real id. The mutator fills
+   * `taskId` in — and fills it in again if a conflict makes us rebase, so the
+   * dispatch always names the card that was actually written.
+   */
+  const autoRun = useRef<{
+    taskId: number | null;
+    agentId: string;
+    assignee: DispatchAssignee;
+  } | null>(null);
+  /** Set below — lets the save handler dispatch without a circular dependency. */
+  const sendDispatchRef = useRef<
+    | ((
+        taskId: number,
+        opts: { agentId: string; assignee: DispatchAssignee; context?: string },
+      ) => Promise<{ ok: boolean; error?: string }>)
+    | null
+  >(null);
   const [draggingTaskId, setDraggingTaskId] = useState<number | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [renamingTaskId, setRenamingTaskId] = useState<number | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<number | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [stopIntent, setStopIntent] = useState<StopIntent | null>(null);
+  const [answerIntent, setAnswerIntent] = useState<AnswerIntent | null>(null);
+  const [dispatchIntent, setDispatchIntent] = useState<DispatchIntent | null>(null);
 
-  // Modal accessibility: focus trapping and body scroll lock
-  const detailFocusTrapRef = useFocusTrap(detailTaskId != null);
   const lightboxFocusTrapRef = useFocusTrap(lightboxImage != null);
-  useBodyScrollLock(detailTaskId != null || lightboxImage != null);
-  const streamRef = useRef<EventSource | null>(null);
+  useBodyScrollLock(lightboxImage != null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [dispatchingTaskIds, setDispatchingTaskIds] = useState<Set<number>>(new Set());
+
+  const runs = useAllRuns();
+  const events = useStreamEvents();
+  const boardRef = useCardFlip<HTMLDivElement>();
+
+  dataRef.current = data;
 
   useEffect(() => {
     fetch("/api/tasks")
@@ -118,7 +126,6 @@ export function TasksView() {
       })
       .catch(() => setLoading(false));
 
-    // Fetch agents for assignment dropdown
     fetch("/api/agents")
       .then((r) => r.json())
       .then((d) => {
@@ -135,149 +142,324 @@ export function TasksView() {
       .catch(() => {});
   }, []);
 
-  // Live updates: when kanban is written (dashboard or agent), refetch without polling
-  // Skip SSE refetch while a local save is in-flight to avoid clobbering edits
-  useEffect(() => {
-    const es = new EventSource("/api/tasks/stream");
-    streamRef.current = es;
-    es.onmessage = (e) => {
-      try {
-        const payload = JSON.parse(e.data);
-        if (payload?.type === "kanban-updated") {
-          if (savingRef.current) return; // don't clobber in-flight edits
-          fetch("/api/tasks")
-            .then((r) => r.json())
-            .then((d) => setData(d))
-            .catch(() => {});
-        }
-      } catch {
-        /* ignore */
-      }
-    };
-    return () => {
-      es.close();
-      streamRef.current = null;
-    };
+  const refetchBoard = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tasks");
+      if (!res.ok) return;
+      setData(await res.json());
+    } catch {
+      /* the stream will bring us back */
+    }
   }, []);
 
-  /* ── persist helpers ───────────────────────────── */
+  // One socket for the whole board (see run-store). When the file changes —
+  // this tab, the agent, or another window — refetch, unless we are mid-write.
+  useKanbanSignal(
+    useCallback(() => {
+      if (savingRef.current) return;
+      void refetchBoard();
+    }, [refetchBoard])
+  );
 
-  const persist = useCallback((newData: KanbanData) => {
-    prevDataRef.current = data;
-    setData(newData);
+  /* ── persist ───────────────────────────────────── */
+
+  /**
+   * Apply a change optimistically, then write it.
+   *
+   * The change is kept as a function so that if the server says someone else
+   * wrote first (409), it can be replayed onto their board instead of blindly
+   * retrying and clobbering them.
+   */
+  const mutate = useCallback((fn: Mutator) => {
+    const current = dataRef.current;
+    if (!current) return;
+    const next = fn(current);
+    dataRef.current = next;
+    setData(next);
+    pending.current.push(fn);
     setSaveStatus("saving");
     savingRef.current = true;
+
     if (saveRef.current) clearTimeout(saveRef.current);
     saveRef.current = setTimeout(async () => {
+      const board = dataRef.current;
+      if (!board) return;
+      const replay = pending.current.slice();
       try {
-        const res = await fetch("/api/tasks", {
+        let res = await fetch("/api/tasks", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(newData),
+          body: JSON.stringify(forWire(board)),
         });
+
+        if (res.status === 409) {
+          // Someone else wrote first. Rebase our edits onto their board and go
+          // once more — never a blind retry.
+          const conflict = await res.json().catch(() => ({}));
+          const fresh: KanbanData | undefined = conflict?.board;
+          if (fresh) {
+            const rebased = replay.reduce<KanbanData>((acc, step) => step(acc), fresh);
+            dataRef.current = rebased;
+            setData(rebased);
+            res = await fetch("/api/tasks", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(forWire(rebased)),
+            });
+          }
+        }
+
         if (res.ok) {
-          prevDataRef.current = null;
-          setSaveStatus("saved");
-          setTimeout(() => setSaveStatus(null), 2000);
+          const body = await res.json().catch(() => ({}));
+
+          /*
+           * Only the mutators THIS request carried are done. An edit made while
+           * it was in flight is still queued behind them, and clearing the whole
+           * list here — then overwriting local state with the server's board —
+           * silently threw that edit away. Keep the unsent tail and replay it
+           * onto whatever the server just confirmed.
+           */
+          const unsent = pending.current.slice(replay.length);
+          pending.current = unsent;
+
+          // Take the server's revision so the next write is conditional on it.
+          if (body?.board) {
+            const rebased = unsent.reduce<KanbanData>((acc, step) => step(acc), body.board);
+            dataRef.current = rebased;
+            setData(rebased);
+          } else if (typeof body?.rev === "number") {
+            setData((prev) => (prev ? { ...prev, rev: body.rev } : prev));
+          }
+
+          // A queued edit means another save is already armed — do not claim
+          // "saved" while something is still waiting to go out.
+          if (unsent.length === 0) {
+            setSaveStatus("saved");
+            setTimeout(() => setSaveStatus(null), 2000);
+          }
+          // "Add & run" waits for the id the card was actually written with —
+          // a rebase onto someone else's board can hand it a different one.
+          const queued = autoRun.current;
+          autoRun.current = null;
+          if (queued && queued.taskId != null) {
+            void sendDispatchRef.current?.(queued.taskId, {
+              agentId: queued.agentId,
+              assignee: queued.assignee,
+            });
+          }
         } else {
-          // Rollback on server rejection
-          if (prevDataRef.current) setData(prevDataRef.current);
-          prevDataRef.current = null;
+          pending.current = [];
           setSaveStatus(null);
+          notifyError(
+            "Could not save the board",
+            "Your change was rolled back. The board has been reloaded.",
+            "Tasks"
+          );
+          await refetchBoard();
         }
       } catch {
-        // Rollback on network failure
-        if (prevDataRef.current) setData(prevDataRef.current);
-        prevDataRef.current = null;
+        pending.current = [];
         setSaveStatus(null);
+        await refetchBoard();
       } finally {
         savingRef.current = false;
       }
     }, 500);
-  }, [data]);
+  }, [refetchBoard]);
 
   /* ── task CRUD ─────────────────────────────────── */
 
   const addTask = useCallback(
-    (task: Omit<Task, "id">) => {
-      if (!data) return;
-      const maxId = data.tasks.reduce((m, t) => Math.max(m, t.id), 0);
-      const newData = {
-        ...data,
-        tasks: [...data.tasks, { ...task, id: maxId + 1 }],
-      };
-      persist(newData);
+    (task: Omit<Task, "id">, onIdAssigned?: (id: number) => void) => {
+      mutate((board) => {
+        const maxId = board.tasks.reduce((m, t) => Math.max(m, t.id), 0);
+        const id = maxId + 1;
+        // Runs again on a rebase, so the caller always ends up with the id the
+        // card was really written with rather than the one we first guessed.
+        onIdAssigned?.(id);
+        return { ...board, tasks: [...board.tasks, { ...task, id }] };
+      });
     },
-    [data, persist]
+    [mutate]
   );
 
   const updateTask = useCallback(
     (id: number, updates: Partial<Task>) => {
-      if (!data) return;
-      const newData = {
-        ...data,
-        tasks: data.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)),
-      };
-      persist(newData);
+      mutate((board) => ({
+        ...board,
+        tasks: board.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+      }));
     },
-    [data, persist]
-  );
-
-  const moveTask = useCallback(
-    (id: number, direction: "left" | "right") => {
-      if (!data) return;
-      const task = data.tasks.find((t) => t.id === id);
-      if (!task) return;
-      const colIdx = data.columns.findIndex((c) => c.id === task.column);
-      const newIdx =
-        direction === "right"
-          ? Math.min(colIdx + 1, data.columns.length - 1)
-          : Math.max(colIdx - 1, 0);
-      if (newIdx === colIdx) return;
-      updateTask(id, { column: data.columns[newIdx].id });
-    },
-    [data, updateTask]
+    [mutate]
   );
 
   const deleteTask = useCallback(
     (id: number) => {
-      if (!data) return;
-      const newData = {
-        ...data,
-        tasks: data.tasks.filter((t) => t.id !== id),
-      };
-      persist(newData);
+      mutate((board) => ({ ...board, tasks: board.tasks.filter((t) => t.id !== id) }));
     },
-    [data, persist]
+    [mutate]
   );
 
-  /* ── dispatch to agent ────────────────────────── */
+  /**
+   * Moving a card that is mid-run means stopping the run. That is destructive,
+   * so it is always confirmed; the move happens only once the run is settled.
+   */
+  const requestMove = useCallback(
+    (id: number, columnId: string) => {
+      const board = dataRef.current;
+      if (!board) return;
+      const task = board.tasks.find((t) => t.id === id);
+      if (!task || task.column === columnId) return;
+      const status = runs.get(id)?.status ?? task.dispatchStatus;
+      if (isRunActive(status)) {
+        setStopIntent({
+          taskId: id,
+          taskTitle: task.title,
+          agentLabel: agentLabel(agents, task.agentId),
+          moveTo: { columnId, columnTitle: columnTitle(board.columns, columnId) },
+        });
+        return;
+      }
+      updateTask(id, { column: columnId });
+    },
+    [agents, runs, updateTask]
+  );
 
-  const dispatchTask = useCallback(
-    async (taskId: number, agentId?: string) => {
+  const moveTaskByStep = useCallback(
+    (id: number, direction: "left" | "right") => {
+      const board = dataRef.current;
+      if (!board) return;
+      const task = board.tasks.find((t) => t.id === id);
+      if (!task) return;
+      const colIdx = board.columns.findIndex((c) => c.id === task.column);
+      const newIdx =
+        direction === "right"
+          ? Math.min(colIdx + 1, board.columns.length - 1)
+          : Math.max(colIdx - 1, 0);
+      if (newIdx === colIdx) return;
+      requestMove(id, board.columns[newIdx].id);
+    },
+    [requestMove]
+  );
+
+  const requestStop = useCallback(
+    (id: number) => {
+      const board = dataRef.current;
+      if (!board) return;
+      const task = board.tasks.find((t) => t.id === id);
+      if (!task) return;
+      setStopIntent({
+        taskId: id,
+        taskTitle: task.title,
+        agentLabel: agentLabel(agents, task.agentId),
+      });
+    },
+    [agents]
+  );
+
+  /* ── dispatch, answer, resolve ─────────────────── */
+
+  const sendDispatch = useCallback(
+    async (
+      taskId: number,
+      opts: { agentId: string; assignee: DispatchAssignee; context?: string }
+    ): Promise<{ ok: boolean; error?: string }> => {
       setDispatchingTaskIds((prev) => new Set(prev).add(taskId));
       try {
         const res = await fetch("/api/tasks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "dispatch", taskId, agentId }),
+          body: JSON.stringify({ action: "dispatch", taskId, ...opts }),
         });
-        if (res.ok) {
-          // Refetch board to get updated status
-          const boardRes = await fetch("/api/tasks");
-          if (boardRes.ok) {
-            const d = await boardRes.json();
-            setData(d);
-          }
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const message = body?.error || `The gateway refused (${res.status}).`;
+          if (res.status === 409) notifyWarning("Already running", message, "Tasks");
+          return { ok: false, error: message };
         }
-      } catch { /* handled by SSE */ }
-      setDispatchingTaskIds((prev) => {
-        const next = new Set(prev);
-        next.delete(taskId);
-        return next;
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        await refetchBoard();
+        setDispatchingTaskIds((prev) => {
+          const next = new Set(prev);
+          next.delete(taskId);
+          return next;
+        });
+      }
+    },
+    [refetchBoard]
+  );
+  sendDispatchRef.current = sendDispatch;
+
+  /** Re-running a card that already has an agent needs no dialog. */
+  const rerun = useCallback(
+    async (task: Task) => {
+      if (!task.agentId) {
+        setDispatchIntent({ task, assignee: task.dispatchAssignee ?? "agent" });
+        return;
+      }
+      const result = await sendDispatch(task.id, {
+        agentId: task.agentId,
+        assignee: task.dispatchAssignee ?? "agent",
+      });
+      if (!result.ok && result.error) {
+        notifyError("Could not start the run", result.error, "Tasks");
+      }
+    },
+    [sendDispatch]
+  );
+
+  const openAnswer = useCallback(
+    (task: Task) => {
+      const run = runs.get(task.id);
+      const question = run?.question?.text ?? task.dispatchQuestion ?? "";
+      const confidence =
+        run?.question?.confidence ??
+        task.dispatchConfidence ??
+        (run?.status === "needs-review" ? "low" : "high");
+      const back = run?.question?.askedFromColumn ?? task.askedFromColumn ?? null;
+      setAnswerIntent({
+        taskId: task.id,
+        taskTitle: task.title,
+        agentLabel: agentLabel(agents, task.agentId),
+        question,
+        confidence,
+        returnColumnTitle: back ? columnTitle(dataRef.current?.columns ?? [], back) : null,
+        turns: run?.turns ?? task.dispatchTurns ?? 1,
       });
     },
-    []
+    [agents, runs]
+  );
+
+  const markDone = useCallback(
+    async (taskId: number) => {
+      try {
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "resolve", taskId, outcome: "done" }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          notifyError(
+            "Could not mark it done",
+            body?.error || `The gateway refused (${res.status}).`,
+            "Tasks"
+          );
+        }
+      } catch (err) {
+        notifyError(
+          "Could not mark it done",
+          err instanceof Error ? err.message : String(err),
+          "Tasks"
+        );
+      } finally {
+        await refetchBoard();
+      }
+    },
+    [refetchBoard]
   );
 
   /* ── rendering ─────────────────────────────────── */
@@ -285,7 +467,7 @@ export function TasksView() {
   if (loading) {
     return (
       <SectionLayout>
-        <ScreenLoadingState />
+        <ContentLoadingState />
       </SectionLayout>
     );
   }
@@ -323,6 +505,11 @@ export function TasksView() {
   const completionPct =
     totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
+  // Counts come from live state, not the file: the file is written a beat later.
+  const statusOf = (task: Task) => runs.get(task.id)?.status ?? task.dispatchStatus;
+  const runningTasks = tasks.filter((t) => isRunActive(statusOf(t))).length;
+  const waitingTasks = tasks.filter((t) => isAwaitingUser(statusOf(t))).length;
+
   /* ── Onboarding empty state ── */
   if (totalTasks === 0) {
     return (
@@ -337,13 +524,15 @@ export function TasksView() {
     );
   }
 
+  const detailTask = detailTaskId != null ? tasks.find((t) => t.id === detailTaskId) : undefined;
+
   /* ── Normal board view ── */
   return (
     <SectionLayout>
       {/* Stats header */}
       <div className="shrink-0 space-y-3 px-4 md:px-6 pt-5 pb-4">
-        <div className="flex items-center justify-between">
-          <div className="flex flex-wrap items-center gap-5 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 text-sm">
             <span>
               <strong className="text-xs font-semibold text-foreground">
                 {totalTasks}
@@ -368,24 +557,32 @@ export function TasksView() {
               </strong>{" "}
               <span className="text-muted-foreground">Completion</span>
             </span>
+            {runningTasks > 0 && (
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 animate-enter">
+                <LiveDot />
+                <span className="text-xs text-fg-secondary">
+                  {runningTasks} running
+                </span>
+              </span>
+            )}
+            {waitingTasks > 0 && (
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 animate-enter">
+                <span className="text-xs text-fg-secondary">
+                  {waitingTasks} waiting on you
+                </span>
+              </span>
+            )}
           </div>
           {saveStatus && (
-            <span
-              className={cn(
-                "text-xs",
-                saveStatus === "saving" ? "text-muted-foreground" : "text-success-fg"
-              )}
-            >
+            <span className="shrink-0 text-xs text-muted-foreground">
               {saveStatus === "saving" ? "Saving..." : "Saved"}
             </span>
           )}
         </div>
         <p className="text-xs text-fg-subtle">
-          Source: workspace/kanban.json &bull; {totalTasks} tasks across{" "}
+          {totalTasks} {totalTasks === 1 ? "task" : "tasks"} across{" "}
           {columns.length} columns
-          <span className="ml-2 text-fg-subtle/60 italic select-none" title="You know it's true.">
-            &mdash; added because every dude on X is flexing their Kanban board, so <strong>maybe</strong> it&apos;s not BS after all
-          </span>
+          {!events.connected && " · live updates are reconnecting"}
         </p>
       </div>
 
@@ -397,6 +594,7 @@ export function TasksView() {
       */}
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-6 md:overflow-x-auto md:overflow-y-hidden md:px-6">
         <div
+          ref={boardRef}
           className="kanban-board-grid items-start gap-4 pb-2"
           style={{ "--kanban-column-count": columns.length } as CSSProperties}
         >
@@ -424,7 +622,7 @@ export function TasksView() {
                 e.preventDefault();
                 const taskId = Number(e.dataTransfer.getData("text/plain"));
                 if (taskId && !isNaN(taskId)) {
-                  updateTask(taskId, { column: col.id });
+                  requestMove(taskId, col.id);
                 }
                 setDraggingTaskId(null);
                 setDragOverColumn(null);
@@ -469,15 +667,20 @@ export function TasksView() {
                     setAddingToColumn(null);
                   }}
                   onAddAndRun={(task) => {
-                    if (!data) return;
-                    const maxId = data.tasks.reduce((m, t) => Math.max(m, t.id), 0);
-                    const newId = maxId + 1;
-                    addTask(task);
                     setAddingToColumn(null);
-                    if (task.agentId) {
-                      // Dispatch after a short delay to ensure the task is saved
-                      setTimeout(() => dispatchTask(newId, task.agentId), 700);
+                    if (!task.agentId) {
+                      addTask(task);
+                      return;
                     }
+                    // Queue the run; the save reports the real id and fires it.
+                    autoRun.current = {
+                      taskId: null,
+                      agentId: task.agentId,
+                      assignee: task.dispatchAssignee ?? "agent",
+                    };
+                    addTask(task, (id) => {
+                      if (autoRun.current) autoRun.current.taskId = id;
+                    });
                   }}
                   onCancel={() => setAddingToColumn(null)}
                 />
@@ -491,7 +694,7 @@ export function TasksView() {
                       ? "border-border-strong text-fg-secondary bg-muted-foreground/5"
                       : "border-foreground/10 text-fg-subtle"
                   )}>
-                    {isDragTarget ? "Drop here" : "No tasks"}
+                    {isDragTarget ? "Drop here" : "Nothing here yet"}
                   </div>
                 ) : (
                   colTasks.map((task) =>
@@ -512,28 +715,49 @@ export function TasksView() {
                         }}
                       />
                     ) : (
-                      <TaskCard
-                        key={task.id}
-                        task={task}
-                        columns={columns}
-                        agents={agents}
-                        onEdit={() => setEditingTask(task.id)}
-                        onMove={(dir) => moveTask(task.id, dir)}
-                        onDelete={() => deleteTask(task.id)}
-                        onOpenDetail={() => setDetailTaskId(task.id)}
-                        onAttachmentClick={(url) => setLightboxImage(url)}
-                        onDispatch={(agentId) => dispatchTask(task.id, agentId)}
-                        isDispatching={dispatchingTaskIds.has(task.id)}
-                        isDragging={draggingTaskId === task.id}
-                        onDragStart={() => setDraggingTaskId(task.id)}
-                        onDragEnd={() => { setDraggingTaskId(null); setDragOverColumn(null); }}
-                        isRenaming={renamingTaskId === task.id}
-                        onStartRename={() => setRenamingTaskId(task.id)}
-                        onRename={(title) => {
-                          if (title !== task.title) updateTask(task.id, { title });
-                          setRenamingTaskId(null);
-                        }}
-                      />
+                      /* data-task-id is what the flip animation tracks. */
+                      <div key={task.id} data-task-id={task.id} className="min-w-0">
+                        <TaskCard
+                          task={task}
+                          columns={columns}
+                          agents={agents}
+                          onEdit={() => setEditingTask(task.id)}
+                          onMove={(dir) => moveTaskByStep(task.id, dir)}
+                          onDelete={() => deleteTask(task.id)}
+                          onOpenDetail={() => setDetailTaskId(task.id)}
+                          onAttachmentClick={(url) => setLightboxImage(url)}
+                          onDispatch={() => {
+                            if (task.agentId && task.dispatchStatus && task.dispatchStatus !== "idle") {
+                              void rerun(task);
+                            } else {
+                              setDispatchIntent({
+                                task,
+                                agentId: task.agentId,
+                                assignee: task.dispatchAssignee ?? "agent",
+                              });
+                            }
+                          }}
+                          onAssign={(next) =>
+                            updateTask(task.id, {
+                              agentId: next.agentId,
+                              dispatchAssignee: next.assignee,
+                            })
+                          }
+                          onStop={() => requestStop(task.id)}
+                          onAnswer={() => openAnswer(task)}
+                          onMarkDone={() => void markDone(task.id)}
+                          isDispatching={dispatchingTaskIds.has(task.id)}
+                          isDragging={draggingTaskId === task.id}
+                          onDragStart={() => setDraggingTaskId(task.id)}
+                          onDragEnd={() => { setDraggingTaskId(null); setDragOverColumn(null); }}
+                          isRenaming={renamingTaskId === task.id}
+                          onStartRename={() => setRenamingTaskId(task.id)}
+                          onRename={(title) => {
+                            if (title !== task.title) updateTask(task.id, { title });
+                            setRenamingTaskId(null);
+                          }}
+                        />
+                      </div>
                     )
                   )
                 )}
@@ -545,181 +769,78 @@ export function TasksView() {
       </div>
 
       {/* Task detail popup */}
-      {detailTaskId != null && data && (() => {
-        const task = data.tasks.find((t) => t.id === detailTaskId);
-        if (!task) return null;
-        const column = data.columns.find((c) => c.id === task.column);
-        const columnTitle = column?.title ?? task.column;
-        return (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-            onClick={() => setDetailTaskId(null)}
-          >
-            <div
-              ref={detailFocusTrapRef}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Task details"
-              className="relative w-full max-w-md rounded-xl border border-foreground/10 bg-card shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-start justify-between gap-2 border-b border-foreground/10 px-4 py-3">
-                <h3 className="text-sm font-semibold text-foreground truncate pr-8">
-                  {task.title}
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setDetailTaskId(null)}
-                  className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                  aria-label="Close"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="px-4 py-3 space-y-3 text-sm">
-                {task.description && (
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1">Description</p>
-                    <p className="text-foreground whitespace-pre-wrap">{task.description}</p>
-                  </div>
-                )}
-                <div className="flex flex-wrap gap-x-4 gap-y-1">
-                  <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Priority</span>
-                    <p className={cn("font-medium capitalize", PRIORITY_TEXT[task.priority] || "text-muted-foreground")}>
-                      {task.priority}
-                    </p>
-                  </div>
-                  {task.agentId && (
-                    <div>
-                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Agent</span>
-                      <p className="text-foreground">
-                        {(() => {
-                          const ag = agents.find((a) => a.id === task.agentId);
-                          return ag ? `${ag.emoji} ${ag.name}` : task.agentId;
-                        })()}
-                      </p>
-                    </div>
-                  )}
-                  {task.assignee && (
-                    <div>
-                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Assignee</span>
-                      <p className="text-foreground">{task.assignee}</p>
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</span>
-                    <p className="text-foreground">{columnTitle}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">ID</span>
-                    <p className="text-muted-foreground font-mono text-xs">{task.id}</p>
-                  </div>
-                  {task.dispatchStatus && task.dispatchStatus !== "idle" && (
-                    <div>
-                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Dispatch</span>
-                      <p className={cn(
-                        "font-medium capitalize",
-                        task.dispatchStatus === "running" && "text-warning-fg",
-                        task.dispatchStatus === "completed" && "text-success-fg",
-                        task.dispatchStatus === "failed" && "text-danger-fg",
-                      )}>
-                        {task.dispatchStatus}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                {task.dispatchStatus === "failed" && task.dispatchError && (
-                  <div className="rounded-lg border border-danger-border bg-danger-bg p-2">
-                    <p className="text-xs text-danger-fg">{task.dispatchError}</p>
-                  </div>
-                )}
-                {(task as Task & Record<string, unknown>).completedAt != null && (
-                  <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Completed</span>
-                    <p className="text-foreground">
-                      {new Date((task as Task & Record<string, unknown>).completedAt as string | number).toLocaleString(
-                        undefined,
-                        withTimeFormat(
-                          {
-                            year: "numeric",
-                            month: "numeric",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          },
-                          timeFormat,
-                        ),
-                      )}
-                    </p>
-                  </div>
-                )}
-                {task.attachments && task.attachments.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">Attachments</p>
-                    <div className="flex flex-wrap gap-2">
-                      {task.attachments.filter(isImageAttachment).map((path, i) => (
-                        <button
-                          key={`${path}-${i}`}
-                          type="button"
-                          onClick={() => setLightboxImage(attachmentUrl(path))}
-                          aria-label={`View attachment ${i + 1}`}
-                          className="overflow-hidden rounded-lg border border-foreground/10 bg-muted/50 transition-opacity hover:opacity-90 focus:ring-2 focus:ring-border-strong"
-                        >
-                          <img
-                            src={attachmentUrl(path)}
-                            alt=""
-                            className="h-20 w-20 object-cover"
-                          />
-                        </button>
-                      ))}
-                      {task.attachments.filter((p) => !isImageAttachment(p)).length > 0 && (
-                        <span className="text-xs text-muted-foreground self-center">
-                          +{task.attachments.filter((p) => !isImageAttachment(p)).length} file(s)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="flex justify-end gap-2 border-t border-foreground/10 px-4 py-2">
-                {task.agentId && task.dispatchStatus !== "running" && (
-                  <button
-                    type="button"
-                    disabled={dispatchingTaskIds.has(task.id)}
-                    onClick={() => {
-                      dispatchTask(task.id);
-                      setDetailTaskId(null);
-                    }}
-                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-success-fg hover:bg-success-bg transition-colors disabled:opacity-40"
-                  >
-                    <Play className="h-3 w-3" />
-                    {task.dispatchStatus === "failed" ? "Retry" : "Run"}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingTask(task.id);
-                    setDetailTaskId(null);
-                  }}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDetailTaskId(null)}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium bg-muted text-foreground hover:bg-muted/80 transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {detailTask && (
+        <TaskDetailDialog
+          task={detailTask}
+          columns={columns}
+          agents={agents}
+          isDispatching={dispatchingTaskIds.has(detailTask.id)}
+          onClose={() => setDetailTaskId(null)}
+          onEdit={() => {
+            setEditingTask(detailTask.id);
+            setDetailTaskId(null);
+          }}
+          onDispatch={() => {
+            if (detailTask.agentId && detailTask.dispatchStatus && detailTask.dispatchStatus !== "idle") {
+              void rerun(detailTask);
+            } else {
+              setDispatchIntent({
+                task: detailTask,
+                agentId: detailTask.agentId,
+                assignee: detailTask.dispatchAssignee ?? "agent",
+              });
+            }
+          }}
+          onAssign={(next) =>
+            updateTask(detailTask.id, {
+              agentId: next.agentId,
+              dispatchAssignee: next.assignee,
+            })
+          }
+          onStop={() => requestStop(detailTask.id)}
+          onAnswer={() => openAnswer(detailTask)}
+          onMarkDone={() => void markDone(detailTask.id)}
+          onAttachmentClick={(url) => setLightboxImage(url)}
+        />
+      )}
+
+      {/* Handing a card to an agent */}
+      {dispatchIntent && (
+        <DispatchDialog
+          intent={dispatchIntent}
+          agents={agents}
+          onClose={() => setDispatchIntent(null)}
+          onDispatch={async (opts) => {
+            // Remember the choice on the card so a later re-run needs no dialog.
+            updateTask(dispatchIntent.task.id, {
+              agentId: opts.agentId,
+              dispatchAssignee: opts.assignee,
+            });
+            return sendDispatch(dispatchIntent.task.id, opts);
+          }}
+        />
+      )}
+
+      {/* Answering a question — the card resumes where it left off */}
+      {answerIntent && (
+        <AnswerDialog
+          intent={answerIntent}
+          onClose={() => setAnswerIntent(null)}
+          onResumed={() => void refetchBoard()}
+        />
+      )}
+
+      {/* Stopping a run — always confirmed, outcome always reported */}
+      {stopIntent && (
+        <StopRunDialog
+          intent={stopIntent}
+          onStopped={(moveToColumnId) => {
+            if (moveToColumnId) updateTask(stopIntent.taskId, { column: moveToColumnId });
+            else void refetchBoard();
+          }}
+          onClose={() => setStopIntent(null)}
+        />
+      )}
 
       {/* Image lightbox */}
       {lightboxImage && (
@@ -743,6 +864,7 @@ export function TasksView() {
             >
               <X className="h-5 w-5" />
             </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={lightboxImage}
               alt="Attachment"
@@ -752,261 +874,6 @@ export function TasksView() {
         </div>
       )}
     </SectionLayout>
-  );
-}
-
-/* ── TaskCard ────────────────────────────────────── */
-
-function TaskCard({
-  task,
-  columns,
-  agents,
-  onEdit,
-  onMove,
-  onDelete,
-  onOpenDetail,
-  onAttachmentClick,
-  onDispatch,
-  isDispatching,
-  isDragging,
-  onDragStart,
-  onDragEnd,
-  isRenaming,
-  onStartRename,
-  onRename,
-}: {
-  task: Task;
-  columns: Column[];
-  agents: AgentInfo[];
-  onEdit: () => void;
-  onMove: (dir: "left" | "right") => void;
-  onDelete: () => void;
-  onOpenDetail?: () => void;
-  onAttachmentClick?: (url: string) => void;
-  onDispatch?: (agentId?: string) => void;
-  isDispatching?: boolean;
-  isDragging: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  isRenaming: boolean;
-  onStartRename: () => void;
-  onRename: (title: string) => void;
-}) {
-  const colIdx = columns.findIndex((c) => c.id === task.column);
-  const canLeft = colIdx > 0;
-  const canRight = colIdx < columns.length - 1;
-  const [renameValue, setRenameValue] = useState(task.title);
-  const renameRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isRenaming) {
-      queueMicrotask(() => setRenameValue(task.title));
-      setTimeout(() => {
-        renameRef.current?.focus();
-        renameRef.current?.select();
-      }, 0);
-    }
-  }, [isRenaming, task.title]);
-
-  return (
-    <div
-      className={cn(
-        "group min-w-0 rounded-xl border border-foreground/10 bg-card p-3.5 shadow-sm transition-all hover:border-foreground/15 hover:shadow-md",
-        isDragging && "opacity-40 scale-95",
-        !isRenaming && "cursor-grab active:cursor-grabbing"
-      )}
-      draggable={!isRenaming}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", String(task.id));
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      onClick={() => !isRenaming && onOpenDetail?.()}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (!isRenaming && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          onOpenDetail?.();
-        }
-      }}
-    >
-      <div className="flex items-start gap-2">
-        <GripVertical className="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle transition-colors group-hover:text-fg-subtle" />
-        <div
-          className={cn(
-            "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-            PRIORITY_COLORS[task.priority] || "bg-muted-foreground"
-          )}
-        />
-        <div className="min-w-0 flex-1">
-          {isRenaming ? (
-            <input
-              ref={renameRef}
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onRename(renameValue.trim() || task.title);
-                if (e.key === "Escape") onRename(task.title);
-              }}
-              onBlur={() => onRename(renameValue.trim() || task.title)}
-              className="w-full bg-transparent text-sm font-medium text-foreground outline-none border-b border-border-strong pb-0.5"
-            />
-          ) : (
-            <p
-              className="break-words text-sm font-medium text-foreground"
-              onDoubleClick={(e) => {
-                e.preventDefault();
-                onStartRename();
-              }}
-              title="Double-click to rename"
-            >
-              {task.title}
-            </p>
-          )}
-          {task.description && !isRenaming && (
-            <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
-              {task.description}
-            </p>
-          )}
-          {task.attachments && task.attachments.length > 0 && isImageAttachment(task.attachments[0]) && !isRenaming && (
-            <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5">
-              {task.attachments.filter(isImageAttachment).slice(0, 3).map((path, i) => (
-                <button
-                  key={`${path}-${i}`}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAttachmentClick?.(attachmentUrl(path));
-                  }}
-                  className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-foreground/10 bg-muted/50 object-cover transition-opacity hover:opacity-90 focus:ring-2 focus:ring-border-strong"
-                >
-                  <img
-                    src={attachmentUrl(path)}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                </button>
-              ))}
-              {task.attachments.filter(isImageAttachment).length > 3 && (
-                <span className="flex h-14 shrink-0 items-center rounded-md bg-muted/50 px-2 text-xs text-muted-foreground">
-                  +{task.attachments.filter(isImageAttachment).length - 3}
-                </span>
-              )}
-            </div>
-          )}
-          <div className="mt-2 flex items-center gap-2 text-xs">
-            <span
-              className={cn(
-                "font-medium capitalize",
-                PRIORITY_TEXT[task.priority] || "text-muted-foreground"
-              )}
-            >
-              {task.priority}
-            </span>
-            {task.agentId && (() => {
-              const ag = agents.find((a) => a.id === task.agentId);
-              return (
-                <>
-                  <span className="text-fg-subtle">&bull;</span>
-                  <span className="inline-flex items-center gap-1 text-muted-foreground" title={`Agent: ${task.agentId}`}>
-                    <span>{ag?.emoji || "🤖"}</span>
-                    <span className="truncate max-w-[80px]">{ag?.name || task.agentId}</span>
-                  </span>
-                </>
-              );
-            })()}
-            {task.assignee && !task.agentId && (
-              <>
-                <span className="text-fg-subtle">&bull;</span>
-                <span className="text-muted-foreground">{task.assignee}</span>
-              </>
-            )}
-            {task.dispatchStatus === "running" && (
-              <>
-                <span className="text-fg-subtle">&bull;</span>
-                <span className="inline-flex items-center gap-1 text-warning-fg">
-                  <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
-                  Running
-                </span>
-              </>
-            )}
-            {task.dispatchStatus === "failed" && (
-              <>
-                <span className="text-fg-subtle">&bull;</span>
-                <span className="inline-flex items-center gap-1 text-danger-fg" title={task.dispatchError || "Failed"}>
-                  <AlertCircle className="h-3 w-3" />
-                  Failed
-                </span>
-              </>
-            )}
-            {task.dispatchStatus === "completed" && (
-              <>
-                <span className="text-fg-subtle">&bull;</span>
-                <span className="inline-flex items-center gap-1 text-success-fg">
-                  <CheckCircle className="h-3 w-3" />
-                  Done
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Action bar -- visible on hover */}
-      <div
-        className="mt-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          disabled={!canLeft}
-          onClick={() => onMove("left")}
-          className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary disabled:opacity-30"
-          title="Move left"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          disabled={!canRight}
-          onClick={() => onMove("right")}
-          className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary disabled:opacity-30"
-          title="Move right"
-        >
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-        <div className="flex-1" />
-        {task.agentId && task.dispatchStatus !== "running" && (
-          <button
-            type="button"
-            disabled={isDispatching}
-            onClick={() => onDispatch?.()}
-            className="rounded p-1 text-success-fg transition-colors hover:bg-success-bg hover:text-success-fg disabled:opacity-40"
-            title={task.dispatchStatus === "failed" ? "Retry dispatch" : "Run with agent"}
-          >
-            {isDispatching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onEdit}
-          className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary"
-          title="Edit"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="rounded p-1 text-fg-subtle transition-colors hover:bg-danger-bg hover:text-danger-fg"
-          title="Delete"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -1030,6 +897,7 @@ function AddTaskInline({
   const [priority, setPriority] = useState("medium");
   const [assignee, setAssignee] = useState("");
   const [agentId, setAgentId] = useState("");
+  const [runMode, setRunMode] = useState<DispatchAssignee>("agent");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1043,6 +911,7 @@ function AddTaskInline({
     priority,
     assignee: assignee.trim() || undefined,
     agentId: agentId || undefined,
+    dispatchAssignee: agentId ? runMode : undefined,
   });
 
   const submit = () => {
@@ -1060,13 +929,13 @@ function AddTaskInline({
           if (e.key === "Enter") submit();
           if (e.key === "Escape") onCancel();
         }}
-        placeholder="Task title..."
+        placeholder="What needs doing?"
         className="mb-2 w-full bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-fg-subtle"
       />
       <textarea
         value={desc}
         onChange={(e) => setDesc(e.target.value)}
-        placeholder="Description (optional)"
+        placeholder="Add more detail, if it helps"
         rows={2}
         className="mb-2 w-full resize-none bg-transparent text-xs leading-5 text-muted-foreground outline-none placeholder:text-fg-subtle"
       />
@@ -1077,8 +946,8 @@ function AddTaskInline({
           className="rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none"
         >
           {PRIORITIES.map((p) => (
-            <option key={p} value={p}>
-              {p}
+            <option key={p.value} value={p.value}>
+              {p.label}
             </option>
           ))}
         </select>
@@ -1096,11 +965,12 @@ function AddTaskInline({
             ))}
           </select>
         )}
+        {agentId && <RunModeSelect value={runMode} onChange={setRunMode} />}
         <input
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
           placeholder="Assignee"
-          className="flex-1 rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none placeholder:text-fg-subtle"
+          className="min-w-0 flex-1 rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none placeholder:text-fg-subtle"
         />
       </div>
       <div className="mt-2 flex items-center gap-1.5">
@@ -1108,6 +978,7 @@ function AddTaskInline({
           type="button"
           onClick={onCancel}
           className="rounded p-1 text-muted-foreground hover:text-fg-secondary"
+          aria-label="Cancel"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -1120,21 +991,42 @@ function AddTaskInline({
               onAddAndRun(buildTask());
             }}
             disabled={!title.trim()}
-            className="flex items-center gap-1 rounded bg-success text-primary-foreground px-2.5 py-1 text-xs font-medium transition-colors hover:bg-success disabled:opacity-40"
+            className="flex items-center gap-1 rounded-full bg-primary text-primary-foreground px-2.5 py-1 text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-40"
           >
-            <Play className="h-3 w-3" /> Add & Run
+            <Play className="h-3 w-3" /> Add & run
           </button>
         )}
         <button
           type="button"
           onClick={submit}
           disabled={!title.trim()}
-          className="rounded bg-primary text-primary-foreground px-2.5 py-1 text-xs font-medium transition-colors hover:bg-primary/90 disabled:opacity-40"
+          className="rounded-full border border-border-subtle px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground disabled:opacity-40"
         >
           Add
         </button>
       </div>
     </div>
+  );
+}
+
+/** Where a dispatched task runs — the agent's session, or a fresh isolated one. */
+function RunModeSelect({
+  value,
+  onChange,
+}: {
+  value: DispatchAssignee;
+  onChange: (next: DispatchAssignee) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as DispatchAssignee)}
+      title="Where this task runs"
+      className="rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none"
+    >
+      <option value="agent">Agent session</option>
+      <option value="subagent">Isolated subagent</option>
+    </select>
   );
 }
 
@@ -1382,9 +1274,6 @@ function BoardOnboarding({
   );
 }
 
-/* ── FeatureRow (onboarding) ─────────────────────── */
-
-
 /* ── StepIndicator (init animation) ──────────────── */
 
 function StepIndicator({
@@ -1462,6 +1351,9 @@ function EditTaskInline({
   const [column, setColumn] = useState(task.column);
   const [assignee, setAssignee] = useState(task.assignee || "");
   const [agentId, setAgentId] = useState(task.agentId || "");
+  const [runMode, setRunMode] = useState<DispatchAssignee>(
+    task.dispatchAssignee || "agent"
+  );
 
   const save = () => {
     if (!title.trim()) return;
@@ -1472,6 +1364,7 @@ function EditTaskInline({
       column,
       assignee: assignee.trim() || undefined,
       agentId: agentId || undefined,
+      dispatchAssignee: agentId ? runMode : undefined,
     });
   };
 
@@ -1490,7 +1383,7 @@ function EditTaskInline({
       <textarea
         value={desc}
         onChange={(e) => setDesc(e.target.value)}
-        placeholder="Description"
+        placeholder="Add more detail, if it helps"
         rows={2}
         className="mb-2 w-full resize-none bg-transparent text-xs leading-5 text-muted-foreground outline-none placeholder:text-fg-subtle"
       />
@@ -1501,8 +1394,8 @@ function EditTaskInline({
           className="rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none"
         >
           {PRIORITIES.map((p) => (
-            <option key={p} value={p}>
-              {p}
+            <option key={p.value} value={p.value}>
+              {p.label}
             </option>
           ))}
         </select>
@@ -1531,11 +1424,12 @@ function EditTaskInline({
             ))}
           </select>
         )}
+        {agentId && <RunModeSelect value={runMode} onChange={setRunMode} />}
         <input
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
           placeholder="Assignee"
-          className="flex-1 rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none placeholder:text-fg-subtle"
+          className="min-w-0 flex-1 rounded border border-foreground/10 bg-muted px-2 py-1 text-xs text-muted-foreground outline-none placeholder:text-fg-subtle"
         />
       </div>
       <div className="mt-3 flex items-center gap-1.5">
@@ -1560,7 +1454,7 @@ function EditTaskInline({
           type="button"
           onClick={save}
           disabled={!title.trim()}
-          className="flex items-center gap-1 rounded bg-primary text-primary-foreground px-2.5 py-1 text-xs font-medium transition-colors hover:bg-primary/90 disabled:opacity-40"
+          className="flex items-center gap-1 rounded-full bg-primary text-primary-foreground px-2.5 py-1 text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           <Check className="h-3 w-3" /> Save
         </button>

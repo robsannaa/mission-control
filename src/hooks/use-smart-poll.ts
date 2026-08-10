@@ -11,6 +11,12 @@ type UseSmartPollOptions = {
   enabled?: boolean;
   /** Fire immediately on mount. Default true. */
   immediate?: boolean;
+  /**
+   * Floor for `intervalMs`. Defaults to 5s, which is right for background
+   * dashboards. A surface that is actively watching one thing happen — a task
+   * run streaming its steps — can lower it deliberately.
+   */
+  minIntervalMs?: number;
 };
 
 /**
@@ -26,18 +32,28 @@ export function useSmartPoll(
   fn: () => void | Promise<void>,
   options: UseSmartPollOptions = {},
 ) {
-  const { intervalMs: rawIntervalMs = 5000, sseActive = false, enabled = true, immediate = true } = options;
-  const intervalMs = Math.max(rawIntervalMs, MIN_POLL_INTERVAL_MS);
+  const {
+    intervalMs: rawIntervalMs = 5000,
+    sseActive = false,
+    enabled = true,
+    immediate = true,
+    minIntervalMs = MIN_POLL_INTERVAL_MS,
+  } = options;
+  const intervalMs = Math.max(rawIntervalMs, minIntervalMs);
 
   const fnRef = useRef(fn);
   fnRef.current = fn;
   const sseRef = useRef(sseActive);
   sseRef.current = sseActive;
+  // Read through a ref: `tick` is created once, so a closed-over `enabled`
+  // would freeze at its first value and never start polling when it flips on.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   const inFlight = useRef(false);
 
   const tick = useCallback(async () => {
     if (inFlight.current) return;
-    if (!enabled) return;
+    if (!enabledRef.current) return;
     if (document.visibilityState !== "visible") return;
     if (sseRef.current) return;
     inFlight.current = true;

@@ -54,6 +54,28 @@ type PendingRequest = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+/**
+ * A frame the gateway pushed at us rather than answered us with.
+ *
+ * Three synthetic events are mixed in alongside the gateway's own so a consumer
+ * can drive a state machine off one stream:
+ *
+ *   - `rpc.connected`    — handshake completed; any prior gap is over.
+ *   - `rpc.disconnected` — socket died; everything in flight is now unknown.
+ *   - `rpc.result`       — a *second* `res` on an id we already resolved. The
+ *     `agent` RPC answers twice: once with `{status:"accepted"}` and again, when
+ *     the run ends, with the payload text, usage and cost. The first answer
+ *     deletes the pending entry, so without this the second is dropped on the
+ *     floor. Republishing it as an event captures the terminal result for free —
+ *     no second round-trip, and no request held open across the whole run.
+ */
+export type GatewayPushEvent = {
+  event: string;
+  payload: Record<string, unknown>;
+};
+
+export type GatewayEventSink = (event: GatewayPushEvent) => void;
+
 type DeviceIdentity = {
   deviceId: string;
   publicKeyPem: string;
@@ -228,6 +250,7 @@ export class GatewayRpcClient {
   private advertisedMethods = new Set<string>();
   private grantedScopes: string[] = [];
   private pending = new Map<string, PendingRequest>();
+  private eventSinks = new Set<GatewayEventSink>();
   private seq = 0;
   private readonly token: string;
   private readonly password: string;
@@ -253,6 +276,46 @@ export class GatewayRpcClient {
   /** Whether the gateway advertised this method in `hello-ok` (advisory). */
   advertisesMethod(method: string): boolean {
     return this.advertisedMethods.has(method);
+  }
+
+  /**
+   * Receive every pushed frame on this connection.
+   *
+   * The gateway fans `task`, `agent` and `chat` events out to any authenticated
+   * operator connection with no subscribe call, so registering a sink is the
+   * whole of "subscribing". Returns an unsubscribe function.
+   */
+  addEventSink(sink: GatewayEventSink): () => void {
+    this.eventSinks.add(sink);
+    return () => {
+      this.eventSinks.delete(sink);
+    };
+  }
+
+  /** Whether the socket is open and past the handshake. */
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN && this.connectRequestId === null;
+  }
+
+  /**
+   * Open the socket without issuing a request. An event consumer needs the
+   * connection itself, not an answer, and paying for a throwaway RPC just to
+   * force a connect would put load on the gateway for nothing.
+   */
+  async ensureConnected(timeout = 15000): Promise<void> {
+    await this.connect(timeout);
+  }
+
+  private emitEvent(event: string, payload: Record<string, unknown>): void {
+    for (const sink of this.eventSinks) {
+      try {
+        sink({ event, payload });
+      } catch {
+        // A broken consumer must never take down the socket that feeds
+        // everybody else.
+        this.eventSinks.delete(sink);
+      }
+    }
   }
 
   async request<T>(
@@ -372,14 +435,19 @@ export class GatewayRpcClient {
     }
 
     if (message.type === "event") {
+      const payload = (message as GatewayEventMessage).payload;
       if (message.event === "connect.challenge") {
-        const payload = (message as GatewayEventMessage).payload;
         const nonce =
           payload && typeof payload.nonce === "string" ? payload.nonce.trim() : null;
         if (nonce) {
           this.connectNonce = nonce;
         }
         this.sendConnectRequest();
+        // Handshake plumbing, not news about the system. Keep it off the bus.
+        return;
+      }
+      if (message.event) {
+        this.emitEvent(message.event, isRecord(payload) ? payload : {});
       }
       return;
     }
@@ -401,6 +469,7 @@ export class GatewayRpcClient {
           return;
         }
         this.connectResolve?.();
+        this.emitEvent("rpc.connected", { scopes: [...this.grantedScopes] });
       } else {
         this.connectReject?.(this.normalizeGatewayError(message.error));
       }
@@ -409,6 +478,12 @@ export class GatewayRpcClient {
 
     const pending = message.id ? this.pending.get(message.id) : undefined;
     if (!pending || !message.id) {
+      // No pending entry means we already answered this id. For most methods
+      // that is a duplicate to ignore, but `agent` deliberately answers twice:
+      // the late frame is the finished run, carrying its text, usage and cost.
+      if (message.ok && isRecord(message.payload) && message.payload.runId) {
+        this.emitEvent("rpc.result", message.payload);
+      }
       return;
     }
 
@@ -542,6 +617,7 @@ export class GatewayRpcClient {
     this.advertisedMethods.clear();
     this.grantedScopes = [];
     this.closeSocket();
+    this.emitEvent("rpc.disconnected", { reason: error.message });
   }
 
   private clearConnectState(): void {

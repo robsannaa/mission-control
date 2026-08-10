@@ -14,11 +14,18 @@
  *      works when the dashboard cannot authenticate as a local operator).
  */
 
-import { GatewayRpcClient, GatewayRpcError } from "./gateway-rpc";
+import { GatewayRpcClient, GatewayRpcError, type GatewayEventSink } from "./gateway-rpc";
 import { invalidateGatewayToken } from "./paths";
 
 /** Cooldown before retrying the WebSocket path after a transport failure. */
 const WS_RETRY_COOLDOWN_MS = 15_000;
+
+/**
+ * How often a channel with live event subscribers checks that the socket is
+ * still up. Events only arrive while a connection exists, and the RPC path
+ * reconnects lazily — nobody would notice a dead socket until the next request.
+ */
+const EVENT_KEEPALIVE_MS = 3_000;
 
 /**
  * Whether a failure means "we never reached the gateway" (worth falling back to
@@ -53,10 +60,30 @@ function isAuthFailure(err: unknown): boolean {
   return msg.includes("unauthorized") || msg.includes("token mismatch");
 }
 
+export type GatewayEventsStatus = {
+  /** Whether pushed events are reaching us right now. */
+  connected: boolean;
+  /** How many consumers are listening. Zero means the keepalive is idle. */
+  subscribers: number;
+  connectedSince: number | null;
+  lastEventAt: number | null;
+  lastError: string | null;
+};
+
 export class GatewayRpcChannel {
   private client: GatewayRpcClient | null = null;
   private wsUnavailableUntil = 0;
   private lastWsError: string | null = null;
+
+  /** Event fan-out state — see `subscribeEvents`. */
+  private eventSinks = new Set<GatewayEventSink>();
+  private detachClientSink: (() => void) | null = null;
+  private keepAlive: ReturnType<typeof setInterval> | null = null;
+  private eventsConnected = false;
+  private eventsConnectedSince: number | null = null;
+  private lastEventAt: number | null = null;
+  private lastEventError: string | null = null;
+  private connecting = false;
 
   constructor(
     private readonly gatewayUrl?: string,
@@ -74,6 +101,27 @@ export class GatewayRpcChannel {
   private getClient(): GatewayRpcClient {
     if (!this.client) {
       this.client = new GatewayRpcClient(this.gatewayUrl, this.token);
+      // A fresh client is a fresh socket with no sinks on it. Re-bridge, or the
+      // first transport hiccup would silently end event delivery for good.
+      this.detachClientSink = this.client.addEventSink((event) => {
+        this.lastEventAt = Date.now();
+        if (event.event === "rpc.connected") {
+          this.eventsConnected = true;
+          this.eventsConnectedSince = Date.now();
+          this.lastEventError = null;
+        } else if (event.event === "rpc.disconnected") {
+          this.eventsConnected = false;
+          this.eventsConnectedSince = null;
+          this.lastEventError = String(event.payload.reason ?? "socket closed");
+        }
+        for (const sink of this.eventSinks) {
+          try {
+            sink(event);
+          } catch {
+            this.eventSinks.delete(sink);
+          }
+        }
+      });
     }
     return this.client;
   }
@@ -82,7 +130,72 @@ export class GatewayRpcChannel {
     this.lastWsError = err instanceof Error ? err.message : String(err);
     this.wsUnavailableUntil = Date.now() + WS_RETRY_COOLDOWN_MS;
     // Drop the client so the next attempt reconnects from scratch.
+    this.detachClientSink?.();
+    this.detachClientSink = null;
     this.client = null;
+    this.eventsConnected = false;
+    this.eventsConnectedSince = null;
+  }
+
+  /* ── pushed events ──────────────────────────────── */
+
+  /**
+   * Listen to everything the gateway pushes on this connection.
+   *
+   * There is no subscribe RPC: `task`, `agent` and `chat` events reach any
+   * authenticated operator connection automatically. What this adds is the part
+   * the request path never needed — keeping the socket up. Returns an
+   * unsubscribe; the keepalive stops when the last consumer leaves.
+   */
+  subscribeEvents(sink: GatewayEventSink): () => void {
+    this.eventSinks.add(sink);
+    this.startKeepAlive();
+    return () => {
+      this.eventSinks.delete(sink);
+      if (this.eventSinks.size === 0) this.stopKeepAlive();
+    };
+  }
+
+  getEventsStatus(): GatewayEventsStatus {
+    return {
+      connected: this.eventsConnected && this.getClient().isConnected(),
+      subscribers: this.eventSinks.size,
+      connectedSince: this.eventsConnectedSince,
+      lastEventAt: this.lastEventAt,
+      lastError: this.lastEventError,
+    };
+  }
+
+  private startKeepAlive(): void {
+    if (this.keepAlive) return;
+    void this.pokeConnection();
+    this.keepAlive = setInterval(() => void this.pokeConnection(), EVENT_KEEPALIVE_MS);
+    // Node keeps the process alive for pending timers; a background reconnect
+    // loop is not a reason to hold a server open.
+    this.keepAlive.unref?.();
+  }
+
+  private stopKeepAlive(): void {
+    if (!this.keepAlive) return;
+    clearInterval(this.keepAlive);
+    this.keepAlive = null;
+  }
+
+  /** Reconnect if the socket is down. Cheap and idempotent when it is up. */
+  private async pokeConnection(): Promise<void> {
+    if (this.connecting) return;
+    const client = this.getClient();
+    if (client.isConnected()) return;
+    this.connecting = true;
+    try {
+      await client.ensureConnected(15_000);
+    } catch (err) {
+      this.eventsConnected = false;
+      this.eventsConnectedSince = null;
+      this.lastEventError = err instanceof Error ? err.message : String(err);
+    } finally {
+      this.connecting = false;
+    }
   }
 
   /**
@@ -140,14 +253,24 @@ export class GatewayRpcChannel {
 
 // ── Process-wide singleton ────────────────────────
 
-let _channel: GatewayRpcChannel | null = null;
+/**
+ * Parked on globalThis, not a module local.
+ *
+ * The channel now owns a long-lived socket and a set of event subscribers, so
+ * "one per module instance" is not good enough: a `next dev` hot reload would
+ * mint a second channel with a second socket while every existing subscriber
+ * kept listening to the first. Cards would go quiet with nothing in the logs to
+ * say why. One channel per process, whatever the module registry does.
+ */
+type ChannelHolder = { __mcGatewayRpcChannel?: GatewayRpcChannel };
 
 export function getGatewayRpcChannel(): GatewayRpcChannel {
-  if (!_channel) _channel = new GatewayRpcChannel();
-  return _channel;
+  const holder = globalThis as ChannelHolder;
+  holder.__mcGatewayRpcChannel ??= new GatewayRpcChannel();
+  return holder.__mcGatewayRpcChannel;
 }
 
 /** Reset the singleton (for testing). */
 export function resetGatewayRpcChannel(): void {
-  _channel = null;
+  delete (globalThis as ChannelHolder).__mcGatewayRpcChannel;
 }
