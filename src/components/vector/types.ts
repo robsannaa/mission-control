@@ -20,7 +20,11 @@ export type AgentMemory = {
     sourceCounts: SourceCount[];
     cache: { enabled: boolean; entries: number };
     fts: { enabled: boolean; available: boolean };
-    vector: { enabled: boolean; available: boolean; extensionPath?: string; dims?: number };
+    // `available` is only populated by `memory status --deep` (a real extra
+    // provider round-trip). Plain status — what this page uses to stay fast —
+    // leaves it undefined, which means "not probed," not "unavailable." Never
+    // treat the two the same.
+    vector: { enabled: boolean; available?: boolean; extensionPath?: string; dims?: number };
     batch: {
       enabled: boolean;
       failures: number;

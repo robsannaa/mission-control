@@ -107,7 +107,6 @@ type TryTabProps = {
   totalFiles: number;
   totalChunks: number;
   anyDirty: boolean;
-  degraded: boolean;
   onGoToSettings: () => void;
   onReindexAll: () => void;
   reindexingAll: boolean;
@@ -121,7 +120,6 @@ export function TryTab({
   totalFiles,
   totalChunks,
   anyDirty,
-  degraded,
   onGoToSettings,
   onReindexAll,
   reindexingAll,
@@ -211,23 +209,6 @@ export function TryTab({
             className="rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-border-strong hover:bg-accent"
           >
             Set it up
-          </button>
-        </Panel>
-      ) : degraded ? (
-        <Panel className="flex flex-wrap items-center justify-between gap-3 border-warning-border bg-warning-bg p-4">
-          <div className="flex items-center gap-2.5">
-            <StatusDot tone="attention" />
-            <p className="text-sm text-warning-fg">
-              {providerLabel} isn&apos;t responding right now, so semantic search is paused. Keyword search may still work.
-            </p>
-          </div>
-          <button
-            type="button"
-            data-control-radius="pill"
-            onClick={onGoToSettings}
-            className="rounded-full border border-warning-border bg-warning-bg px-3.5 py-1.5 text-xs font-medium text-warning-fg transition-colors hover:bg-warning-bg/70"
-          >
-            Check settings
           </button>
         </Panel>
       ) : anyDirty ? (
@@ -360,13 +341,10 @@ export function TryTab({
       {isConfigured && !lastQuery && (
         <Disclosure
           label={`Browse indexed files (${totalFiles})`}
-          onClick={fetchDocsOnce}
+          onOpenChange={(open) => { if (open) fetchDocsOnce(); }}
           className="px-1"
         >
-          <div
-            onMouseEnter={fetchDocsOnce}
-            className="max-h-64 overflow-auto rounded-lg border border-border bg-card"
-          >
+          <div className="max-h-64 overflow-auto rounded-lg border border-border bg-card">
             {docsLoading || docs === null ? (
               <div className="px-3 py-3 text-xs text-muted-foreground">Loading…</div>
             ) : docs.length === 0 ? (

@@ -29,9 +29,13 @@ type MemoryStatus = {
     sourceCounts: { source: string; files: number; chunks: number }[];
     cache: { enabled: boolean; entries: number };
     fts: { enabled: boolean; available: boolean };
+    // `available` is only populated by `memory status --deep` (an extra
+    // provider round-trip). Plain status leaves it undefined — "not probed,"
+    // not "unavailable." This route intentionally never asks for --deep, to
+    // stay fast, so treat this as optional everywhere it's read.
     vector: {
       enabled: boolean;
-      available: boolean;
+      available?: boolean;
       extensionPath?: string;
       dims?: number;
     };
@@ -157,6 +161,7 @@ async function patchMemorySearchConfig(
   baseHash: string,
   memorySearch: Record<string, unknown>,
   restartDelayMs?: number,
+  replacePaths?: string[],
 ): Promise<void> {
   const patchRaw = JSON.stringify({
     agents: {
@@ -170,6 +175,7 @@ async function patchMemorySearchConfig(
       raw: patchRaw,
       baseHash,
       ...(typeof restartDelayMs === "number" ? { restartDelayMs } : {}),
+      ...(replacePaths && replacePaths.length > 0 ? { replacePaths } : {}),
     },
     15000,
   );
@@ -698,10 +704,20 @@ export async function POST(request: NextRequest) {
         if (normalizedExtra.length > 0) {
           nextMemorySearch.extraPaths = normalizedExtra;
         } else {
-          delete nextMemorySearch.extraPaths;
+          // `config.patch` is a JSON merge patch (RFC 7386): omitting a key
+          // means "leave it alone," not "delete it." Clearing the last extra
+          // path needs an explicit null, or the previous list silently survives.
+          nextMemorySearch.extraPaths = null;
         }
 
-        await patchMemorySearchConfig(hash, nextMemorySearch);
+        // This action always sends the user's complete, intended selection —
+        // a shrink or a clear is a deliberate replacement, not accidental data
+        // loss, so tell config.patch to allow it instead of having it reject
+        // the write outright (`config.patch would remove entries from array
+        // path(s)`).
+        await patchMemorySearchConfig(hash, nextMemorySearch, undefined, [
+          "agents.defaults.memorySearch.extraPaths",
+        ]);
 
         let reindexWarning: string | undefined;
         if (body.reindex !== false) {
