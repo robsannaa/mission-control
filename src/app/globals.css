@@ -373,99 +373,111 @@
 }
 
 /* ══════════════════════════════════════════════════════════════
-   LIGHT — "paper"
+   LIGHT — "paper"  (retuned 1:1 to elevenlabs.io / ui.elevenlabs.io —
+   see globals.css retune notes: warmth is now confined to the light
+   surface + hairline-border band; all text and strong ink is neutral
+   achromatic gray, matching ElevenLabs' own product UI tokens.)
    Body text contrast (verified):
-     foreground        #141312 on #FAF9F7 = 17.6:1  AAA
-     fg-secondary      #504D47 on #FFFFFF =  8.4:1  AAA
-     muted-foreground  #6B655D on #FAF9F7 =  5.5:1  AA
-     fg-subtle         #86817A on #FFFFFF =  3.9:1  AA-large / meta
-     success-fg        #0F5F42 on #FFFFFF =  7.3:1  AA
-     warning-fg        #7A4F09 on #FFFFFF =  7.5:1  AA
-     danger-fg         #9E2F24 on #FFFFFF =  7.6:1  AA
-     info-fg           #2E5477 on #FFFFFF =  8.4:1  AA
+     foreground        #0A0A0A on #FDFCFC = 19.3:1  AAA
+     fg-secondary      #404040 on #FFFFFF = 10.4:1  AAA
+     muted-foreground  #6E6E6E on #FDFCFC =  5.0:1  AA   (4.6:1 on cream #F5F3F1)
+     fg-subtle         #7D7D7D on #FFFFFF =  4.1:1  AA-large / meta
+     success-fg        #0F5F42 on #FFFFFF =  7.7:1  AA
+     warning-fg        #7A4F09 on #FFFFFF =  7.1:1  AA
+     danger-fg         #9E2F24 on #FFFFFF =  7.3:1  AA
+     info-fg           #2E5477 on #FFFFFF =  7.9:1  AA
    ══════════════════════════════════════════════════════════════ */
 :root {
   --radius: 0.5rem;
   --control-radius: 0.375rem;
 
-  /* Neutral ramp — quietest surface (50) → strongest ink (950) */
+  /* Neutral ramp — quietest surface (50) → strongest ink (950).
+     50–300 keep ElevenLabs' authentic cream/hairline warmth
+     (measured live from elevenlabs.io: bg #FDFCFC, card surface
+     #F5F3F1 "bg-cream", border/deep-surface #EBE8E4). 400–950 are
+     fully achromatic (R=G=B), matching ui.elevenlabs.io's actual
+     product tokens (muted-foreground #737373, primary #171717,
+     foreground #0A0A0A) — this is what removes the yellow/brown
+     cast from body text, icons and strong borders. */
   --n-50: #f5f3f1;
   --n-100: #f0eee9;
-  --n-200: #e6e3dd;
-  --n-300: #d4cfc7;
-  --n-400: #726d65;
-  --n-500: #6b655d;
-  --n-600: #504d47;
-  --n-700: #3a3833;
-  --n-800: #24221f;
-  --n-900: #141312;
-  --n-950: #0b0a09;
+  --n-200: #ebe8e4;
+  --n-300: #d9d5cf;
+  --n-400: #a3a3a3;
+  --n-500: #737373;
+  --n-600: #525252;
+  --n-700: #404040;
+  --n-800: #262626;
+  --n-900: #171717;
+  --n-950: #0a0a0a;
 
   /* Core */
-  --background: #faf9f7;
-  --foreground: #141312;
+  --background: #fdfcfc;
+  --foreground: #0a0a0a;
   --card: #ffffff;
-  --card-foreground: #141312;
+  --card-foreground: #0a0a0a;
   --popover: #ffffff;
-  --popover-foreground: #141312;
-  --primary: #141312;
-  --primary-foreground: #ffffff;
-  --secondary: #efede9;
-  --secondary-foreground: #141312;
+  --popover-foreground: #0a0a0a;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #171717;
   --muted: #f5f3f1;
-  --muted-foreground: #6b655d;
-  --accent: #f2f0ec;
-  --accent-foreground: #141312;
+  --muted-foreground: #6e6e6e;
+  --accent: #f5f5f5;
+  --accent-foreground: #171717;
   --destructive: #b4362a;
 
   /* Borders & inputs */
-  --border: #e6e3dd;
-  --input: #e6e3dd;
-  --ring: rgba(20, 19, 18, 0.30);
+  --border: #ebe8e4;
+  --input: #ebe8e4;
+  --ring: rgba(10, 10, 10, 0.30);
 
   /* Charts — restrained, palette-native */
   --chart-1: #12734f;
   --chart-2: #8a5a0b;
   --chart-3: #35618c;
   --chart-4: #b4362a;
-  --chart-5: #6b655d;
-  --chart-grid: rgba(20, 19, 18, 0.07);
-  --chart-tick: rgba(20, 19, 18, 0.52);
-  --chart-tick-muted: rgba(20, 19, 18, 0.38);
-  --chart-text: rgba(20, 19, 18, 0.78);
-  --chart-muted: #a19b93;
+  --chart-5: #737373;
+  --chart-grid: rgba(10, 10, 10, 0.07);
+  --chart-tick: rgba(10, 10, 10, 0.52);
+  --chart-tick-muted: rgba(10, 10, 10, 0.38);
+  --chart-text: rgba(10, 10, 10, 0.78);
+  --chart-muted: #a3a3a3;
 
-  /* Sidebar — chrome sits one step *behind* the page */
-  --sidebar: #f6f4f1;
-  --sidebar-foreground: #141312;
-  --sidebar-primary: #141312;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ecebe6;
-  --sidebar-accent-foreground: #141312;
-  --sidebar-border: #e6e3dd;
-  --sidebar-ring: rgba(20, 19, 18, 0.16);
+  /* Sidebar — chrome sits one step *behind* the page; neutral gray
+     (ui.elevenlabs.io: sidebar #FAFAFA, sidebar-border #E5E5E5) —
+     distinct from the cream card/surface accent. */
+  --sidebar: #fafafa;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-primary: #171717;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: #f5f5f5;
+  --sidebar-accent-foreground: #171717;
+  --sidebar-border: #e5e5e5;
+  --sidebar-ring: rgba(10, 10, 10, 0.16);
 
   /* Surfaces */
   --surface-0: #ffffff;
-  --surface-1: #faf9f7;
+  --surface-1: #fdfcfc;
   --surface-2: #f5f3f1;
-  --surface-3: #efede9;
+  --surface-3: #f5f5f5;
   --surface-inset: #f5f3f1;
   --surface-overlay: rgba(255, 255, 255, 0.98);
-  --surface-header: rgba(250, 249, 247, 0.88);
+  --surface-header: rgba(253, 252, 252, 0.88);
 
   /* Border ramp */
   --border-subtle: #f0eee9;
-  --border-default: #e6e3dd;
-  --border-strong: #d4cfc7;
-  --border-accent: #b8b2a9;
+  --border-default: #ebe8e4;
+  --border-strong: #d9d5cf;
+  --border-accent: #a3a3a3;
 
   /* Text ramp */
-  --text-primary: #141312;
-  --text-secondary: #504d47;
-  --text-tertiary: #6b655d;
-  --text-quaternary: #726d65;
-  --text-placeholder: #a19b93;
+  --text-primary: #0a0a0a;
+  --text-secondary: #404040;
+  --text-tertiary: #6e6e6e;
+  --text-quaternary: #7d7d7d;
+  --text-placeholder: #a3a3a3;
 
   /* Status */
   --success: #12734f;
@@ -498,22 +510,22 @@
   --accent-brand-on: #ffffff;
 
   /* Elevation — hairline first */
-  --elevation-1: 0 1px 2px rgba(20, 19, 18, 0.04);
-  --elevation-2: 0 1px 2px rgba(20, 19, 18, 0.04), 0 4px 12px rgba(20, 19, 18, 0.05);
-  --elevation-3: 0 2px 4px rgba(20, 19, 18, 0.05), 0 12px 32px rgba(20, 19, 18, 0.08);
+  --elevation-1: 0 1px 2px rgba(10, 10, 10, 0.04);
+  --elevation-2: 0 1px 2px rgba(10, 10, 10, 0.04), 0 4px 12px rgba(10, 10, 10, 0.05);
+  --elevation-3: 0 2px 4px rgba(10, 10, 10, 0.05), 0 12px 32px rgba(10, 10, 10, 0.08);
 
   /* Background wash — ElevenLabs is flat */
   --bg-wash: none;
 
   /* Surface utilities */
   --glass-bg: #ffffff;
-  --glass-bg-subtle: #faf9f7;
+  --glass-bg-subtle: #fdfcfc;
   --glass-bg-strong: #ffffff;
-  --glass-border: #e6e3dd;
+  --glass-border: #ebe8e4;
   --glass-border-subtle: #f0eee9;
   --glass-highlight: transparent;
   --glass-shadow: transparent;
-  --glass-shadow-strong: rgba(20, 19, 18, 0.05);
+  --glass-shadow-strong: rgba(10, 10, 10, 0.05);
   --glass-inner-glow: transparent;
 }
 
