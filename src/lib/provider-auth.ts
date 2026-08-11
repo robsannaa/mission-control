@@ -177,10 +177,22 @@ function truncateProviderError(body: string): string {
   return trimmed.length > 200 ? `${trimmed.slice(0, 200)}...` : trimmed;
 }
 
+export type ProviderTokenCheck = {
+  ok: boolean;
+  error?: string;
+  /**
+   * True when we never got a verdict from the provider — a timeout, a network
+   * error, or a 5xx. The key might be perfectly fine; we just could not reach
+   * the provider to ask. Callers MUST surface this as "try again", never as
+   * "your key is wrong".
+   */
+  unreachable?: boolean;
+};
+
 export async function validateProviderToken(
   provider: string,
   token: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<ProviderTokenCheck> {
   const providerId = String(provider || "").trim().toLowerCase();
   const apiKey = String(token || "").trim();
   const probe = PROVIDER_PROBES[providerId];
@@ -192,39 +204,59 @@ export async function validateProviderToken(
     return { ok: false, error: `Unknown provider: ${providerId}` };
   }
 
-  const url = probe.url;
-
-  try {
-    const res = await fetch(url, {
-      method: probe.method,
-      headers: probe.buildHeaders(apiKey),
-      body: probe.buildBody?.(),
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (res.ok) {
-      return { ok: true };
+  const attempt = async (): Promise<ProviderTokenCheck> => {
+    let res: Response;
+    try {
+      res = await fetch(probe.url, {
+        method: probe.method,
+        headers: probe.buildHeaders(apiKey),
+        body: probe.buildBody?.(),
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch {
+      // Timeout, DNS failure, connection refused — the request never landed,
+      // so the key is unproven, not disproven.
+      return {
+        ok: false,
+        unreachable: true,
+        error: `Couldn't reach ${providerId} — it may be slow or offline right now. Check your connection and try again.`,
+      };
     }
 
-    if (
-      probe.treatClientErrorAsReachable &&
-      !probe.authErrorStatuses?.includes(res.status) &&
-      res.status < 500
-    ) {
+    if (res.ok) return { ok: true };
+
+    // The provider's own servers are struggling. Not the user's key.
+    if (res.status >= 500) {
+      return {
+        ok: false,
+        unreachable: true,
+        error: `${providerId} is having problems right now (HTTP ${res.status}) — this isn't your key. Try again in a moment.`,
+      };
+    }
+
+    // Some providers answer the probe URL with a non-auth 4xx even for a good
+    // key; that still proves the key reached and was accepted.
+    if (probe.treatClientErrorAsReachable && !probe.authErrorStatuses?.includes(res.status)) {
       return { ok: true };
     }
 
     const errBody = truncateProviderError(await res.text().catch(() => ""));
+    const isAuth =
+      probe.authErrorStatuses?.includes(res.status) ?? (res.status === 401 || res.status === 403);
     return {
       ok: false,
-      error: `Invalid API key — ${providerId} returned ${res.status}${errBody ? `: ${errBody}` : ""}`,
+      error: isAuth
+        ? `That ${providerId} API key looks invalid (HTTP ${res.status}). Double-check you pasted the whole key.${errBody ? ` — ${errBody}` : ""}`
+        : `${providerId} rejected the request (HTTP ${res.status})${errBody ? `: ${errBody}` : ""}`,
     };
-  } catch (err) {
-    return {
-      ok: false,
-      error: `Key validation failed: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
+  };
+
+  // One silent retry when we couldn't reach the provider — first-run users must
+  // never be told their key is bad because of a transient hiccup (OpenAI's
+  // /v1/models in particular is flaky).
+  let result = await attempt();
+  if (result.unreachable) result = await attempt();
+  return result;
 }
 
 export async function fetchModelsFromProvider(
