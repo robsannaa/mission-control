@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/dashboard",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Mission Control — open-source OpenClaw GUI and AI agent dashboard for managing local AI agents, models, memory, and skills",
   "keywords": [
     "openclaw",
