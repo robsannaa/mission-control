@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 import { ChevronRight, ExternalLink, Loader2, MessageCircle, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Celebration } from "./celebration";
@@ -23,6 +24,12 @@ type DmRequest = {
   message?: string;
 };
 
+// Stable identity for a pairing request across polls — used both to dedupe
+// and to tell "already pending when we arrived" apart from "just arrived".
+function requestKey(req: DmRequest): string {
+  return `${req.channel}::${req.account || "default"}::${req.code}`;
+}
+
 export function StepChannel({
   onDone,
   onSkip,
@@ -38,10 +45,17 @@ export function StepChannel({
   const [pairing, setPairing] = useState<DmRequest[]>([]);
   const [approving, setApproving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [qrFailed, setQrFailed] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrError, setQrError] = useState(false);
+  const [paired, setPaired] = useState(false);
   // lastInboundAt at the moment we started watching — anything newer is "the first message"
   const inboundBaselineRef = useRef<number | null | undefined>(undefined);
   const wasConnectedRef = useRef(false);
+  // Pairing request ids already pending the moment we reached this step —
+  // those are surfaced for a manual click; anything that shows up *after*
+  // is auto-approved with zero clicks. null until the first pairing poll.
+  const baselineRequestIdsRef = useRef<Set<string> | null>(null);
+  const autoApprovedRef = useRef<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -66,16 +80,63 @@ export function StepChannel({
     }
   }, []);
 
+  // Approves one pairing request. Manual clicks show a spinner on that row;
+  // auto-approvals stay silent and just resolve into the "Paired!" banner.
+  const approveRequest = useCallback(async (req: DmRequest, opts?: { auto?: boolean }) => {
+    const key = requestKey(req);
+    if (!opts?.auto) setApproving(req.code);
+    try {
+      await fetch("/api/pairing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "approve-dm",
+          channel: req.channel,
+          code: req.code,
+          account: req.account,
+        }),
+      });
+      // Optimistically drop it locally; the next poll reconciles with the server.
+      setPairing((prev) => prev.filter((r) => requestKey(r) !== key));
+      if (opts?.auto) setPaired(true);
+    } catch {
+      // Network hiccup: un-mark it so a later poll can retry the auto-approve.
+      if (opts?.auto) autoApprovedRef.current.delete(key);
+    } finally {
+      if (!opts?.auto) setApproving(null);
+    }
+  }, []);
+
   const refreshPairing = useCallback(async () => {
     try {
       const res = await fetch(`/api/pairing?_=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
-      setPairing(Array.isArray(data?.dm) ? data.dm : []);
+      const list: DmRequest[] = Array.isArray(data?.dm) ? data.dm : [];
+
+      if (baselineRequestIdsRef.current === null) {
+        // First poll on this step: whatever is already pending is "stale" —
+        // shown for a manual approve, never auto-approved.
+        baselineRequestIdsRef.current = new Set(list.map(requestKey));
+        setPairing(list);
+        return;
+      }
+
+      const stale = list.filter((req) => baselineRequestIdsRef.current!.has(requestKey(req)));
+      setPairing(stale);
+
+      // Anything new since baseline is a fresh "scan → /start" — pair it
+      // instantly, no click required.
+      for (const req of list) {
+        const key = requestKey(req);
+        if (baselineRequestIdsRef.current.has(key) || autoApprovedRef.current.has(key)) continue;
+        autoApprovedRef.current.add(key);
+        void approveRequest(req, { auto: true });
+      }
     } catch {
       // transient
     }
-  }, []);
+  }, [approveRequest]);
 
   useEffect(() => {
     void refresh();
@@ -116,33 +177,44 @@ export function StepChannel({
     }
   }, [token, connecting]);
 
+  // Manual "Approve" click, for stale (pre-existing) requests only.
   const handleApprove = useCallback(
-    async (req: DmRequest) => {
-      setApproving(req.code);
-      try {
-        await fetch("/api/pairing", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "approve-dm",
-            channel: req.channel,
-            code: req.code,
-            account: req.account,
-          }),
-        });
-        await refreshPairing();
-      } catch {
-        // next poll will re-show it
-      } finally {
-        setApproving(null);
-      }
+    (req: DmRequest) => {
+      void approveRequest(req);
     },
-    [refreshPairing],
+    [approveRequest],
   );
 
   const connected = status?.connected === true;
   const configured = status?.configured === true;
   const deepLink = status?.deepLink;
+
+  // Local QR render (no third-party service — the deep link never leaves
+  // the browser). White quiet-zone forced regardless of theme so a phone
+  // camera has enough contrast to scan it in dark mode too.
+  useEffect(() => {
+    if (!deepLink) {
+      setQrDataUrl(null);
+      setQrError(false);
+      return;
+    }
+    let cancelled = false;
+    setQrError(false);
+    QRCode.toDataURL(deepLink, {
+      width: 192,
+      margin: 1,
+      color: { dark: "#000000", light: "#ffffff" },
+    })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deepLink]);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -233,17 +305,23 @@ export function StepChannel({
 
       {connected && deepLink && (
         <div className={cn(cardClass, "flex items-center gap-4")}>
-          {!qrFailed && (
-            // QR for the phone — third-party render of the public t.me link (no secrets in the URL)
+          {qrDataUrl && !qrError ? (
+            // Rendered locally from the public t.me link — no secrets, no
+            // third-party service. Background is intentionally plain white
+            // (not a theme token): QR codes need a real white quiet zone to
+            // stay scannable by a phone camera, including in dark mode.
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(deepLink)}`}
+              src={qrDataUrl}
               alt={`QR code for ${deepLink}`}
               width={96}
               height={96}
-              className="h-24 w-24 rounded-lg bg-card p-1 ring-1 ring-border"
-              onError={() => setQrFailed(true)}
+              className="h-24 w-24 shrink-0 rounded-lg bg-white p-1.5 ring-1 ring-border"
             />
+          ) : (
+            <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg bg-white p-1.5 ring-1 ring-border">
+              <Loader2 className="h-4 w-4 animate-spin text-fg-subtle" />
+            </div>
           )}
           <div className="min-w-0 space-y-1">
             <p className="text-xs font-semibold text-foreground dark:text-fg-secondary">
@@ -262,7 +340,7 @@ export function StepChannel({
               </a>{" "}
               and send your bot a message.
             </p>
-            {!firstMessage && (
+            {!firstMessage && !paired && (
               <p className="flex items-center gap-1.5 text-[11px] text-fg-subtle">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Waiting for your first message…
@@ -270,6 +348,10 @@ export function StepChannel({
             )}
           </div>
         </div>
+      )}
+
+      {paired && (
+        <Celebration message="Paired! ✅ Your phone is connected to your agent." />
       )}
 
       {firstMessage && (
@@ -320,7 +402,7 @@ export function StepChannel({
         <button
           type="button"
           onClick={() =>
-            onDone({ botUsername: status?.botUsername ?? null, firstMessage })
+            onDone({ botUsername: status?.botUsername ?? null, firstMessage, paired })
           }
           disabled={!connected}
           className={primaryBtnClass}

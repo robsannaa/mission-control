@@ -118,10 +118,13 @@ export function OnboardingWizard({ onComplete }: Props) {
   const activeIdx = VISIBLE_STEP_IDS.indexOf(activeStep);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 dark:bg-black/70 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-[480px] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl shadow-black/30">
+    // Mobile (<640px): a truly full-screen native-app surface — no floating
+    // card, no dimmed backdrop peeking around the edges. sm+: a polished
+    // centered panel over a dimmed backdrop, matching welcome.tsx's feel.
+    <div className="fixed inset-0 z-50 flex flex-col bg-card dark:bg-background sm:items-center sm:justify-center sm:bg-foreground/60 sm:p-4 sm:backdrop-blur-sm sm:dark:bg-black/70">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card sm:max-h-[calc(100vh-2rem)] sm:w-full sm:max-w-[560px] sm:flex-none sm:rounded-2xl sm:border sm:border-border sm:shadow-2xl sm:shadow-black/30">
         {/* Step rail */}
-        <div className="px-8 pt-7 pb-5">
+        <div className="px-5 pt-6 pb-4 sm:px-8 sm:pt-7 sm:pb-5">
           <div className="flex items-center gap-0">
             {VISIBLE_STEP_IDS.map((id, i) => {
               const persisted = state?.steps[id]?.status;
@@ -179,7 +182,7 @@ export function OnboardingWizard({ onComplete }: Props) {
 
         <div className="h-px bg-muted dark:bg-secondary" />
 
-        <div className="max-h-[min(72vh,560px)] overflow-y-auto overscroll-contain px-8 py-7">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:max-h-[min(72vh,560px)] sm:flex-none sm:px-8 sm:py-7">
           {activeStep === "gateway" && (
             <StepGateway
               onDone={(meta) => void advance("gateway", "done", meta)}
