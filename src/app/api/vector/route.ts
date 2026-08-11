@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readdir, readFile, stat, unlink, writeFile } from "fs/promises";
 import { dirname, extname, join, relative, resolve, sep } from "path";
 import { runCliJson, gatewayCall } from "@/lib/openclaw";
+import { describeReindexFailure } from "@/lib/vector-errors";
 import { getOpenClawHome, getDefaultWorkspace } from "@/lib/paths";
 import { gatewayConfigPatch } from "@/lib/gateway-config";
 import { buildModelsSummary } from "@/lib/models-summary";
@@ -481,13 +482,21 @@ export async function POST(request: NextRequest) {
       case "reindex": {
         const agent = body.agent as string | undefined;
         const force = body.force as boolean | undefined;
-        const output = await gatewayMemoryIndex({
-          agent: agent || undefined,
-          force: force || undefined,
-        });
-
-        invalidateVectorCaches();
-        return NextResponse.json({ ok: true, action, output });
+        try {
+          const output = await gatewayMemoryIndex({
+            agent: agent || undefined,
+            force: force || undefined,
+          });
+          invalidateVectorCaches();
+          return NextResponse.json({ ok: true, action, output });
+        } catch (err) {
+          // A reindex can fail for reasons the user can actually act on — a
+          // slow/large memory, no embedding provider, a local model that isn't
+          // running. Surface which one in plain words with HTTP 200 + ok:false
+          // (the UI shows `error` as a calm message) instead of an opaque 500.
+          invalidateVectorCaches();
+          return NextResponse.json({ ok: false, action, error: describeReindexFailure(err) });
+        }
       }
 
       case "delete-namespace": {

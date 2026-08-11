@@ -144,6 +144,13 @@ export async function gatewayMemorySearch(opts: {
 
 // ── Memory index ─────────────────────────────────
 
+/*
+ * A full reindex re-embeds every chunk, which is minutes of work on a large
+ * memory or a cold local embedding model — the 60s default aborted mid-run and
+ * surfaced as an opaque "reindex failed (500)" (issue #80). Give it real room.
+ */
+const REINDEX_TIMEOUT_MS = 240_000;
+
 export async function gatewayMemoryIndex(opts?: {
   agent?: string;
   force?: boolean;
@@ -156,7 +163,7 @@ export async function gatewayMemoryIndex(opts?: {
     const result = await invokeGatewayTool<MemoryIndexToolResult>(
       "memory_index",
       args,
-      60000,
+      REINDEX_TIMEOUT_MS,
     );
 
     if (result.output) return result.output;
@@ -166,12 +173,14 @@ export async function gatewayMemoryIndex(opts?: {
       .filter(Boolean)
       .join("\n") || "";
   } catch (err) {
-    // Gateway doesn't expose memory_index — fall back to CLI
+    // Gateway doesn't expose memory_index — fall back to CLI. OpenClaw denies
+    // exec-class tools on the HTTP endpoint by default, so on most installs
+    // this 404s and the CLI path below is the one that actually runs.
     if (err instanceof ToolNotAvailableError) {
       const cliArgs = ["memory", "index"];
       if (opts?.agent) cliArgs.push("--agent", opts.agent);
       if (opts?.force) cliArgs.push("--force");
-      return runCli(cliArgs, 60000);
+      return runCli(cliArgs, REINDEX_TIMEOUT_MS);
     }
     throw err;
   }
