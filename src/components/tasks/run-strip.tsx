@@ -114,7 +114,7 @@ export function RunStrip({
       <Shell live>
         <div className="flex min-w-0 items-center gap-2">
           <StepSpinner className="text-fg-secondary" />
-          <span className="min-w-0 flex-1 truncate text-xs text-fg-secondary">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-fg-secondary">
             Handing over{assignee === "subagent" ? " to a subagent" : ""}…
           </span>
           <GhostButton onClick={stop} disabled={busy} icon={Square} label="Stop" />
@@ -127,13 +127,13 @@ export function RunStrip({
     return (
       <Shell live>
         <div className="flex min-w-0 items-center gap-2">
-          {/* The one indicator. Large enough to read as motion across a room. */}
-          <StepSpinner className="h-3.5 w-3.5 border-2 text-foreground opacity-100" />
-          <span className="shrink-0 text-[13px] font-medium text-foreground">
+          {/* The one indicator. Large enough to read as motion across a row. */}
+          <StepSpinner className="h-3 w-3 border-2 text-warning-fg opacity-100" />
+          <span className="shrink-0 text-[12px] font-medium text-foreground">
             {stale ? "Running" : "Working"}
           </span>
           {startedAt && (
-            <Elapsed since={startedAt} className="shrink-0 text-[11px] text-muted-foreground" />
+            <Elapsed since={startedAt} className="shrink-0 text-[11px] text-fg-subtle" />
           )}
           <div className="min-w-0 flex-1" />
           <GhostButton onClick={stop} disabled={busy} icon={Square} label="Stop" />
@@ -155,23 +155,23 @@ export function RunStrip({
   /* The agent asked. This is the one state that earns a primary action. */
   if (status === "asking") {
     return (
-      <div className="mt-2.5 min-w-0 rounded-lg border border-border-strong bg-muted/60 px-2.5 py-2">
+      <div className="mt-2 min-w-0 rounded-md border border-info-border/50 bg-info-bg/40 px-2 py-1.5">
         <p className="text-[11px] font-medium text-foreground">
           {questionCopy(confidence).heading}
         </p>
         {question && (
-          <p className="mt-1 line-clamp-3 break-words text-[11px] leading-4 text-fg-secondary">
+          <p className="mt-0.5 line-clamp-3 break-words text-[11px] leading-4 text-fg-secondary">
             {stripMarker(question)}
           </p>
         )}
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onAnswer();
             }}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            className="inline-flex shrink-0 items-center gap-1 rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
           >
             Answer
           </button>
@@ -187,23 +187,23 @@ export function RunStrip({
    */
   if (status === "needs-review") {
     return (
-      <div className="mt-2.5 min-w-0 rounded-lg border border-border-subtle bg-muted/50 px-2.5 py-2">
+      <div className="mt-2 min-w-0 rounded-md border border-border-subtle bg-muted/40 px-2 py-1.5">
         <p className="text-[11px] font-medium text-foreground">
           {questionCopy("low").heading}
         </p>
         {question && (
-          <p className="mt-1 line-clamp-3 break-words text-[11px] leading-4 text-muted-foreground">
+          <p className="mt-0.5 line-clamp-3 break-words text-[11px] leading-4 text-muted-foreground">
             {question}
           </p>
         )}
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onMarkDone();
             }}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-border-subtle px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground"
           >
             <Check className="h-3 w-3" />
             Mark done
@@ -214,7 +214,7 @@ export function RunStrip({
               e.stopPropagation();
               onAnswer();
             }}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-border-subtle px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground"
           >
             Answer
           </button>
@@ -225,11 +225,11 @@ export function RunStrip({
 
   if (status === "failed") {
     return (
-      <div className="mt-2.5 min-w-0 rounded-lg border border-danger-border bg-danger-bg px-2.5 py-2">
-        <div className="flex min-w-0 items-start gap-2">
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger-fg" />
+      <div className="mt-2 min-w-0 rounded-md border border-danger-border/60 bg-danger-bg/60 px-2 py-1.5">
+        <div className="flex min-w-0 items-start gap-1.5">
+          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-danger-fg" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-danger-fg">Run failed</p>
+            <p className="text-[11px] font-medium text-danger-fg">Run failed</p>
             <p className="mt-0.5 line-clamp-3 break-words text-[11px] leading-4 text-danger-fg/85">
               {error || "The agent stopped without an explanation."}
             </p>
@@ -248,7 +248,7 @@ export function RunStrip({
       <Shell>
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
-          <span className="shrink-0 text-xs text-muted-foreground">Stopped</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">Stopped</span>
           <RunMeta
             runtimeMs={result?.runtimeMs ?? task.dispatchRuntimeMs ?? null}
             totalTokens={result?.totalTokens ?? task.dispatchTotalTokens ?? null}
@@ -265,7 +265,8 @@ export function RunStrip({
     return (
       <Shell>
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="shrink-0 text-xs text-muted-foreground">Finished</span>
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+          <span className="shrink-0 text-[11px] text-muted-foreground">Finished</span>
           <RunMeta
             runtimeMs={result?.runtimeMs ?? task.dispatchRuntimeMs ?? null}
             totalTokens={result?.totalTokens ?? task.dispatchTotalTokens ?? null}
@@ -295,8 +296,8 @@ function Shell({ children, live }: { children: React.ReactNode; live?: boolean }
   return (
     <div
       className={cn(
-        "mt-2.5 min-w-0 rounded-lg px-2.5 py-2 transition-colors",
-        live ? "bg-muted/70 ring-1 ring-inset ring-border-subtle" : "bg-muted/40",
+        "mt-2 min-w-0 rounded-md px-2 py-1.5 transition-colors",
+        live ? "bg-warning-bg/40 ring-1 ring-inset ring-warning-border/40" : "bg-muted/40",
       )}
     >
       {children}
@@ -323,10 +324,10 @@ function GhostButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-40",
+        "inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-40",
         tone === "danger"
-          ? "text-danger-fg hover:bg-danger-fg/10"
-          : "text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
+          ? "text-danger-fg hover:bg-danger-bg"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
     >
       <Icon className="h-3 w-3" />

@@ -25,6 +25,7 @@ export function AssigneePicker({
   agentId,
   assignee,
   disabled,
+  lockedReason,
   onChange,
   className,
 }: {
@@ -33,17 +34,30 @@ export function AssigneePicker({
   assignee: DispatchAssignee;
   /** True while a run is in flight — reassigning mid-run would be a lie. */
   disabled?: boolean;
+  /** Shown as a tooltip on the locked control, so the lock explains itself. */
+  lockedReason?: string;
   onChange: (next: { agentId?: string; assignee: DispatchAssignee }) => void;
   className?: string;
 }) {
-  const label = agentId ? agentLabel(agents, agentId) : "Assign";
+  const agentName = agentId ? agentLabel(agents, agentId) : null;
+  // When a subagent is chosen, lead with the MODE, not the owning agent —
+  // showing "main" prominently read as if main's own session was selected.
+  const label = !agentName
+    ? "Assign"
+    : assignee === "subagent"
+      ? agents.length > 1
+        ? `Subagent · ${agentName}`
+        : "Isolated subagent"
+      : agentName;
   const emoji = agentId ? agentEmoji(agents, agentId) : null;
 
   if (disabled) {
     return (
       <span
+        title={lockedReason}
         className={cn(
           "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border-subtle px-2 py-0.5 text-xs text-muted-foreground",
+          lockedReason && "cursor-help",
           className,
         )}
       >

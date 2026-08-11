@@ -65,6 +65,9 @@ export type KanbanTask = {
   id: number;
   title: string;
   description?: string;
+  /** Standing instructions for the agent — used as the run context every time
+   *  this card is dispatched. Authored by the user, so client-writable. */
+  customPrompt?: string;
   column: string;
   priority: string;
   assignee?: string;
@@ -228,6 +231,7 @@ export class KanbanConflictError extends Error {
 const AUTHORED_FIELDS: (keyof KanbanTask)[] = [
   "title",
   "description",
+  "customPrompt",
   "column",
   "priority",
   "assignee",
@@ -252,6 +256,19 @@ export function mergeBoardWrite(incoming: KanbanData, current: KanbanData): Kanb
     for (const field of ENGINE_OWNED_FIELDS) {
       if (disk[field] === undefined) delete merged[field];
       else Object.assign(merged, { [field]: disk[field] });
+    }
+
+    // The assignee (agent vs. isolated subagent) is the user's choice for the
+    // NEXT run, so it is client-writable — except while a run is in flight, when
+    // the live run's assignee is a fact the browser must not override. It is
+    // pinned above with the other dispatch* fields; take the request's value
+    // back whenever the card is idle. (Without this the picker silently did
+    // nothing on any card that had run before.)
+    if (
+      !ACTIVE_DISPATCH_STATUSES.has(disk.dispatchStatus as DispatchStatus) &&
+      task.dispatchAssignee !== undefined
+    ) {
+      merged.dispatchAssignee = task.dispatchAssignee;
     }
 
     // A board is stored as a file, so these can be missing on older boards or

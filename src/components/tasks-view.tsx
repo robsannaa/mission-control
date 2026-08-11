@@ -338,6 +338,7 @@ export function TasksView() {
         void sendDispatchRef.current?.(id, {
           agentId: task.agentId || defaultAgentId,
           assignee: task.dispatchAssignee ?? "agent",
+          context: task.customPrompt,
         });
       }
     },
@@ -549,7 +550,7 @@ export function TasksView() {
   return (
     <SectionLayout>
       {/* Stats header */}
-      <div className="shrink-0 space-y-3 px-4 md:px-6 pt-5 pb-4">
+      <div className="shrink-0 space-y-2 border-b border-border-subtle px-4 md:px-6 pt-4 pb-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 text-sm">
             <span>
@@ -577,7 +578,7 @@ export function TasksView() {
               <span className="text-muted-foreground">Completion</span>
             </span>
             {runningTasks > 0 && (
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 animate-enter">
+              <span className="inline-flex shrink-0 items-center gap-1.5 animate-enter">
                 <LiveDot />
                 <span className="text-xs text-fg-secondary">
                   {runningTasks} running
@@ -585,7 +586,8 @@ export function TasksView() {
               </span>
             )}
             {waitingTasks > 0 && (
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 animate-enter">
+              <span className="inline-flex shrink-0 items-center gap-1.5 animate-enter">
+                <span className="h-1.5 w-1.5 rounded-full bg-info" />
                 <span className="text-xs text-fg-secondary">
                   {waitingTasks} waiting on you
                 </span>
@@ -614,7 +616,7 @@ export function TasksView() {
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-6 md:overflow-x-auto md:overflow-y-hidden md:px-6">
         <div
           ref={boardRef}
-          className="kanban-board-grid items-start gap-4 pb-2 md:h-full md:items-stretch"
+          className="kanban-board-grid items-start gap-3 pb-2 md:h-full md:items-stretch"
           style={{ "--kanban-column-count": columns.length } as CSSProperties}
         >
           {columns.map((col) => {
@@ -625,8 +627,10 @@ export function TasksView() {
               key={col.id}
               data-column-id={col.id}
               className={cn(
-                "flex w-full min-w-0 flex-col overflow-hidden rounded-xl border border-foreground/5 bg-muted/30 px-3 py-3 transition-all md:min-h-0",
-                isDragTarget && "bg-muted-foreground/10 border-border-strong ring-1 ring-inset ring-border-strong"
+                "flex w-full min-w-0 flex-col overflow-hidden rounded-lg px-2 py-2 transition-colors md:min-h-0",
+                isDragTarget
+                  ? "bg-muted/40 ring-1 ring-inset ring-border-strong"
+                  : "bg-transparent"
               )}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -648,18 +652,15 @@ export function TasksView() {
                 setDragOverColumn(null);
               }}
             >
-              <div className="mb-3 flex min-w-0 items-center gap-2 px-1">
+              <div className="mb-2 flex min-w-0 items-center gap-1.5 border-b border-border-subtle px-1 pb-2">
                 <div
-                  className="h-3 w-3 shrink-0 rounded-full shadow-sm"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
                   style={{ backgroundColor: col.color }}
                 />
-                <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">
+                <h3 className="min-w-0 truncate text-[13px] font-medium text-foreground">
                   {col.title}
                 </h3>
-                <span
-                  className="rounded-full bg-foreground/10 px-2 py-0.5 text-xs font-medium text-muted-foreground"
-                  style={{ minWidth: "1.5rem", textAlign: "center" }}
-                >
+                <span className="shrink-0 text-[12px] tabular-nums text-fg-subtle">
                   {colTasks.length}
                 </span>
                 <div className="flex-1" />
@@ -670,7 +671,7 @@ export function TasksView() {
                       addingToColumn === col.id ? null : col.id
                     )
                   }
-                  className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted hover:text-fg-secondary"
+                  className="rounded p-1 text-fg-subtle transition-colors hover:bg-muted/60 hover:text-fg-secondary"
                   title={`Add task to ${col.title}`}
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -706,13 +707,13 @@ export function TasksView() {
                 />
               )}
 
-              <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overflow-x-hidden min-w-0">
+              <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overflow-x-hidden min-w-0">
                 {colTasks.length === 0 && addingToColumn !== col.id ? (
                   <div className={cn(
                     "flex items-center justify-center rounded-lg border border-dashed py-8 text-xs transition-colors",
                     isDragTarget
-                      ? "border-border-strong text-fg-secondary bg-muted-foreground/5"
-                      : "border-foreground/10 text-fg-subtle"
+                      ? "border-border-strong text-fg-secondary bg-muted/30"
+                      : "border-border-subtle text-fg-subtle"
                   )}>
                     {isDragTarget ? "Drop here" : "Nothing here yet"}
                   </div>
@@ -821,6 +822,7 @@ export function TasksView() {
           onAnswer={() => openAnswer(detailTask)}
           onMarkDone={() => void markDone(detailTask.id)}
           onAttachmentClick={(url) => setLightboxImage(url)}
+          onUpdate={(patch) => updateTask(detailTask.id, patch)}
         />
       )}
 

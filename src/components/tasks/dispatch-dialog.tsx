@@ -45,7 +45,9 @@ export function DispatchDialog({
 }) {
   const [agentId, setAgentId] = useState(intent.agentId ?? agents[0]?.id ?? "");
   const [assignee, setAssignee] = useState<DispatchAssignee>(intent.assignee);
-  const [context, setContext] = useState("");
+  // Prefill with the card's standing instructions so a run starts from them and
+  // the user can tweak per-run without retyping.
+  const [context, setContext] = useState(intent.task.customPrompt ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const contextRef = useRef<HTMLTextAreaElement>(null);

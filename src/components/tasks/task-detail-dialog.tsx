@@ -68,6 +68,7 @@ export function TaskDetailDialog({
   onAnswer,
   onMarkDone,
   onAttachmentClick,
+  onUpdate,
 }: {
   task: Task;
   columns: Column[];
@@ -81,6 +82,8 @@ export function TaskDetailDialog({
   onAnswer: () => void;
   onMarkDone: () => void;
   onAttachmentClick: (url: string) => void;
+  /** Persist an authored field edit (e.g. the standing instructions). */
+  onUpdate?: (patch: { customPrompt?: string }) => void;
 }) {
   const timeFormat = useSyncExternalStore(
     subscribeTimeFormatPreference,
@@ -113,11 +116,15 @@ export function TaskDetailDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task.id]);
 
-  const assignee: DispatchAssignee =
-    snapshot?.assignee ?? task.dispatchAssignee ?? "agent";
   const status = snapshot?.status ?? task.dispatchStatus ?? "idle";
-  const result = snapshot?.result;
   const active = isRunActive(status);
+  // While a run is live, reflect the assignee that is actually running. When the
+  // card is idle, reflect the user's saved choice so the picker shows their pick
+  // instead of snapping back to whatever last ran.
+  const assignee: DispatchAssignee = active
+    ? snapshot?.assignee ?? task.dispatchAssignee ?? "agent"
+    : task.dispatchAssignee ?? snapshot?.assignee ?? "agent";
+  const result = snapshot?.result;
   const waiting = isAwaitingUser(status);
   const startedAt = snapshot?.startedAt ?? task.dispatchedAt ?? null;
   const resultText = result?.text ?? task.dispatchResultText ?? null;
@@ -207,6 +214,16 @@ export function TaskDetailDialog({
               <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-fg-secondary">
                 {task.description}
               </p>
+            </Section>
+          )}
+
+          {onUpdate && (
+            <Section label="Instructions for the agent">
+              <InstructionsEditor
+                value={task.customPrompt ?? ""}
+                disabled={active}
+                onSave={(v) => onUpdate({ customPrompt: v || undefined })}
+              />
             </Section>
           )}
 
@@ -505,6 +522,51 @@ export function TaskDetailDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Standing instructions for a card. Saved on blur (authored content), and sent
+ * as the run context every time the card is dispatched. Locked mid-run because
+ * changing it then would not affect the run already in flight.
+ */
+function InstructionsEditor({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string;
+  disabled?: boolean;
+  onSave: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  // Re-sync when the stored value changes (e.g. saved from elsewhere) using the
+  // render-time adjustment pattern rather than an effect.
+  const [seenValue, setSeenValue] = useState(value);
+  if (value !== seenValue) {
+    setSeenValue(value);
+    setDraft(value);
+  }
+  const commit = () => {
+    if (draft.trim() !== value.trim()) onSave(draft.trim());
+  };
+  return (
+    <div className="space-y-1.5">
+      <textarea
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        rows={3}
+        placeholder="Standing instructions the agent gets every time this card runs — constraints, a starting point, what to leave alone…"
+        className="w-full resize-y rounded-xl border border-border-subtle bg-muted/30 px-3 py-2 text-[13px] leading-relaxed text-fg-secondary placeholder:text-fg-subtle focus:border-border-strong focus:outline-none disabled:opacity-50"
+      />
+      <p className="text-[11px] text-fg-subtle">
+        {disabled
+          ? "Locked while a run is in progress."
+          : "Saved automatically. Sent as the agent's context on every run of this card."}
+      </p>
     </div>
   );
 }

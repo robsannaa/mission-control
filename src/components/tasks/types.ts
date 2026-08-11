@@ -51,6 +51,8 @@ export type Task = {
   id: number;
   title: string;
   description?: string;
+  /** Standing instructions passed as the run context each time this card runs. */
+  customPrompt?: string;
   column: string;
   priority: string;
   assignee?: string;
