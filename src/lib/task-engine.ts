@@ -37,9 +37,11 @@ import {
   getTask,
   patchTask,
   readKanban,
+  resolveColumnRole,
   transitionTask,
   type DispatchAssignee,
   type DispatchStatus,
+  type KanbanData,
   type KanbanTask,
   type TaskTransition,
 } from "./kanban-store";
@@ -428,6 +430,102 @@ async function hydrateFromBoard(): Promise<void> {
       void reconcile(task.id);
     }
   }
+
+  // A card left in the in-progress lane with no run behind it never gets a
+  // session for the loop above to follow, so heal it here on the way up too.
+  await healInProgressInvariant().catch(() => undefined);
+}
+
+/* ── the In Progress invariant ────────────────────── */
+
+/** The leftmost column that carries none of the run roles — the "to-do" lane. */
+function firstTodoColumnId(board: KanbanData): string | null {
+  const roleIds = new Set(
+    (["in-progress", "review", "done"] as const)
+      .map((role) => resolveColumnRole(board, role))
+      .filter((id): id is string => Boolean(id)),
+  );
+  const todo = board.columns.find((c) => !roleIds.has(c.id));
+  return todo?.id ?? board.columns[0]?.id ?? null;
+}
+
+/**
+ * Keep In Progress honest: it must mean a live agent, nothing else.
+ *
+ * The lane can end up holding cards with nothing running behind them: the
+ * starter board seeds one there, a dispatch that fails before a session is
+ * written leaves one, and a run that ended (cancelled, failed, finished) can
+ * linger if its own move did not land. `reconcile` only follows cards with a
+ * session, so nothing ever corrects these — the column lies about what is
+ * happening. This walks the lane and moves every not-running card to the lane
+ * that tells the truth:
+ *
+ *   - finished       → Done
+ *   - waiting on you  → Review
+ *   - everything else → the to-do lane (cancelled and failed read as "retry")
+ *
+ * What it never touches: a card an agent is actually on right now (status
+ * dispatching/running, a live tracked run, or a run still settling its own
+ * move), and a card mid-dispatch (`inFlight`) whose status has not been written
+ * yet. That guard is what lets a genuinely running card stay put across a page
+ * reload instead of being swept back to to-do.
+ *
+ * Idempotent and lock-guarded (each move goes through `transitionTask`), so it
+ * is safe to call on every board read. Returns whether it moved anything.
+ */
+export async function healInProgressInvariant(): Promise<boolean> {
+  const board = await readKanban().catch(() => null);
+  if (!board) return false;
+
+  const inProgressId = resolveColumnRole(board, "in-progress");
+  if (!inProgressId) return false;
+  const todoId = firstTodoColumnId(board);
+  if (!todoId || todoId === inProgressId) return false;
+  const doneId = resolveColumnRole(board, "done");
+  const reviewId = resolveColumnRole(board, "review");
+
+  let healed = false;
+  for (const task of board.tasks) {
+    if (task.column !== inProgressId) continue;
+
+    // The only legitimate reason to be here: an agent is on it right now.
+    const status = task.dispatchStatus;
+    if (status && ACTIVE_DISPATCH_STATUSES.has(status)) continue;
+    // Mid-dispatch: the status write is in flight, so trust the claim.
+    if (inFlight().has(task.id)) continue;
+    const tracked = registry().runs.get(task.id);
+    if (tracked) {
+      if (ACTIVE_DISPATCH_STATUSES.has(tracked.status)) continue;
+      // A terminal signal just arrived and settle() is about to move the card
+      // itself — let it. `settleTimer` is set only during that grace window;
+      // `settling` stays true forever after and must NOT gate here.
+      if (tracked.settleTimer) continue;
+    }
+
+    // Not running. Pick the lane that states the truth.
+    let target = todoId;
+    let reason =
+      "Returned to the to-do lane: In Progress means a live agent, and this card was not running.";
+    if (status === "completed" && doneId) {
+      target = doneId;
+      reason = "This run had already finished — moved to Done.";
+    } else if ((status === "asking" || status === "needs-review") && reviewId) {
+      target = reviewId;
+      reason = "This run is waiting on you — moved to Review.";
+    }
+    if (!target || target === inProgressId) continue;
+
+    await transitionTask(task.id, {
+      to: status ?? "idle",
+      toColumn: target,
+      by: "system",
+      reason,
+    }).catch((err) =>
+      console.warn("[task-engine] heal failed:", errorMessage(err)),
+    );
+    healed = true;
+  }
+  return healed;
 }
 
 /* ── event handling ───────────────────────────────── */
@@ -868,8 +966,13 @@ async function finishFailed(state: RunState, terminal: TerminalSignal): Promise<
     (terminal === "timed_out" ? "The run timed out." : "The run failed for an unknown reason.");
   state.error = error;
   addActivity(state, "error", error);
+  // A failed run is not running either — leave In Progress. Back to the to-do
+  // lane, where the failed badge and error read as "ready to retry".
+  const board = await readKanban().catch(() => null);
+  const todoId = board ? firstTodoColumnId(board) : null;
   await applyTransition(state, {
     to: "failed",
+    ...(todoId ? { toColumn: todoId } : {}),
     by: "agent",
     reason: `The run failed: ${boundText(error, 120).text}`,
     patch: {
@@ -900,10 +1003,15 @@ async function finishCancelled(state: RunState): Promise<void> {
   state.result = result;
   state.error = null;
   addActivity(state, "lifecycle", "Stopped.");
+  // In Progress means a live agent — a stopped run must leave it. Send it back
+  // to the to-do lane so it reads as "ready to run again", not "still working".
+  const board = await readKanban().catch(() => null);
+  const todoId = board ? firstTodoColumnId(board) : null;
   await applyTransition(state, {
     to: "cancelled",
+    ...(todoId ? { toColumn: todoId } : {}),
     by: "user",
-    reason: "You stopped this run.",
+    reason: "You stopped this run — moved back to the to-do lane.",
     patch: {
       ...resultPatch(result),
       dispatchError: undefined,

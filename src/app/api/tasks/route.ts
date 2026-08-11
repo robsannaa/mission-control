@@ -18,6 +18,7 @@ import {
   dispatchTask,
   ensureTaskEngine,
   getRunSnapshot,
+  healInProgressInvariant,
   resolveTask,
 } from "@/lib/task-engine";
 
@@ -29,6 +30,10 @@ export async function GET() {
   // reliably happens on every deployment shape.
   ensureTaskEngine();
   try {
+    // In Progress must mean a live agent. Return any card stranded there with
+    // no run behind it to the to-do lane before we answer, so the board the
+    // user sees is always the true state.
+    await healInProgressInvariant().catch(() => undefined);
     const data = await readKanban();
     return NextResponse.json({ ...data, _fileExists: true });
   } catch {
@@ -235,8 +240,8 @@ async function handleInit(body: { starterTasks?: KanbanTask[] }) {
         id: 1,
         title: "Explore the Dashboard",
         description:
-          "Check out the Mission Control dashboard to see your agents, cron jobs, system health, and more.",
-        column: "in-progress",
+          "Check out the Mission Control dashboard to see your agents, cron jobs, system health, and more. Drag this card into In Progress to watch an agent actually start working on it.",
+        column: "backlog",
         priority: "medium",
       },
       {
