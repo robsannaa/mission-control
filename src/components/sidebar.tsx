@@ -18,6 +18,7 @@ import {
   Terminal,
   Cpu,
   Database,
+  Sparkles,
   Users,
   Users2,
   BarChart3,
@@ -105,6 +106,8 @@ type NavItem = {
   group?: string;
   /** Hidden entirely on the hosted (Agentbay) deployment. */
   selfHostedOnly?: true;
+  /** Shown only when a G-Brain install is detected at runtime (see SidebarNav). */
+  requiresGBrain?: true;
   /** Sits below the hairline separator pinned to the bottom of the rail. */
   pinnedBottom?: true;
 };
@@ -143,6 +146,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { group: "Knowledge", section: "memory", label: "Memory", icon: Brain, href: "/memory" },
   { section: "docs", label: "Documents", icon: FolderOpen, href: "/documents" },
   { section: "vectors", label: "Vector DB", icon: Database, href: "/vectors" },
+  { section: "g-brain", label: "G-Brain", icon: Sparkles, href: "/g-brain", requiresGBrain: true },
   { section: "search", label: "Web Search", icon: Search, href: "/search" },
 
   // ── Connections ──
@@ -272,6 +276,20 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
   const isHeartbeatActive = section === "cron" && tab === "heartbeat";
   const showCronChildren = isHeartbeatActive ? true : cronExpanded;
 
+  // G-Brain is a standalone install, not part of OpenClaw — its nav row only
+  // appears when a brain is actually present on this machine. Detected at
+  // runtime (there is no build-time flag for it); hidden until we know.
+  const [gbrainInstalled, setGbrainInstalled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/g-brain?scope=detect")
+      .then((r) => r.json())
+      .then((d) => { if (live) setGbrainInstalled(Boolean(d?.installed)); })
+      .catch(() => { if (live) setGbrainInstalled(false); });
+    return () => { live = false; };
+  }, []);
+  const items = gbrainInstalled ? navItems : navItems.filter((i) => !i.requiresGBrain);
+
   // Subscribe to chat unread count reactively
   const chatUnread = useSyncExternalStore(
     subscribeChatStore,
@@ -281,11 +299,11 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
 
   return (
     <nav className={cn("flex flex-1 flex-col gap-0.5 overflow-y-auto pt-2", collapsed ? "px-2" : "px-3")}>
-      {navItems.map((item, index) => {
+      {items.map((item, index) => {
         const isSkillsParent = item.section === "skills" && !item.isSubItem;
         const isAgentsParent = item.section === "agents" && !item.isSubItem;
         const isCronParent = item.section === "cron" && !item.isSubItem;
-        const previousItem = index > 0 ? navItems[index - 1] : undefined;
+        const previousItem = index > 0 ? items[index - 1] : undefined;
         const showGroupHeader = Boolean(item.group) && item.group !== previousItem?.group;
         const showPinnedSeparator = Boolean(item.pinnedBottom) && !previousItem?.pinnedBottom;
         const Icon = item.icon;

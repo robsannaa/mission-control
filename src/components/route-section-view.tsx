@@ -121,6 +121,10 @@ const ChannelsView = dynamic(
   () => import("@/components/channels-view").then((m) => m.ChannelsView),
   { loading: () => <SectionLoading /> }
 );
+const GBrainView = dynamic(
+  () => import("@/components/gbrain-view").then((m) => m.GBrainView),
+  { loading: () => <SectionLoading /> }
+);
 
 const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
 
@@ -155,6 +159,7 @@ export type DashboardSection =
   | "doctor"
   | "activity"
   | "help"
+  | "g-brain"
   | "channels";
 
 function SectionContent({ section }: { section: DashboardSection }) {
@@ -223,6 +228,8 @@ function SectionContent({ section }: { section: DashboardSection }) {
       return <HelpView />;
     case "channels":
       return <ChannelsView />;
+    case "g-brain":
+      return <GBrainView />;
     default:
       return <DashboardView />;
   }
