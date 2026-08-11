@@ -471,7 +471,7 @@ export function NotificationCenter() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-in slide-in-from-top-1 fade-in duration-150">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(26rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-in slide-in-from-top-1 fade-in duration-150">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-foreground">
@@ -482,9 +482,9 @@ export function NotificationCenter() {
                 <button
                   type="button"
                   onClick={markAllRead}
-                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary dark:hover:bg-secondary dark:hover:text-foreground"
+                  className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-fg-secondary dark:hover:bg-secondary dark:hover:text-foreground"
                 >
-                  <CheckCheck className="h-3 w-3" />
+                  <CheckCheck className="h-3 w-3 shrink-0" />
                   Mark read
                 </button>
               )}
@@ -493,9 +493,9 @@ export function NotificationCenter() {
                   type="button"
                   onClick={clearAll}
                   title="Remove all notifications"
-                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger-fg"
+                  className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger-fg"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-3 w-3 shrink-0" />
                   Clear all
                 </button>
               )}
@@ -505,13 +505,13 @@ export function NotificationCenter() {
                 aria-pressed={muted}
                 title={muted ? "Notifications muted — click to unmute" : "Mute notifications"}
                 className={cn(
-                  "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                  "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium transition-colors",
                   muted
                     ? "text-warning-fg hover:bg-warning-bg"
                     : "text-muted-foreground hover:bg-muted hover:text-fg-secondary dark:hover:bg-secondary dark:hover:text-foreground",
                 )}
               >
-                {muted ? <BellOff className="h-3 w-3" /> : <Bell className="h-3 w-3" />}
+                {muted ? <BellOff className="h-3 w-3 shrink-0" /> : <Bell className="h-3 w-3 shrink-0" />}
                 {muted ? "Muted" : "Mute"}
               </button>
             </div>
