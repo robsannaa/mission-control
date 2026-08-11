@@ -76,7 +76,7 @@ function setSnapshot(next: Partial<Snapshot>) {
 }
 
 /** Lightweight poll via /api/status — 3s max, used for normal ticks. */
-async function pollLite() {
+async function pollLite(initial = false) {
   if (liteInFlight || typeof window === "undefined" || tabHidden) return;
   liteInFlight = true;
   try {
@@ -85,7 +85,7 @@ async function pollLite() {
       signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) {
-      setSnapshot({ status: "offline", health: null, latencyMs: null });
+      if (!initial) setSnapshot({ status: "offline", health: null, latencyMs: null });
       if (fastPollCount === 0) switchToOfflinePolling();
       return;
     }
@@ -117,7 +117,7 @@ async function pollLite() {
       offlineConsecutiveFailures = 0;
     }
   } catch {
-    setSnapshot({ status: "offline", health: null, latencyMs: null });
+    if (!initial) setSnapshot({ status: "offline", health: null, latencyMs: null });
     if (fastPollCount === 0) switchToOfflinePolling();
   } finally {
     liteInFlight = false;
@@ -125,7 +125,7 @@ async function pollLite() {
 }
 
 /** Full poll via /api/gateway — used for fast/recovery ticks and initial load. */
-async function poll() {
+async function poll(initial = false) {
   if (fullInFlight || typeof window === "undefined" || tabHidden) return;
   fullInFlight = true;
   try {
@@ -134,7 +134,7 @@ async function poll() {
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) {
-      setSnapshot({ status: "offline", health: null, latencyMs: null });
+      if (!initial) setSnapshot({ status: "offline", health: null, latencyMs: null });
       switchToOfflinePolling();
       return;
     }
@@ -162,7 +162,7 @@ async function poll() {
       switchToNormalPolling();
     }
   } catch {
-    setSnapshot({ status: "offline", health: null, latencyMs: null });
+    if (!initial) setSnapshot({ status: "offline", health: null, latencyMs: null });
     if (fastPollCount === 0) switchToOfflinePolling();
   } finally {
     fullInFlight = false;
@@ -288,8 +288,8 @@ async function start() {
   window.addEventListener(RESTART_EVENT, handleRestartingSignal);
   document.addEventListener("visibilitychange", handleVisibilityChange);
   // Fast preflight via /api/status (3s max) then full health data (sequenced to avoid race)
-  await pollLite();
-  await poll();
+  await pollLite(true);
+  await poll(true);
   setSnapshot({ initialCheckDone: true });
   if (!tabHidden) switchToNormalPolling();
 }

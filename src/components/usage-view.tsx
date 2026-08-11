@@ -158,7 +158,10 @@ function SubHeading({ children, count }: { children: React.ReactNode; count?: nu
 function ProgressBar({ value, max, className }: { value: number; max: number; className?: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
-    <div className={cn("h-1 w-full overflow-hidden rounded-full bg-secondary", className)}>
+    <div
+      title={`${Math.round(pct)}% of tracked token usage — a relative share, not a limit (OpenClaw has no usage cap)`}
+      className={cn("h-1 w-full overflow-hidden rounded-full bg-secondary", className)}
+    >
       <div
         className="h-full rounded-full bg-success transition-all"
         style={{ width: `${pct}%` }}
@@ -234,7 +237,7 @@ type ModelRow = UsageApiResponse["liveTelemetry"]["byModel"][number];
 
 function ModelUsageTable({ rows }: { rows: ModelRow[] }) {
   const sorted = [...rows].sort((a, b) => b.totalTokens - a.totalTokens);
-  const maxTokens = sorted[0]?.totalTokens ?? 1;
+  const totalTokensAll = sorted.reduce((acc, r) => acc + r.totalTokens, 0) || 1;
 
   if (sorted.length === 0) return <EmptyState message="No model usage recorded yet." />;
 
@@ -264,7 +267,7 @@ function ModelUsageTable({ rows }: { rows: ModelRow[] }) {
                   <p className="mt-0.5 truncate text-[11px] text-fg-subtle">{provider}</p>
                   <ProgressBar
                     value={row.totalTokens}
-                    max={maxTokens}
+                    max={totalTokensAll}
                     className="mt-1.5 max-w-[200px]"
                   />
                 </td>
@@ -295,7 +298,7 @@ type AgentRow = UsageApiResponse["liveTelemetry"]["byAgent"][number];
 
 function AgentUsageTable({ rows }: { rows: AgentRow[] }) {
   const sorted = [...rows].sort((a, b) => b.totalTokens - a.totalTokens);
-  const maxTokens = sorted[0]?.totalTokens ?? 1;
+  const totalTokensAll = sorted.reduce((acc, r) => acc + r.totalTokens, 0) || 1;
 
   if (sorted.length === 0) return <EmptyState message="No agent usage recorded yet." />;
 
@@ -320,7 +323,7 @@ function AgentUsageTable({ rows }: { rows: AgentRow[] }) {
               <p className="truncate font-mono text-sm text-foreground">{row.agentId}</p>
               <ProgressBar
                 value={row.totalTokens}
-                max={maxTokens}
+                max={totalTokensAll}
                 className="mt-1.5 max-w-[200px]"
               />
             </div>
