@@ -11,6 +11,7 @@ import {
   type SkillsStatus,
   type SkillStatusRow,
 } from "@/lib/skills-status";
+import { describeSkillsFailure } from "@/lib/skills-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -314,7 +315,7 @@ export async function GET(request: NextRequest) {
         agentFiltered: [],
         notInjected: [],
         missingRequirements: [],
-        warning: String(err),
+        warning: describeSkillsFailure(err),
         degraded: true,
       });
     }
@@ -323,7 +324,7 @@ export async function GET(request: NextRequest) {
         workspaceDir: "",
         managedSkillsDir: "",
         skills: [],
-        warning: String(err),
+        warning: describeSkillsFailure(err),
         degraded: true,
       });
     }
