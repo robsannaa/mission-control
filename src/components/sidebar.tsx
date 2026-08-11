@@ -243,6 +243,7 @@ function deriveSectionFromPath(pathname: string): string | null {
     "memory",
     "docs",
     "vectors",
+    "g-brain",
     "skills",
     "accounts",
     "channels",
