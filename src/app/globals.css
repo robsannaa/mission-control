@@ -781,6 +781,17 @@ body {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* From md up the board clips its own overflow (md:overflow-y-hidden), so the
+ * grid must be height-bounded for each column's internal list to scroll
+ * instead of the whole board growing past the viewport. On mobile the grid
+ * stays content-sized and the page scrolls. */
+@media (min-width: 768px) {
+  .kanban-board-grid {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+
 @media (min-width: 768px) and (max-width: 1199px) {
   .kanban-board-grid {
     width: max-content;

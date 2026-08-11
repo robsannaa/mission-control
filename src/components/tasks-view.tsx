@@ -614,7 +614,7 @@ export function TasksView() {
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-6 md:overflow-x-auto md:overflow-y-hidden md:px-6">
         <div
           ref={boardRef}
-          className="kanban-board-grid items-start gap-4 pb-2"
+          className="kanban-board-grid items-start gap-4 pb-2 md:h-full md:items-stretch"
           style={{ "--kanban-column-count": columns.length } as CSSProperties}
         >
           {columns.map((col) => {
@@ -625,7 +625,7 @@ export function TasksView() {
               key={col.id}
               data-column-id={col.id}
               className={cn(
-                "flex w-full min-w-0 flex-col overflow-hidden rounded-xl border border-foreground/5 bg-muted/30 px-3 py-3 transition-all",
+                "flex w-full min-w-0 flex-col overflow-hidden rounded-xl border border-foreground/5 bg-muted/30 px-3 py-3 transition-all md:min-h-0",
                 isDragTarget && "bg-muted-foreground/10 border-border-strong ring-1 ring-inset ring-border-strong"
               )}
               onDragOver={(e) => {

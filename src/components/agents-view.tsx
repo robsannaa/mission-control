@@ -4424,6 +4424,30 @@ export function AgentsView() {
     return "flow";
   })();
   const [viewMode, setViewMode] = useState<ViewMode>(initialView);
+
+  /*
+   * On a phone the Hierarchy view is a React Flow canvas (pan/zoom, no DOM
+   * scroll), so agents below the fold are unreachable — issue #81. Default to
+   * the scrollable Cards grid below md. Done in an effect (not the initializer)
+   * to avoid an SSR/client hydration mismatch, and guarded so it runs once and
+   * never overrides a view the user picked themselves.
+   */
+  const didAutoViewRef = useRef(false);
+  useEffect(() => {
+    if (didAutoViewRef.current) return;
+    didAutoViewRef.current = true;
+    const t = (searchParams.get("tab") || "").toLowerCase();
+    if (
+      t !== "subagents" &&
+      t !== "models" &&
+      typeof window !== "undefined" &&
+      window.innerWidth < 768
+    ) {
+      setViewMode("grid");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Derived helpers for backward compat
   const tab: "agents" | "subagents" | "models" = viewMode === "subagents" ? "subagents" : viewMode === "models" ? "models" : "agents";
   const view: "flow" | "grid" = viewMode === "grid" ? "grid" : "flow";
