@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Bell,
   Bot,
+  ChevronDown,
   Clock,
   Info,
   KeyRound,
@@ -66,6 +67,20 @@ type CronJobLive = {
 
 type LogEntry = { time: string; source: string; message: string };
 
+/** Full cron job details (from /api/cron) — carries the prompt, schedule
+ *  expression, and delivery target that the summary /api/live data omits. */
+type CronDetail = {
+  id?: string;
+  name?: string;
+  description?: string;
+  agentId?: string;
+  schedule?: { kind?: string; expr?: string; everyMs?: number; tz?: string };
+  payload?: { kind?: string; message?: string; text?: string; timeoutSeconds?: string | number };
+  delivery?: { mode?: string; channel?: string; to?: string };
+  sessionTarget?: string;
+  wakeMode?: string;
+};
+
 type SystemData = {
   channels: { name: string; enabled: boolean; accounts: string[] }[];
   devices: { displayName?: string; platform: string; clientMode: string; lastUsedAt: number }[];
@@ -89,6 +104,15 @@ type PairingSummary = {
 
 /* ── component ───────────────────────────────────── */
 
+function CronMeta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <p className="eyebrow">{label}</p>
+      <p className={cn("truncate text-fg-secondary", mono && "font-mono")}>{value}</p>
+    </div>
+  );
+}
+
 export function DashboardView() {
   const router = useRouter();
   const timeFormat = useSyncExternalStore(
@@ -101,6 +125,8 @@ export function DashboardView() {
   const [lastRefresh, setLastRefresh] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [pairingSummary, setPairingSummary] = useState<PairingSummary | null>(null);
+  const [cronDetails, setCronDetails] = useState<Record<string, CronDetail>>({});
+  const [expandedCron, setExpandedCron] = useState<string | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const gwStore = useGatewayStatusStore();
 
@@ -134,6 +160,16 @@ export function DashboardView() {
     fetch("/api/pairing", { cache: "no-store" })
       .then((r) => r.json())
       .then(setPairingSummary)
+      .catch(() => { });
+    // Full cron details (prompt, schedule expr, delivery target) — the live
+    // summary omits these, and expanding a cron row shows them.
+    fetch("/api/cron", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { jobs?: CronDetail[] }) => {
+        const byName: Record<string, CronDetail> = {};
+        for (const j of d.jobs ?? []) if (j.name) byName[j.name] = j;
+        setCronDetails(byName);
+      })
       .catch(() => { });
 
     tickRef.current = setInterval(() => {
@@ -565,9 +601,18 @@ export function DashboardView() {
                 {live.cron.jobs.map((job) => {
                   const progress = cronProgress(job);
                   const countdown = formatCountdown(job.nextRunAtMs);
+                  const detail = cronDetails[job.name];
+                  const expanded = expandedCron === job.id;
+                  const prompt = detail?.payload?.message || detail?.payload?.text;
+                  const target = detail?.delivery;
                   return (
-                    <div key={job.id} className="rounded-xl border border-border-subtle bg-card p-4 shadow-sm">
-                      <div className="flex items-center gap-2.5">
+                    <div key={job.id} className="rounded-xl border border-border-subtle bg-card shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedCron(expanded ? null : job.id)}
+                        aria-expanded={expanded}
+                        className="flex w-full items-center gap-2.5 rounded-xl p-4 text-left transition-colors hover:bg-muted/40"
+                      >
                         <span
                           className={cn(
                             "h-1.5 w-1.5 shrink-0 rounded-full",
@@ -579,36 +624,71 @@ export function DashboardView() {
                           )}
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground">
-                            {job.name}
-                          </p>
-                          <p className="text-xs text-fg-subtle">
-                            {job.scheduleDisplay}
-                          </p>
+                          <p className="text-sm font-medium text-foreground">{job.name}</p>
+                          <p className="text-xs text-fg-subtle">{job.scheduleDisplay}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-mono text-sm font-semibold tabular-nums text-foreground">
-                            {countdown}
-                          </p>
+                          <p className="font-mono text-sm font-semibold tabular-nums text-foreground">{countdown}</p>
                           <p className="text-xs text-fg-subtle">
                             ran {formatAgo(job.lastRunAtMs || 0)} ({formatDuration(job.lastDurationMs)})
                           </p>
                         </div>
-                      </div>
-                      <div className="mt-2.5 h-1 rounded-full bg-border-subtle">
-                        <div
-                          className={cn(
-                            "h-1 rounded-full transition-all duration-1000",
-                            job.lastStatus === "error" ? "bg-danger" : "bg-foreground/70"
-                          )}
-                          style={{ width: `${progress}%` }}
-                        />
+                        <ChevronDown className={cn("h-4 w-4 shrink-0 text-fg-subtle transition-transform", expanded && "rotate-180")} />
+                      </button>
+                      <div className="px-4">
+                        <div className="h-1 rounded-full bg-border-subtle">
+                          <div
+                            className={cn(
+                              "h-1 rounded-full transition-all duration-1000",
+                              job.lastStatus === "error" ? "bg-danger" : "bg-foreground/70"
+                            )}
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
                       </div>
                       {job.lastError && (
-                        <p className="mt-2 flex items-center gap-1 text-xs text-danger-fg">
+                        <p className="flex items-center gap-1 px-4 pt-2 text-xs text-danger-fg">
                           <AlertCircle className="h-3 w-3" />
                           {job.lastError}
                         </p>
+                      )}
+                      {expanded && (
+                        <div className="space-y-3 border-t border-border-subtle px-4 py-3 text-xs">
+                          {detail?.description && (
+                            <p className="text-fg-secondary">{detail.description}</p>
+                          )}
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                            <CronMeta label="Schedule" value={detail?.schedule?.expr || job.scheduleDisplay} mono />
+                            {detail?.schedule?.tz && <CronMeta label="Timezone" value={detail.schedule.tz} />}
+                            {detail?.agentId && <CronMeta label="Agent" value={detail.agentId} />}
+                            <CronMeta
+                              label="Delivers to"
+                              value={
+                                !target || target.mode === "none"
+                                  ? "Nothing (runs silently)"
+                                  : [target.mode, target.channel, target.to].filter(Boolean).join(" · ")
+                              }
+                            />
+                            {detail?.payload?.timeoutSeconds && (
+                              <CronMeta label="Timeout" value={`${detail.payload.timeoutSeconds}s`} />
+                            )}
+                          </div>
+                          {prompt && (
+                            <div>
+                              <p className="eyebrow mb-1">Prompt</p>
+                              <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-muted/40 p-2.5 font-mono text-[11px] leading-relaxed text-fg-secondary">
+                                {prompt}
+                              </pre>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openCronJob(job.id); }}
+                            className="inline-flex items-center gap-1 font-medium text-fg-secondary transition-colors hover:text-foreground"
+                          >
+                            Open full job <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
