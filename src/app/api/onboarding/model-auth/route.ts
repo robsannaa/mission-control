@@ -4,8 +4,15 @@ import {
   PROVIDER_ENV_KEYS,
   validateProviderToken,
   buildProviderCredentialPatch,
+  buildLocalProviderConfig,
+  fetchLocalModels,
+  probeLocalProvider,
+  protocolForLocalKind,
+  LOCAL_PROVIDER_DEFAULTS,
+  LOCAL_PROVIDER_MARKERS,
+  type LocalProviderKind,
 } from "@/lib/provider-auth";
-import { patchConfig } from "@/lib/gateway-config";
+import { patchConfig, getCurrentPrimaryModel, shouldSetPrimary } from "@/lib/gateway-config";
 import { bootstrapFreshMachine, configFileExists } from "../_lib/bootstrap";
 
 export const dynamic = "force-dynamic";
@@ -172,11 +179,27 @@ export async function GET() {
       // ignore
     }
 
+    // Ambient local-server detection — informational only, same caveat as
+    // /api/onboard's hasOllama: this probes the host's default ports
+    // directly, so it says nothing about whether OpenClaw's config actually
+    // points at them yet. It just lets the wizard suggest "Ollama detected"
+    // instead of asking the user to know their own port.
+    const [hasOllama, hasLmStudio] = await Promise.all([
+      probeLocalProvider("ollama", LOCAL_PROVIDER_DEFAULTS.ollama.baseUrl, 1500)
+        .then((r) => r.ok)
+        .catch(() => false),
+      probeLocalProvider("openai-compatible", LOCAL_PROVIDER_DEFAULTS.lmstudio.baseUrl, 1500)
+        .then((r) => r.ok)
+        .catch(() => false),
+    ]);
+
     return json({
       ok: true,
       providers: PROVIDER_CATALOG,
       gatewayProviders,
       defaultModel,
+      hasOllama,
+      hasLmStudio,
     });
   } catch (err) {
     return json({ error: String(err) }, 500);
@@ -186,10 +209,18 @@ export async function GET() {
 /* ── POST /api/onboarding/model-auth ──
  * Actions (all support dryRun: true — dry runs validate input shape only and
  * NEVER touch the gateway config, CLI, or provider APIs):
- *   validate-key  { provider, token }            — probe the provider API (read-only)
- *   save-api-key  { provider, token, model? }    — validate + write credentials via config patch
- *   paste-token   { provider, token, expiresIn?} — `openclaw models auth paste-token` via stdin
- *   status        {}                             — live-verify configured auth */
+ *   validate-key  { provider, token }                          — probe the provider API (read-only)
+ *   save-api-key  { provider, token, model?, makePrimary? }     — validate + write credentials via config patch
+ *   paste-token   { provider, token, expiresIn?, makePrimary? } — `openclaw models auth paste-token` via stdin
+ *   probe-local   { kind, baseUrl }                             — reachability + model list, no key
+ *   save-local    { kind, providerId?, baseUrl, model?, apiStyle?, timeoutSeconds?, makePrimary? }
+ *   status        {}                                            — live-verify configured auth
+ *
+ * `model`/`makePrimary` on save-api-key, paste-token, and save-local never
+ * silently overwrite an existing primary model — see the Part A footgun fix
+ * in src/lib/gateway-config.ts (getCurrentPrimaryModel) and the models
+ * routes. A fresh machine with nothing configured still gets `model` set
+ * automatically, exactly as before. */
 
 export async function POST(request: NextRequest) {
   try {
@@ -224,6 +255,7 @@ export async function POST(request: NextRequest) {
         const provider = String(body.provider || "").trim().toLowerCase();
         const token = String(body.token || "").trim();
         const model = String(body.model || "").trim();
+        const makePrimary = body.makePrimary === true;
         if (!provider || !PROVIDER_ID_RE.test(provider)) {
           return json({ error: "A valid provider id is required" }, 400);
         }
@@ -260,13 +292,26 @@ export async function POST(request: NextRequest) {
         }
 
         const patch = buildProviderCredentialPatch(provider, token);
+        let primarySet = false;
+        let existingPrimary: string | null = null;
         if (model) {
-          patch.agents = { defaults: { model: { primary: model } } };
+          existingPrimary = await getCurrentPrimaryModel();
+          if (shouldSetPrimary(existingPrimary, makePrimary)) {
+            patch.agents = { defaults: { model: { primary: model } } };
+            primarySet = true;
+          }
         }
         await patchConfig(patch);
 
         const authenticated = await pollProviderAuthenticated(provider);
-        return json({ ok: true, provider, modelSet: model || null, authenticated });
+        return json({
+          ok: true,
+          provider,
+          modelSet: primarySet ? model : null,
+          primarySet,
+          ...(model && !primarySet ? { existingPrimaryKept: existingPrimary } : {}),
+          authenticated,
+        });
       }
 
       case "paste-token": {
@@ -274,6 +319,7 @@ export async function POST(request: NextRequest) {
         const token = String(body.token || "").trim();
         const expiresIn = String(body.expiresIn || "").trim();
         const model = String(body.model || "").trim();
+        const makePrimary = body.makePrimary === true;
         if (!provider || !PROVIDER_ID_RE.test(provider)) {
           return json({ error: "A valid provider id is required" }, 400);
         }
@@ -318,13 +364,29 @@ export async function POST(request: NextRequest) {
 
         // paste-token writes credentials to the profile store, not env/auth
         // config — no gateway restart needed for the credential itself. The
-        // default model, if requested, still goes through a config patch.
+        // default model, if requested, still goes through a config patch —
+        // guarded the same way as save-api-key so this never clobbers an
+        // existing primary as a side effect of connecting a subscription.
+        let primarySet = false;
+        let existingPrimary: string | null = null;
         if (model) {
-          await patchConfig({ agents: { defaults: { model: { primary: model } } } });
+          existingPrimary = await getCurrentPrimaryModel();
+          if (shouldSetPrimary(existingPrimary, makePrimary)) {
+            await patchConfig({ agents: { defaults: { model: { primary: model } } } });
+            primarySet = true;
+          }
         }
 
         const authenticated = await pollProviderAuthenticated(provider);
-        return json({ ok: true, provider, modelSet: model || null, authenticated, output: output.trim() });
+        return json({
+          ok: true,
+          provider,
+          modelSet: primarySet ? model : null,
+          primarySet,
+          ...(model && !primarySet ? { existingPrimaryKept: existingPrimary } : {}),
+          authenticated,
+          output: output.trim(),
+        });
       }
 
       case "status": {
@@ -337,6 +399,127 @@ export async function POST(request: NextRequest) {
         } catch (err) {
           return json({ ok: false, error: String(err) }, 500);
         }
+      }
+
+      // ── Probe a local/loopback server for reachability + a model list ──
+      // No API key, no `validateProviderToken` call, no config write — this
+      // is a pure read so the wizard can show "Ollama detected" or list
+      // models before the user commits to connecting anything.
+      case "probe-local": {
+        const kind = String(body.kind || "").trim().toLowerCase() as LocalProviderKind;
+        const baseUrl = String(body.baseUrl || "").trim();
+        if (!["ollama", "lmstudio", "custom"].includes(kind)) {
+          return json({ error: "kind must be one of: ollama, lmstudio, custom" }, 400);
+        }
+        if (!baseUrl) return json({ error: "baseUrl is required" }, 400);
+        if (dryRun) {
+          return json({ ok: true, dryRun: true, action, kind, baseUrl });
+        }
+
+        const protocol = protocolForLocalKind(kind);
+        const reach = await probeLocalProvider(protocol, baseUrl);
+        if (!reach.ok) {
+          return json({ ok: false, error: reach.error || "Server unreachable" }, 200);
+        }
+        const providerId = kind === "ollama" ? "ollama" : kind === "lmstudio" ? "lmstudio" : "local";
+        try {
+          const models = await fetchLocalModels(protocol, baseUrl, providerId);
+          return json({ ok: true, models });
+        } catch (err) {
+          return json({ ok: true, models: [], listError: String(err) });
+        }
+      }
+
+      // ── Connect a local/loopback provider — writes the non-secret marker
+      // key instead of a real credential, finishes onboarding with no token
+      // at all (issue #70). Same fresh-machine bootstrap and same
+      // never-clobber-primary guard as the cloud paths above. ──
+      case "save-local": {
+        const kind = String(body.kind || "").trim().toLowerCase() as LocalProviderKind;
+        const baseUrl = String(body.baseUrl || "").trim();
+        const providerId = String(
+          body.providerId || (kind === "ollama" ? "ollama" : kind === "lmstudio" ? "lmstudio" : "local"),
+        ).trim().toLowerCase();
+        const model = String(body.model || "").trim();
+        const makePrimary = body.makePrimary === true;
+        const apiStyle = body.apiStyle === "openai-responses" ? "openai-responses" : "openai-completions";
+        const timeoutSeconds =
+          typeof body.timeoutSeconds === "number" && Number.isFinite(body.timeoutSeconds)
+            ? body.timeoutSeconds
+            : undefined;
+
+        if (!["ollama", "lmstudio", "custom"].includes(kind)) {
+          return json({ error: "kind must be one of: ollama, lmstudio, custom" }, 400);
+        }
+        if (!baseUrl || !providerId) {
+          return json({ error: "baseUrl and providerId are required" }, 400);
+        }
+        if (!PROVIDER_ID_RE.test(providerId)) {
+          return json({ error: "A valid providerId is required" }, 400);
+        }
+        // "custom" is the one kind that isn't a bundled provider id — the
+        // gateway's config schema rejects it with no declared models
+        // (verified live against a sandboxed gateway), so it needs a model
+        // chosen up front rather than relying on auto-discovery.
+        if (kind === "custom" && !model) {
+          return json(
+            { error: "Pick a model before connecting a custom provider — the gateway requires at least one." },
+            400,
+          );
+        }
+
+        const patch = buildLocalProviderConfig(kind, providerId, baseUrl, {
+          apiStyle,
+          timeoutSeconds,
+          declareModel: kind === "custom" && model ? { ref: model } : undefined,
+        });
+        if (dryRun) {
+          return json({
+            ok: true,
+            dryRun: true,
+            action,
+            providerId,
+            // The marker is not a secret — safe to echo in the dry-run plan.
+            wouldPatch: { baseUrl, apiKey: LOCAL_PROVIDER_MARKERS[kind], model: model || null },
+          });
+        }
+        if (!Object.keys(patch).length) {
+          return json({ error: "Could not build a config patch for this provider" }, 400);
+        }
+
+        if (!(await configFileExists())) {
+          const bootstrap = await bootstrapFreshMachine();
+          if (!bootstrap.ok) {
+            return json({ ok: false, error: `Could not set up OpenClaw: ${bootstrap.error}` }, 500);
+          }
+        }
+
+        let primarySet = false;
+        let existingPrimary: string | null = null;
+        if (model) {
+          existingPrimary = await getCurrentPrimaryModel();
+          if (shouldSetPrimary(existingPrimary, makePrimary)) {
+            patch.agents = { defaults: { model: { primary: model } } };
+            primarySet = true;
+          }
+        }
+
+        try {
+          await patchConfig(patch);
+        } catch (err) {
+          return json(
+            { ok: false, error: `Could not save local provider: ${err instanceof Error ? err.message : err}` },
+            500,
+          );
+        }
+
+        return json({
+          ok: true,
+          provider: providerId,
+          modelSet: primarySet ? model : null,
+          primarySet,
+          ...(model && !primarySet ? { existingPrimaryKept: existingPrimary } : {}),
+        });
       }
 
       default:

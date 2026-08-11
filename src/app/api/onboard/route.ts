@@ -15,7 +15,7 @@ import {access, mkdir, readFile, writeFile} from "fs/promises";
 import {dirname, join} from "path";
 import {gatewayCall, runCli, runCliCaptureBoth} from "@/lib/openclaw";
 import {getGatewayUrl, getOpenClawBin, getOpenClawHome} from "@/lib/paths";
-import {patchConfig} from "@/lib/gateway-config";
+import {patchConfig, mergeModelPrimary} from "@/lib/gateway-config";
 import {
   buildCustomProviderConfig,
   buildProviderCredentialPatch,
@@ -454,7 +454,9 @@ export async function POST(request: NextRequest) {
             ? existingModel
             : existingModel?.primary;
           if (!hasPrimary) {
-            defaults.model = { primary: model };
+            // Merge into whatever's already on `model` (e.g. `fallbacks` with
+            // no `primary` yet) instead of replacing the object outright.
+            defaults.model = mergeModelPrimary(existingModel, model);
           }
           agents.defaults = defaults;
           config.agents = agents;

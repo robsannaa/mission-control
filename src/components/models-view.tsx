@@ -15,6 +15,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Server,
   Trash2,
   X,
   Zap,
@@ -756,6 +757,320 @@ function AddProviderWizard({
   );
 }
 
+/* ── Add Local Provider Wizard ────────────────────
+ * Mirrors AddProviderWizard's shell, but the "auth" story is reachability +
+ * a model list instead of a key: nothing here is validated against a paid
+ * API, and connecting never sets a primary model as a side effect — that
+ * stays an explicit choice in the Default Model card below (the footgun fix
+ * for issue #70). */
+
+type LocalKind = "ollama" | "lmstudio" | "custom";
+type LocalWizardStep = "pick" | "checking" | "found" | "done";
+
+const LOCAL_KIND_LABEL: Record<LocalKind, string> = {
+  ollama: "Ollama",
+  lmstudio: "LM Studio",
+  custom: "Custom (OpenAI-compatible)",
+};
+
+const LOCAL_KIND_DEFAULT_BASE_URL: Record<LocalKind, string> = {
+  ollama: "http://127.0.0.1:11434",
+  lmstudio: "http://127.0.0.1:1234/v1",
+  custom: "",
+};
+
+function AddLocalProviderWizard({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [step, setStep] = useState<LocalWizardStep>("pick");
+  const [kind, setKind] = useState<LocalKind>("ollama");
+  const [baseUrl, setBaseUrl] = useState(LOCAL_KIND_DEFAULT_BASE_URL.ollama);
+  const [providerId, setProviderId] = useState("ollama");
+  const [apiStyle, setApiStyle] = useState<"openai-completions" | "openai-responses">("openai-completions");
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+
+  function selectKind(next: LocalKind) {
+    setKind(next);
+    setProviderId(next === "custom" ? "local" : next);
+    setApiStyle(next === "lmstudio" ? "openai-responses" : "openai-completions");
+    setBaseUrl(LOCAL_KIND_DEFAULT_BASE_URL[next]);
+    setError(null);
+  }
+
+  async function handleCheck() {
+    const url = baseUrl.trim();
+    if (!url) {
+      setError("Base URL is required.");
+      return;
+    }
+    setStep("checking");
+    setError(null);
+    try {
+      const res = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "probe-local", kind, baseUrl: url }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setStep("pick");
+        setError(data.error || "Could not reach that server.");
+        return;
+      }
+      setModels((data.models ?? []) as ModelItem[]);
+      setStep("found");
+    } catch {
+      setStep("pick");
+      setError("Network error or request timed out.");
+    }
+  }
+
+  async function handleConnect() {
+    setConnecting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "connect-local",
+          kind,
+          providerId,
+          baseUrl: baseUrl.trim(),
+          apiStyle,
+          // "ollama"/"lmstudio" auto-discover their catalog and ignore this;
+          // "custom" provider ids are not bundled, so the gateway requires at
+          // least one declared model — send the first one found so a
+          // reachable-but-unpicked server still connects (the user still
+          // chooses what's *primary* separately, in Default Model below).
+          model: models[0]?.id,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setError(data.error || "Could not connect.");
+        return;
+      }
+      setStep("done");
+      onDone();
+    } catch {
+      setError("Network error or request timed out.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  const stepTitle: Record<LocalWizardStep, string> = {
+    pick: "Connect a local model",
+    checking: "Checking the server...",
+    found: `Found ${LOCAL_KIND_LABEL[kind]}`,
+    done: "All set!",
+  };
+
+  return (
+    <div className="animate-backdrop-in fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center">
+      <div className="animate-modal-in mx-0 flex w-full max-w-lg flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:mx-4 sm:rounded-2xl">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-foreground">{stepTitle[step]}</h2>
+            {step === "pick" && (
+              <p className="mt-0.5 text-xs text-fg-subtle">
+                No key, no cloud account — this runs entirely on your machine.
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-subtle transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {step === "pick" && (
+            <div className="space-y-4 p-5">
+              <div className="grid grid-cols-3 gap-2">
+                {(["ollama", "lmstudio", "custom"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => selectKind(k)}
+                    className={cn(
+                      "flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3.5 text-center transition-all",
+                      kind === k
+                        ? "border-border-strong bg-foreground/[0.04] shadow-sm"
+                        : "border-border bg-muted hover:border-border-strong"
+                    )}
+                  >
+                    <span className={cn("text-xs font-semibold", kind === k ? "text-foreground" : "text-muted-foreground")}>
+                      {LOCAL_KIND_LABEL[k]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-fg-secondary">Base URL</label>
+                <input
+                  type="text"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleCheck();
+                  }}
+                  placeholder={kind === "custom" ? "http://127.0.0.1:8000/v1" : LOCAL_KIND_DEFAULT_BASE_URL[kind]}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-border bg-muted px-3 py-2.5 font-mono text-sm text-foreground placeholder-fg-placeholder transition-colors focus:border-success-border/40 focus:outline-none focus:ring-2 focus:ring-success/20"
+                />
+              </div>
+
+              {kind === "custom" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium text-fg-secondary">Provider ID</label>
+                    <input
+                      type="text"
+                      value={providerId}
+                      onChange={(e) => setProviderId(e.target.value.trim().toLowerCase())}
+                      placeholder="local"
+                      className="w-full rounded-lg border border-border bg-muted px-3 py-2.5 font-mono text-sm text-foreground placeholder-fg-placeholder focus:border-success-border/40 focus:outline-none focus:ring-2 focus:ring-success/20"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium text-fg-secondary">API style</label>
+                    <select
+                      value={apiStyle}
+                      onChange={(e) =>
+                        setApiStyle(e.target.value === "openai-responses" ? "openai-responses" : "openai-completions")
+                      }
+                      className="w-full rounded-lg border border-border bg-muted px-3 py-2.5 text-sm text-foreground focus:border-success-border/40 focus:outline-none focus:ring-2 focus:ring-success/20"
+                    >
+                      <option value="openai-completions">Chat completions</option>
+                      <option value="openai-responses">Responses API</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  {error}
+                </p>
+              )}
+            </div>
+          )}
+
+          {step === "checking" && (
+            <div className="flex flex-col items-center gap-4 py-14">
+              <div className="relative flex h-16 w-16 items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-success/10" />
+                <Loader2 className="h-8 w-8 animate-spin text-success-fg" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-foreground">Checking the server...</p>
+                <p className="mt-1 text-xs text-fg-subtle">Looking for {LOCAL_KIND_LABEL[kind]} at {baseUrl}</p>
+              </div>
+            </div>
+          )}
+
+          {step === "found" && (
+            <div className="space-y-4 p-5">
+              <div className="flex items-center gap-2 rounded-lg border border-success-border/20 bg-success/5 px-3 py-2.5">
+                <Check className="h-4 w-4 shrink-0 text-success-fg" />
+                <span className="text-xs font-medium text-success-fg">
+                  Reachable — {models.length} model{models.length !== 1 ? "s" : ""} found
+                </span>
+              </div>
+              {models.length > 0 && (
+                <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border bg-muted p-2">
+                  {models.map((m) => (
+                    <div key={m.id} className="truncate rounded px-2 py-1 text-xs text-foreground">
+                      {getFriendlyModelName(m.id)}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {kind === "custom" && models.length === 0 && (
+                <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  No models found on that server yet — load one, then check again.
+                </p>
+              )}
+              <p className="text-[11px] leading-relaxed text-fg-subtle">
+                Connecting adds this as a provider. Pick which model to use as your default afterward,
+                in the Default Model section below.
+              </p>
+              {error && (
+                <p className="flex items-center gap-1.5 text-xs text-danger-fg">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  {error}
+                </p>
+              )}
+            </div>
+          )}
+
+          {step === "done" && (
+            <div className="flex flex-col items-center gap-5 px-5 py-10">
+              <div className="relative flex h-16 w-16 items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-success-bg" />
+                <Check className="h-8 w-8 text-success-fg" strokeWidth={2.5} />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-foreground">Local provider connected!</p>
+                <p className="mt-1 text-xs leading-relaxed text-fg-subtle">
+                  You can now pick a model in the Default Model section.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-border px-5 py-4">
+          {step === "pick" && (
+            <button
+              type="button"
+              onClick={() => void handleCheck()}
+              disabled={!baseUrl.trim()}
+              className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/88 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Check server
+            </button>
+          )}
+
+          {step === "found" && (
+            <button
+              type="button"
+              onClick={() => void handleConnect()}
+              disabled={connecting || (kind === "custom" && models.length === 0)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/88 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Connect
+            </button>
+          )}
+
+          {step === "done" && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/88"
+            >
+              Done
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Model Picker Modal ──────────────────────────── */
 
 function ModelPickerModal({
@@ -1478,6 +1793,7 @@ function ProvidersCard({
   agents,
   providers,
   onAddProvider,
+  onAddLocalProvider,
   onManageProvider,
   onRemoveProvider,
 }: {
@@ -1485,6 +1801,7 @@ function ProvidersCard({
   agents: AgentFull[];
   providers: Provider[];
   onAddProvider: (providerId?: string) => void;
+  onAddLocalProvider: () => void;
   onManageProvider: (providerId: string) => void;
   onRemoveProvider: (providerId: string) => void;
 }) {
@@ -1508,14 +1825,24 @@ function ProvidersCard({
             Manage your AI provider connections
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onAddProvider()}
-          className="flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary/88"
-        >
-          <Plus className="h-3.5 w-3.5 shrink-0" />
-          Add provider
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onAddLocalProvider}
+            className="flex items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-all hover:border-border-strong hover:text-foreground"
+          >
+            <Server className="h-3.5 w-3.5 shrink-0" />
+            Connect local model
+          </button>
+          <button
+            type="button"
+            onClick={() => onAddProvider()}
+            className="flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary/88"
+          >
+            <Plus className="h-3.5 w-3.5 shrink-0" />
+            Add provider
+          </button>
+        </div>
       </CardHeader>
 
       {configuredProviders.length === 0 && unconnectedProviders.length === 0 ? (
@@ -1628,6 +1955,7 @@ export function ModelsView() {
 
   const [showWizard, setShowWizard] = useState(false);
   const [wizardProviderId, setWizardProviderId] = useState<string | null>(null);
+  const [showLocalWizard, setShowLocalWizard] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"error" | "success">("error");
 
@@ -1791,6 +2119,11 @@ export function ModelsView() {
     setWizardProviderId(null);
   }
 
+  function handleLocalWizardDone() {
+    void fetchSummary();
+    void fetchAgents();
+  }
+
   function handleRefreshAll() {
     void fetchSummary();
     void fetchAgents();
@@ -1854,17 +2187,28 @@ export function ModelsView() {
                   <div>
                     <p className="text-sm font-semibold text-foreground">No providers connected yet</p>
                     <p className="mt-1 max-w-xs text-xs leading-relaxed text-fg-subtle">
-                      Add an AI provider API key to get started. Your key is stored securely on this device.
+                      Add an AI provider API key, or connect a model already running on this
+                      machine — no paid service required either way.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => openProviderWizard()}
-                    className="flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/88"
-                  >
-                    <Plus className="h-4 w-4 shrink-0" />
-                    Add your first provider
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openProviderWizard()}
+                      className="flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/88"
+                    >
+                      <Plus className="h-4 w-4 shrink-0" />
+                      Add a provider
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowLocalWizard(true)}
+                      className="flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-muted-foreground transition-all hover:border-border-strong hover:text-foreground"
+                    >
+                      <Server className="h-4 w-4 shrink-0" />
+                      Connect local model
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1900,6 +2244,7 @@ export function ModelsView() {
                 agents={agents}
                 providers={providerList}
                 onAddProvider={(pid) => openProviderWizard(pid)}
+                onAddLocalProvider={() => setShowLocalWizard(true)}
                 onManageProvider={(pid) => openProviderWizard(pid)}
                 onRemoveProvider={(pid) => void handleRemoveProvider(pid)}
               />
@@ -1915,6 +2260,14 @@ export function ModelsView() {
           providers={providerList}
           onClose={closeProviderWizard}
           onDone={handleWizardDone}
+        />
+      )}
+
+      {/* Connect local model wizard modal */}
+      {showLocalWizard && (
+        <AddLocalProviderWizard
+          onClose={() => setShowLocalWizard(false)}
+          onDone={handleLocalWizardDone}
         />
       )}
 

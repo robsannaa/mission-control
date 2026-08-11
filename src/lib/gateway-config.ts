@@ -349,6 +349,85 @@ export async function fetchConfig(timeout = 10000): Promise<ConfigData> {
   };
 }
 
+// ── Primary-model read (footgun-fix guard) ───────
+//
+// Connecting a provider (a cloud key, a local server) must never silently
+// change which model is primary — see the Part A fix in the models routes.
+// Callers use this to decide whether setting `agents.defaults.model.primary`
+// is safe (nothing configured yet) or requires an explicit opt-in from the
+// user (something is already configured).
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Read the currently configured primary model, live from the gateway. Returns
+ * `null` both when nothing is configured yet AND when the gateway can't be
+ * reached — callers that need to distinguish "truly nothing configured" from
+ * "couldn't check" should fall back to reading `openclaw.json` directly
+ * (the disk-fallback code paths in the models routes already do this).
+ */
+export async function getCurrentPrimaryModel(): Promise<string | null> {
+  try {
+    const configData = await fetchConfig(6000);
+    const agents = isRecord(configData.parsed.agents) ? configData.parsed.agents : {};
+    const defaults = isPlainObject(agents.defaults) ? agents.defaults : {};
+    const model = defaults.model;
+    if (typeof model === "string") return model.trim() || null;
+    if (isPlainObject(model) && typeof model.primary === "string") {
+      return model.primary.trim() || null;
+    }
+  } catch {
+    // Gateway offline or config.get failed — caller decides how to proceed.
+  }
+  return null;
+}
+
+/** Same extraction, applied to an already-parsed `openclaw.json` document —
+ * for the disk-fallback code paths that read the file directly. */
+export function extractPrimaryModel(config: Record<string, unknown> | null | undefined): string | null {
+  if (!isPlainObject(config)) return null;
+  const agents = isPlainObject(config.agents) ? config.agents : {};
+  const defaults = isPlainObject(agents.defaults) ? agents.defaults : {};
+  const model = defaults.model;
+  if (typeof model === "string") return model.trim() || null;
+  if (isPlainObject(model) && typeof model.primary === "string") {
+    return model.primary.trim() || null;
+  }
+  return null;
+}
+
+/**
+ * Merge a new `primary` into an existing `agents.defaults.model` value
+ * without discarding `fallbacks` or any other key — the Part A footgun fix
+ * for issue #70. A raw `defaults.model = { primary }` assignment (what every
+ * disk-fallback code path used to do) silently drops `fallbacks`; this is
+ * the one correct way to change just the primary.
+ *
+ * `existingModel` may be a bare string (legacy shorthand for `{ primary }`,
+ * carries no fallbacks to preserve), an object, or absent — every shape
+ * `agents.defaults.model` can legally have in `openclaw.json`.
+ */
+export function mergeModelPrimary(
+  existingModel: unknown,
+  primary: string,
+): Record<string, unknown> {
+  const existingObj = isPlainObject(existingModel) ? existingModel : {};
+  return { ...existingObj, primary };
+}
+
+/**
+ * Decide whether it's safe to write `primary` as a side effect of connecting
+ * a provider. `true` only when nothing is configured yet, or the caller
+ * explicitly opted in — never as an automatic consequence of adding a key or
+ * a local server. See issue #70: pasting an OpenRouter key silently switched
+ * a user off their local model with no opt-out.
+ */
+export function shouldSetPrimary(existingPrimary: string | null, makePrimary: boolean): boolean {
+  return !existingPrimary || makePrimary;
+}
+
 // ── Atomic config.patch with retry ───────────────
 
 export async function patchConfig(

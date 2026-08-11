@@ -5,11 +5,23 @@ import { getOpenClawHome } from "@/lib/paths";
 import { buildModelsSummary } from "@/lib/models-summary";
 import {
   buildProviderCredentialPatch,
+  buildLocalProviderConfig,
+  fetchLocalModels,
+  probeLocalProvider,
+  protocolForLocalKind,
+  isPrivateBaseUrl,
+  type LocalProviderKind,
   PROVIDER_ENV_KEYS,
   validateProviderToken,
   fetchModelsFromProvider,
 } from "@/lib/provider-auth";
-import { patchConfig } from "@/lib/gateway-config";
+import {
+  patchConfig,
+  getCurrentPrimaryModel,
+  extractPrimaryModel,
+  mergeModelPrimary,
+  shouldSetPrimary,
+} from "@/lib/gateway-config";
 import { gatewayCall } from "@/lib/openclaw";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +57,7 @@ type GatewayAuthProviderRow = {
   profiles?: Array<{ profileId?: string; type?: string; status?: string }>;
 };
 
-const LOCAL_PROVIDERS = new Set(["ollama", "vllm", "lmstudio"]);
+const LOCAL_PROVIDERS = new Set(["ollama", "vllm", "lmstudio", "local"]);
 
 function modelKeyFor(provider: string, id: string): string {
   return id === provider || id.startsWith(`${provider}/`) ? id : `${provider}/${id}`;
@@ -120,7 +132,8 @@ export async function GET() {
 }
 
 // ── POST /api/models ────────────────────────────
-// Actions: auth-provider, remove-provider, set-primary, list-models
+// Actions: auth-provider, remove-provider, set-primary, set-fallbacks,
+// list-models, test-key, probe-local, connect-local
 
 export async function POST(request: NextRequest) {
   try {
@@ -129,10 +142,19 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       // ── Connect a provider (save API key + optionally set default model) ──
+      //
+      // FOOTGUN FIX (issue #70): connecting a new provider must never silently
+      // change the primary model — that's how a user pasting an OpenRouter key
+      // "just to get past the wizard" ended up with their local model replaced
+      // and no way back. `model` is still accepted (it's what makes the
+      // "connect + immediately pick a model" flows work), but it's only
+      // written to `agents.defaults.model.primary` when there's no primary
+      // configured yet, or the caller explicitly opts in with `makePrimary`.
       case "auth-provider": {
         const provider = String(body.provider || "").trim().toLowerCase();
         const token = String(body.token || "").trim();
         const modelToSet = String(body.model || "").trim();
+        const makePrimary = body.makePrimary === true;
 
         if (!provider || !token) {
           return json({ error: "Provider and API key are required" }, 400);
@@ -147,13 +169,22 @@ export async function POST(request: NextRequest) {
         const envKey = PROVIDER_ENV_KEYS[provider];
         let method = "";
         let gatewayError: string | null = null;
+        let primarySet = false;
+        let existingPrimary: string | null = null;
 
         // Layer 1: Gateway RPC (preferred — triggers live reload)
         if (envKey) {
           try {
             const patch = buildProviderCredentialPatch(provider, token);
             if (modelToSet) {
-              patch.agents = { defaults: { model: { primary: modelToSet } } };
+              existingPrimary = await getCurrentPrimaryModel();
+              if (shouldSetPrimary(existingPrimary, makePrimary)) {
+                // Merge only the `primary` key — config.patch is an RFC 7386
+                // JSON merge patch, so this preserves `fallbacks` and any
+                // other keys already on `agents.defaults.model`.
+                patch.agents = { defaults: { model: { primary: modelToSet } } };
+                primarySet = true;
+              }
             }
             await patchConfig(patch);
             method = "gateway";
@@ -187,11 +218,18 @@ export async function POST(request: NextRequest) {
             config.auth = auth;
 
             if (modelToSet) {
-              const agents = (config.agents || {}) as Record<string, unknown>;
-              const defaults = (agents.defaults || {}) as Record<string, unknown>;
-              defaults.model = { primary: modelToSet };
-              agents.defaults = defaults;
-              config.agents = agents;
+              existingPrimary = extractPrimaryModel(config);
+              if (shouldSetPrimary(existingPrimary, makePrimary)) {
+                const agents = (config.agents || {}) as Record<string, unknown>;
+                const defaults = (agents.defaults || {}) as Record<string, unknown>;
+                // Merge into the existing model object instead of replacing
+                // it wholesale — a raw `defaults.model = { primary }` here
+                // would silently drop `fallbacks`.
+                defaults.model = mergeModelPrimary(defaults.model, modelToSet);
+                agents.defaults = defaults;
+                config.agents = agents;
+                primarySet = true;
+              }
             }
 
             await mkdir(dirname(configPath), { recursive: true });
@@ -217,8 +255,102 @@ export async function POST(request: NextRequest) {
           ok: true,
           provider,
           method,
-          modelSet: modelToSet || null,
+          modelSet: primarySet ? modelToSet : null,
+          primarySet,
+          // Told to the caller so the UI can say "kept your existing model"
+          // instead of silently doing nothing with the requested `model`.
+          ...(modelToSet && !primarySet ? { existingPrimaryKept: existingPrimary } : {}),
           ...(gatewayError ? { gatewayError } : {}),
+        });
+      }
+
+      // ── Probe a local/loopback provider (no key needed) ──
+      case "probe-local": {
+        const kind = String(body.kind || "").trim().toLowerCase() as LocalProviderKind;
+        const baseUrl = String(body.baseUrl || "").trim();
+        if (!["ollama", "lmstudio", "custom"].includes(kind)) {
+          return json({ error: "kind must be one of: ollama, lmstudio, custom" }, 400);
+        }
+        if (!baseUrl) return json({ error: "baseUrl is required" }, 400);
+
+        const result = await probeLocalProvider(protocolForLocalKind(kind), baseUrl);
+        if (!result.ok) return json(result, 200);
+
+        try {
+          const models = await fetchLocalModels(
+            protocolForLocalKind(kind),
+            baseUrl,
+            kind === "ollama" ? "ollama" : kind === "lmstudio" ? "lmstudio" : "local",
+          );
+          return json({ ok: true, models });
+        } catch (err) {
+          // Reachable, but listing failed — still "ok" (server is there),
+          // just no models to show yet.
+          return json({ ok: true, models: [], listError: String(err) });
+        }
+      }
+
+      // ── Connect a local/loopback provider — no key, no validation call ──
+      case "connect-local": {
+        const kind = String(body.kind || "").trim().toLowerCase() as LocalProviderKind;
+        const baseUrl = String(body.baseUrl || "").trim();
+        const providerId = String(
+          body.providerId || (kind === "custom" ? "local" : kind) || "",
+        ).trim().toLowerCase();
+        const modelToSet = String(body.model || "").trim();
+        const makePrimary = body.makePrimary === true;
+        const apiStyle = body.apiStyle === "openai-responses" ? "openai-responses" : "openai-completions";
+        const timeoutSeconds =
+          typeof body.timeoutSeconds === "number" && Number.isFinite(body.timeoutSeconds)
+            ? body.timeoutSeconds
+            : undefined;
+
+        if (!["ollama", "lmstudio", "custom"].includes(kind)) {
+          return json({ error: "kind must be one of: ollama, lmstudio, custom" }, 400);
+        }
+        if (!baseUrl || !providerId) {
+          return json({ error: "baseUrl and providerId are required" }, 400);
+        }
+
+        const patch = buildLocalProviderConfig(kind, providerId, baseUrl, {
+          apiStyle,
+          timeoutSeconds,
+          // Only "custom" ids need this (see buildLocalProviderConfig) — the
+          // gateway rejects a non-bundled provider with no declared models.
+          declareModel: kind === "custom" && modelToSet ? { ref: modelToSet } : undefined,
+        });
+        if (!Object.keys(patch).length) {
+          return json({ error: "Could not build a config patch for this provider" }, 400);
+        }
+        if (kind === "custom" && !modelToSet) {
+          return json(
+            { error: "Pick a model before connecting a custom provider — the gateway requires at least one." },
+            400,
+          );
+        }
+
+        let primarySet = false;
+        let existingPrimary: string | null = null;
+        if (modelToSet) {
+          existingPrimary = await getCurrentPrimaryModel();
+          if (shouldSetPrimary(existingPrimary, makePrimary)) {
+            patch.agents = { defaults: { model: { primary: modelToSet } } };
+            primarySet = true;
+          }
+        }
+
+        try {
+          await patchConfig(patch);
+        } catch (err) {
+          return json({ error: `Failed to save local provider: ${err instanceof Error ? err.message : err}` }, 500);
+        }
+
+        return json({
+          ok: true,
+          provider: providerId,
+          modelSet: primarySet ? modelToSet : null,
+          primarySet,
+          ...(modelToSet && !primarySet ? { existingPrimaryKept: existingPrimary } : {}),
         });
       }
 
@@ -291,7 +423,10 @@ export async function POST(request: NextRequest) {
             try { config = JSON.parse(await readFile(configPath, "utf-8")); } catch { /* */ }
             const agents = (config.agents || {}) as Record<string, unknown>;
             const defaults = (agents.defaults || {}) as Record<string, unknown>;
-            defaults.model = { primary: model };
+            // Merge into the existing model object — `set-primary` is an
+            // explicit user choice to change the primary, but it must not
+            // discard `fallbacks` (or any other key) as a side effect.
+            defaults.model = mergeModelPrimary(defaults.model, model);
             agents.defaults = defaults;
             config.agents = agents;
             await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
@@ -340,6 +475,22 @@ export async function POST(request: NextRequest) {
         const provider = String(body.provider || "").trim().toLowerCase();
         let token = String(body.token || "").trim();
         if (!provider) return json({ error: "Provider is required" }, 400);
+
+        // Local/loopback providers have no token to fetch — their catalog
+        // comes straight from the server itself, keyed off the `baseUrl`
+        // already written into `models.providers.<id>`.
+        try {
+          const configPath = join(OPENCLAW_HOME, "openclaw.json");
+          const config = JSON.parse(await readFile(configPath, "utf-8"));
+          const providerCfg = config?.models?.providers?.[provider];
+          const baseUrl = typeof providerCfg?.baseUrl === "string" ? providerCfg.baseUrl : "";
+          if (baseUrl && (LOCAL_PROVIDERS.has(provider) || isPrivateBaseUrl(baseUrl))) {
+            const models = await fetchLocalModels(protocolForLocalKind(
+              provider === "ollama" ? "ollama" : "custom",
+            ), baseUrl, provider);
+            return json({ ok: true, models });
+          }
+        } catch { /* fall through to the token-based lookup below */ }
 
         // If no token passed, try to read stored key
         if (!token) {

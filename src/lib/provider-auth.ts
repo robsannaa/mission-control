@@ -377,6 +377,245 @@ export async function fetchModelsFromCustomProvider(
     .filter((row): row is ProviderModelItem => row !== null);
 }
 
+/* ── Local / loopback providers (Ollama, LM Studio, custom OpenAI-compatible) ──
+ *
+ * OpenClaw's own docs (docs.openclaw.ai/gateway/local-models,
+ * docs.openclaw.ai/providers/ollama) document a keyless path for these: when
+ * `baseUrl` resolves to loopback, a private LAN address, `.local`, or a bare
+ * hostname, a non-secret marker string in `apiKey` (e.g. `"ollama-local"`)
+ * satisfies OpenClaw's credential check instead of a real key. This section
+ * never asks for or validates a paid API key — reachability + a model list
+ * is the whole "auth" story for a local backend. */
+
+export type LocalProviderKind = "ollama" | "lmstudio" | "custom";
+
+/** Wire protocol used to discover models — Ollama's native API vs. an
+ * OpenAI-compatible `/v1/models` catalog (LM Studio, vLLM, custom proxies). */
+export type LocalProviderProtocol = "ollama" | "openai-compatible";
+
+export function protocolForLocalKind(kind: LocalProviderKind): LocalProviderProtocol {
+  return kind === "ollama" ? "ollama" : "openai-compatible";
+}
+
+/** Readable, non-secret marker per kind — any non-empty string works once
+ * `baseUrl` is recognized as private; these just read well in config. */
+export const LOCAL_PROVIDER_MARKERS: Record<LocalProviderKind, string> = {
+  ollama: "ollama-local",
+  lmstudio: "lmstudio",
+  custom: "sk-local",
+};
+
+export const LOCAL_PROVIDER_DEFAULTS: Record<
+  "ollama" | "lmstudio",
+  { providerId: string; baseUrl: string }
+> = {
+  ollama: { providerId: "ollama", baseUrl: "http://127.0.0.1:11434" },
+  lmstudio: { providerId: "lmstudio", baseUrl: "http://127.0.0.1:1234/v1" },
+};
+
+const BARE_LOOPBACK_RE = /^(localhost|127(?:\.\d{1,3}){3}|\[?::1\]?|0\.0\.0\.0)$/i;
+// RFC 1918 ranges — note each alternative consumes a different number of
+// leading octets before the fixed prefix (10.0.0.0/8 leaves three trailing
+// octets to match; 172.16.0.0/12 and 192.168.0.0/16 leave two), so the
+// trailing `\d{1,3}` groups can't be shared across all three the way a
+// simpler-looking single trailing pattern would suggest.
+const PRIVATE_IPV4_RE =
+  /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})$/;
+
+/**
+ * Mirrors the trust rule OpenClaw itself documents for local markers: loopback,
+ * private-LAN, `.local`, and bare (dot-less) hostnames. This is only used to
+ * decide what Mission Control *suggests* in the UI (marker vs. asking for a
+ * real key) — the gateway makes the actual trust decision when the config is
+ * loaded, this never grants network access on its own.
+ */
+export function isPrivateHost(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (!h) return false;
+  if (BARE_LOOPBACK_RE.test(h)) return true;
+  if (PRIVATE_IPV4_RE.test(h)) return true;
+  if (h.endsWith(".local")) return true;
+  if (!h.includes(".") && !h.includes(":")) return true; // bare hostname
+  return false;
+}
+
+export function isPrivateBaseUrl(baseUrl: string): boolean {
+  try {
+    return isPrivateHost(new URL(String(baseUrl || "").trim()).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function stripTrailingSlash(url: string): string {
+  return String(url || "").trim().replace(/\/+$/, "");
+}
+
+function parseOllamaTags(data: unknown, providerId: string): ProviderModelItem[] {
+  const rows =
+    data && typeof data === "object" && Array.isArray((data as { models?: unknown[] }).models)
+      ? (data as { models: Array<{ name?: string; model?: string }> }).models
+      : [];
+  return rows
+    .map((row) => {
+      const name = String(row?.name || row?.model || "").trim();
+      if (!name) return null;
+      return { id: `${providerId}/${name}`, name };
+    })
+    .filter((row): row is ProviderModelItem => row !== null);
+}
+
+function parseOpenAiCompatModels(data: unknown, providerId: string): ProviderModelItem[] {
+  const rows =
+    data && typeof data === "object" && Array.isArray((data as { data?: unknown[] }).data)
+      ? (data as { data: Array<{ id?: string }> }).data
+      : [];
+  return rows
+    .map((row) => {
+      const id = String(row?.id || "").trim();
+      if (!id) return null;
+      return { id: `${providerId}/${id}`, name: id };
+    })
+    .filter((row): row is ProviderModelItem => row !== null);
+}
+
+function localListUrl(protocol: LocalProviderProtocol, baseUrl: string): string {
+  const url = stripTrailingSlash(baseUrl);
+  // OpenClaw's own convention (see docs/gateway/local-models) already puts
+  // `/v1` in `baseUrl` for OpenAI-compatible backends — e.g.
+  // "http://127.0.0.1:1234/v1" — so the catalog endpoint is `${baseUrl}/models`,
+  // never `${baseUrl}/v1/models`. Ollama's native API has no `/v1` at all.
+  return protocol === "ollama" ? `${url}/api/tags` : `${url}/models`;
+}
+
+/** Probe a local/loopback model server for reachability — no API key sent or
+ * required. Used for the onboarding wizard's "Ollama detected" / "Connect"
+ * flows and the Models page's local-provider card. */
+export async function probeLocalProvider(
+  protocol: LocalProviderProtocol,
+  baseUrl: string,
+  timeoutMs = 4000,
+): Promise<{ ok: boolean; error?: string }> {
+  const url = stripTrailingSlash(baseUrl);
+  if (!url) return { ok: false, error: "Base URL is required" };
+  const listUrl = localListUrl(protocol, url);
+  try {
+    const res = await fetch(listUrl, { method: "GET", signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) {
+      return { ok: false, error: `Server returned ${res.status} at ${listUrl}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Could not reach ${listUrl}: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+/** List models from a local/loopback server — no API key needed. Returned ids
+ * carry the provider prefix (e.g. `ollama/llama3.2:latest`), matching the
+ * `ProviderModelItem` shape every other model list in this file returns. */
+export async function fetchLocalModels(
+  protocol: LocalProviderProtocol,
+  baseUrl: string,
+  providerId: string,
+  timeoutMs = 6000,
+): Promise<ProviderModelItem[]> {
+  const url = stripTrailingSlash(baseUrl);
+  if (!url) throw new Error("Base URL is required");
+  const listUrl = localListUrl(protocol, url);
+  const res = await fetch(listUrl, { method: "GET", signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`Server returned ${res.status} at ${listUrl}`);
+  const data = await res.json();
+  return protocol === "ollama"
+    ? parseOllamaTags(data, providerId)
+    : parseOpenAiCompatModels(data, providerId);
+}
+
+/**
+ * Build the `config.patch` payload that connects a local/loopback provider —
+ * writes the non-secret marker key into `models.providers.<id>.apiKey`
+ * instead of a real credential. Deliberately never touches
+ * `agents.defaults.model` — the caller decides whether/what to set as
+ * primary (see the "never clobber the primary" fix in the models routes).
+ */
+export function buildLocalProviderConfig(
+  kind: LocalProviderKind,
+  providerId: string,
+  baseUrl: string,
+  opts?: {
+    apiStyle?: "openai-completions" | "openai-responses";
+    timeoutSeconds?: number;
+    /**
+     * A model to declare in `models.providers.<id>.models` — verified live
+     * against a sandboxed gateway: `ollama` and `lmstudio` are bundled
+     * provider ids and auto-discover their catalog from the running server,
+     * but any other ("custom") provider id is rejected by the gateway's
+     * config schema ("custom model providers must declare models") unless
+     * at least one model is declared here. `ref` is the full
+     * `<providerId>/<rawId>` form everywhere else in this file uses; the
+     * provider-local id written into `models[].id` has the prefix stripped,
+     * per docs/gateway/local-models.
+     */
+    declareModel?: { ref: string; name?: string; contextWindow?: number; maxTokens?: number };
+  },
+): Record<string, unknown> {
+  const url = stripTrailingSlash(baseUrl);
+  const id = String(providerId || "").trim().toLowerCase();
+  if (!url || !id) return {};
+
+  const providerEntry: Record<string, unknown> = {
+    baseUrl: url,
+    apiKey: LOCAL_PROVIDER_MARKERS[kind],
+  };
+  // Ollama speaks its own native protocol (implied by the `ollama` provider
+  // id); an explicit `api` only applies to OpenAI-compatible backends.
+  if (kind !== "ollama") {
+    providerEntry.api = opts?.apiStyle || "openai-completions";
+  }
+  if (opts?.timeoutSeconds && Number.isFinite(opts.timeoutSeconds) && opts.timeoutSeconds > 0) {
+    providerEntry.timeoutSeconds = Math.round(opts.timeoutSeconds);
+  }
+  if (kind === "custom" && opts?.declareModel?.ref) {
+    const ref = opts.declareModel.ref.trim();
+    const rawId = ref.startsWith(`${id}/`) ? ref.slice(id.length + 1) : ref;
+    if (rawId) {
+      providerEntry.models = [
+        {
+          id: rawId,
+          name: opts.declareModel.name || rawId,
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          // Conservative defaults — accurate values need `/api/show` (Ollama)
+          // or similar, which a generic OpenAI-compatible `/v1/models` doesn't
+          // provide. The user (or a future doctor check) can raise these in
+          // Settings once real limits are known.
+          contextWindow: opts.declareModel.contextWindow ?? 32768,
+          maxTokens: opts.declareModel.maxTokens ?? 8192,
+        },
+      ];
+    }
+  }
+
+  return {
+    models: {
+      providers: {
+        [id]: providerEntry,
+      },
+    },
+    auth: {
+      profiles: {
+        [`${id}:default`]: {
+          provider: id,
+          mode: "api_key",
+        },
+      },
+    },
+  };
+}
+
 /** 构建企业自建 provider 的 config patch */
 export function buildCustomProviderConfig(
   baseUrl: string,
