@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useSyncExternalStore } from "react";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
+import { ContentLoadingState } from "@/components/ui/loading-state";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -712,16 +713,7 @@ export function DashboardView() {
   }, []);
 
   if (!live) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-fg-subtle">
-        <span className="mr-2 inline-flex items-center gap-1">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-        </span>
-        Connecting to system...
-      </div>
-    );
+    return <ContentLoadingState />;
   }
 
   const gw = live.gateway;
