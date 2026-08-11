@@ -45,6 +45,44 @@ function signatureOf(type: string, title: string, source?: string): string {
   return `${type}|${source ?? ""}|${title}`;
 }
 
+/**
+ * Internal engine chatter that must never reach a person: embedded-run traces,
+ * prep-stage dumps, raw run/session-id lines. These arrive as `log` events with
+ * `warning` severity and used to crowd out the notifications that matter.
+ */
+const NOISE_LOG_RE =
+  /\[trace|embedded-run|prep stages|prep_stages|runid=|sessionid=|\bdebug\b/i;
+
+function isNoiseLog(e: NotificationEvent): boolean {
+  if (e.type !== "log" && e.type !== "system") return false;
+  return NOISE_LOG_RE.test(`${e.title} ${e.detail ?? ""}`);
+}
+
+/**
+ * A cron run the user actually wants to hear about: one the agent scheduled to
+ * ping them (a reminder / heads-up), as opposed to routine background jobs like
+ * a mail sweep that fire constantly. Matched on the message the run produced.
+ */
+const REMINDER_RE = /remind|reminder|⏰|🔔|don'?t forget|heads[- ]?up|follow[- ]?up|check (on|that|the)|nudge/i;
+
+function isUserFacingCron(e: NotificationEvent): boolean {
+  if (e.type !== "cron") return false;
+  // A failed job is always worth surfacing; otherwise only reminder-shaped ones.
+  return e.status === "error" || REMINDER_RE.test(`${e.title} ${e.detail ?? ""}`);
+}
+
+/**
+ * Events worth a person's attention: things that failed (error/warning) and
+ * reminders the agent scheduled for them. A successful reminder is `ok`, so an
+ * error-only filter dropped it — that is the bug that let a "check the boiling
+ * water" reminder fire with nothing shown in the app. Routine successful cron
+ * jobs are deliberately excluded so the bell stays signal, not a job log.
+ */
+function worthShowing(e: NotificationEvent): boolean {
+  if (isNoiseLog(e)) return false;
+  return e.status === "error" || e.status === "warning" || isUserFacingCron(e);
+}
+
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
   const secs = Math.floor(diff / 1000);
@@ -139,6 +177,8 @@ export function NotificationCenter() {
     return localStorage.getItem("notif_muted") === "1";
   });
   const panelRef = useRef<HTMLDivElement>(null);
+  // Ids we've already surfaced, so a re-poll of the same event doesn't re-notify.
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
   const slowBackgroundPolling = !open || muted;
 
   // Subscribe to store-pushed bell notifications
@@ -181,10 +221,37 @@ export function NotificationCenter() {
         ? ((await alertsRes.json()) as { alerts?: Array<{ id: string; message: string; firedAt?: number }> })
         : {};
 
-      // Only show actionable activity events (errors and warnings).
-      const actionable = (Array.isArray(activityData) ? activityData : []).filter(
-        (e) => e.status === "error" || e.status === "warning"
-      );
+      // Errors, warnings, and things the agent did on its own (cron/reminders) —
+      // minus internal trace noise. See worthShowing().
+      const actionable = (Array.isArray(activityData) ? activityData : []).filter(worthShowing);
+
+      // Actively surface anything NEW since the last poll: a badge is easy to
+      // miss, and the whole point of a reminder is that it reaches you. The
+      // first poll seeds the backlog silently so we never replay old events.
+      {
+        const seen = seenEventIdsRef.current;
+        const seeding = seen.size === 0;
+        for (const e of actionable) {
+          if (seen.has(e.id)) continue;
+          seen.add(e.id);
+          if (seeding || muted) continue;
+          notificationStore.push({
+            type: e.type,
+            severity:
+              e.status === "error" ? "error" : e.status === "warning" ? "warning" : "info",
+            title: e.title,
+            detail: e.detail,
+            source: e.source,
+            displayMode: "toast",
+            dedupKey: `activity:${e.id}`,
+          });
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            try {
+              new Notification(e.title, { body: e.detail, tag: e.id, icon: "/favicon.ico" });
+            } catch { /* ignore */ }
+          }
+        }
+      }
 
       const pairingEvents: NotificationEvent[] = [
         ...((pairingData.dm || []).map((req) => ({
@@ -339,6 +406,21 @@ export function NotificationCenter() {
     notificationStore.markAllRead();
   }, []);
 
+  // Get rid of everything currently shown — not just mute it. Store-backed
+  // notifications are dismissed; polled events are remembered as dismissed by
+  // signature so they stay gone across re-polls.
+  const clearAll = useCallback(() => {
+    setDismissedSigs((prev) => {
+      const next = new Set(prev);
+      for (const item of displayItems) {
+        next.add(signatureOf(item.type, item.title, item.source));
+        if (item.storeNotification) notificationStore.dismiss(item.id);
+      }
+      return next;
+    });
+    setLastSeenTs(Date.now());
+  }, [displayItems]);
+
   const handleOpen = () => {
     setOpen(!open);
   };
@@ -404,6 +486,17 @@ export function NotificationCenter() {
                 >
                   <CheckCheck className="h-3 w-3" />
                   Mark read
+                </button>
+              )}
+              {displayItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  title="Remove all notifications"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger-fg"
+                >
+                  <X className="h-3 w-3" />
+                  Clear all
                 </button>
               )}
               <button
@@ -515,9 +608,9 @@ export function NotificationCenter() {
                     <button
                       type="button"
                       onClick={(e) => dismissItem(item, e)}
-                      aria-label="Dismiss notification"
-                      title="Dismiss"
-                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-fg-subtle opacity-0 transition-opacity hover:bg-secondary hover:text-fg-secondary focus:opacity-100 group-hover:opacity-100 dark:hover:text-foreground"
+                      aria-label="Remove notification"
+                      title="Remove this notification"
+                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-fg-subtle opacity-60 transition-opacity hover:bg-secondary hover:text-fg-secondary hover:opacity-100 focus:opacity-100 group-hover:opacity-100 dark:hover:text-foreground"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
