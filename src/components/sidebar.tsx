@@ -18,7 +18,6 @@ import {
   Terminal,
   Cpu,
   Database,
-  Sparkles,
   Users,
   Users2,
   BarChart3,
@@ -121,6 +120,27 @@ const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
  * against its own page's advice. See e2e/sidebar-nav verification for the
  * filtered hosted set.
  */
+/** Y Combinator "Y" glyph, drawn in the same stroked, monochrome style as the
+ *  lucide icons around it (G-Brain is a Y Combinator project). */
+function YCombinatorIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="4" />
+      <path d="M8.5 8l3.5 4.5L15.5 8" />
+      <path d="M12 12.5V16" />
+    </svg>
+  );
+}
+
 const ALL_NAV_ITEMS: NavItem[] = [
   // ── top of the rail — no group label, this IS the product ──
   { section: "chat", label: "Chat", icon: MessageCircle, href: "/chat" },
@@ -146,7 +166,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { group: "Knowledge", section: "memory", label: "Memory", icon: Brain, href: "/memory" },
   { section: "docs", label: "Documents", icon: FolderOpen, href: "/documents" },
   { section: "vectors", label: "Vector DB", icon: Database, href: "/vectors" },
-  { section: "g-brain", label: "G-Brain", icon: Sparkles, href: "/g-brain", requiresGBrain: true },
+  { section: "g-brain", label: "G-Brain", icon: YCombinatorIcon, href: "/g-brain", requiresGBrain: true },
   { section: "search", label: "Web Search", icon: Search, href: "/search" },
 
   // ── Connections ──
