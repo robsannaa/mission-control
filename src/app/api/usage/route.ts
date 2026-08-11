@@ -279,11 +279,14 @@ export async function GET(request: NextRequest) {
       diagnostics.warnings.push("Reconciliation did not complete; trust labels may be stale.");
     });
 
-    // Wait for all background writes before reading data, but with a timeout
-    // so a slow write does not block the entire response.
+    // Give the fast local writes (ingest) a brief moment to land so the ledger
+    // read below picks them up, but never wait on the slow ones (external
+    // provider billing, reconciliation): those keep running in the background
+    // and the next 30s poll reflects them. Waiting the old 8s here meant one
+    // slow billing call could stall the whole page.
     await Promise.race([
       Promise.allSettled([schedulerP, ingestP, billingP, reconcileP]),
-      new Promise((resolve) => setTimeout(resolve, 8000)),
+      new Promise((resolve) => setTimeout(resolve, 1200)),
     ]);
 
     const dynamicPricing = await fetchOpenRouterPricing().catch(() => null);
