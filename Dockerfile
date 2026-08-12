@@ -18,7 +18,9 @@ ENV NODE_ENV=production
 # does `git pull --ff-only` + `npm ci` + `npm run build` in place, so the runtime image
 # needs git, the full source tree (not just build output), and .git/ itself — not just
 # the .next/public/node_modules subset a normal production image would ship.
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+# sqlite3 (the CLI, not a Node module) is shelled out to by src/lib/usage-db.ts for
+# usage tracking — also absent from the slim base image.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app /app
 # Mission Control shells out to the `openclaw` CLI at runtime (doctor/status/lint/etc),
