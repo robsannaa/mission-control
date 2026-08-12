@@ -423,14 +423,22 @@ export async function POST(request: NextRequest) {
     }
 
     const after = await buildStatus(false);
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       steps,
       before,
       after,
       restartRequired: true,
-      restartHint: after.restartHint || "Restart Mission Control to apply the updated build.",
+      restarting: true,
+      restartHint:
+        "Rebuilt successfully. Restarting now to apply it — this page will be briefly unreachable, then come back on the new build.",
     });
+    // Exit once the response has had a chance to flush. The container's
+    // `restart: unless-stopped` policy brings the process back up running
+    // the freshly built .next output — an intentional restart (exit 0), not
+    // a crash; there is no in-flight state left to preserve at this point.
+    setTimeout(() => process.exit(0), 300);
+    return response;
   } catch (err) {
     return NextResponse.json(
       {

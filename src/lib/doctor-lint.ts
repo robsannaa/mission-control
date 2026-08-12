@@ -2,12 +2,13 @@
  * The structured half of the Doctor: `openclaw doctor --lint --json`.
  *
  * This is the only doctor surface that is both read-only and machine-readable.
- * Two flags are load-bearing and must not be dropped:
  *
- * - `--all` — 27 of the 51 registered checks are opt-in. Without it,
- *   `configured-plugin-installs` never runs, and that check has a live warning
- *   on this machine. Measured cost of `--all`: ~4.5–6.7s, versus ~4.0s without.
- *   Half a second is not worth 27 checks.
+ * - `--all` is NOT passed. On OpenClaw 2026.6.9+ it is not a recognized flag —
+ *   the opt-in/opt-out check split it used to control is gone, and `--lint`
+ *   now always runs the full inventory (verified: checksSkipped: 0). Passing
+ *   `--all` anyway makes the CLI exit 2 before it lints anything, which is
+ *   strictly worse than omitting it. If a future CLI reintroduces a check
+ *   subset by default, re-add it then.
  * - `--severity-min info` — the default threshold is `warning`, which silently
  *   discards every info finding. A page that claims to show everything cannot
  *   run with a filter it did not choose.
@@ -65,7 +66,7 @@ export type LintResult = {
   groups: LintGroup[];
 };
 
-export const LINT_ARGS = ["doctor", "--lint", "--all", "--severity-min", "info", "--json"];
+export const LINT_ARGS = ["doctor", "--lint", "--severity-min", "info", "--json"];
 
 const SEVERITY_RANK = { error: 0, warning: 1, info: 2 } as const;
 

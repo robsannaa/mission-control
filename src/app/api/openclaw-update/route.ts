@@ -1,5 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import { access } from "fs/promises";
 import { CONFIG_WRITE_TIMEOUT_MS, runCli, runCliJson } from "@/lib/openclaw";
+
+/**
+ * `openclaw update` patches its own installed files in place, which cannot
+ * persist in a container (the writable layer resets on recreate) and often
+ * can't even run (root-owned global install dir, non-root container user).
+ * Detected once per process — /.dockerenv is a standard container marker.
+ */
+let _inContainer: boolean | null = null;
+async function isRunningInContainer(): Promise<boolean> {
+  if (_inContainer !== null) return _inContainer;
+  try {
+    await access("/.dockerenv");
+    _inContainer = true;
+  } catch {
+    _inContainer = false;
+  }
+  return _inContainer;
+}
 
 const GITHUB_RELEASES_URL =
   "https://api.github.com/repos/openclaw/openclaw/releases/latest";
@@ -56,6 +75,19 @@ type UpdateRunJson = {
   targetVersion?: string | null;
   actions?: string[];
   notes?: string[];
+  // `openclaw update --json` reports failures (e.g. a permission error mid-step)
+  // as a 0-exit-looking JSON body with status: "error" rather than a thrown
+  // error — runCliJson's JSON-recovery fallback also resurfaces these on a
+  // non-zero exit, so this shape must be checked explicitly, not just `ok`.
+  status?: "ok" | "error" | string;
+  reason?: string;
+  steps?: Array<{
+    name?: string;
+    command?: string;
+    exitCode?: number | null;
+    stderrTail?: string | null;
+    stdoutTail?: string | null;
+  }>;
 };
 
 /**
@@ -165,6 +197,22 @@ export async function POST(request: NextRequest) {
     if (noRestart) args.push("--no-restart");
 
     const result = await runCliJson<UpdateRunJson>(args, 1_260_000);
+
+    if (result?.status === "error") {
+      const failedStep = result.steps?.find((s) => s.exitCode && s.exitCode !== 0);
+      const detail = failedStep?.stderrTail?.trim() || result.reason || "Unknown failure.";
+      const dockerHint = (await isRunningInContainer())
+        ? " This gateway runs in Docker, where self-update can't work: the CLI would be patching files in the container's throwaway layer, which resets on the next restart even if the write succeeded. Update by pulling a new image instead: `docker compose pull openclaw && docker compose up -d --force-recreate openclaw`."
+        : "";
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Update failed (${result.reason || "unknown step"}): ${detail}${dockerHint}`,
+          result,
+        },
+        { status: 409 },
+      );
+    }
 
     let versionAfter: string | null = null;
     try {
