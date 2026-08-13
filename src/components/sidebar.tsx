@@ -567,7 +567,11 @@ export function Sidebar() {
       return next;
     });
   }, []);
-  const commitHash = process.env.NEXT_PUBLIC_COMMIT_HASH || "";
+  // Prefer the meaningful version (git describe, or the package.json version in
+  // container/VPC builds where git is absent); fall back to the short commit.
+  const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "";
+  const commitHash =
+    appVersion && appVersion !== "dev" ? appVersion : process.env.NEXT_PUBLIC_COMMIT_HASH || "";
 
   useEffect(() => {
     if (!mobileOpen) return;
