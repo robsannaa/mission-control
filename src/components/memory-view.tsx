@@ -1,12 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowUpRight,
   BrainCircuit,
   Check,
   ChevronDown,
+  CircleCheck,
   Database,
+  Layers,
   Loader2,
   Moon,
   Pencil,
@@ -16,6 +20,7 @@ import {
   Sparkles,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +67,16 @@ async function post(payload: Record<string, unknown>): Promise<MemorySnapshot | 
 
 type Editing = { mode: "new" } | { mode: "edit"; entry: MemoryEntry } | null;
 
+interface EngineStatus {
+  provider?: string;
+  model?: string;
+  dims: number | null;
+  files: number;
+  chunks: number;
+  dirty: boolean;
+  ollama: boolean;
+}
+
 export function MemoryView() {
   const [snap, setSnap] = useState<MemorySnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,6 +85,37 @@ export function MemoryView() {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const [showReflections, setShowReflections] = useState(false);
+  const [engine, setEngine] = useState<EngineStatus | null>(null);
+
+  // The index/embeddings engine — memory and vectors are ONE system in
+  // OpenClaw, so the engine lives on this page too. Refetched after any change.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/vector?scope=status", { cache: "no-store" });
+        const d = await res.json();
+        if (!active || !res.ok) return;
+        const s = d?.agents?.[0]?.status;
+        if (s) {
+          setEngine({
+            provider: s.provider,
+            model: s.model,
+            dims: s.vector?.dims ?? null,
+            files: s.files ?? 0,
+            chunks: s.chunks ?? 0,
+            dirty: Boolean(s.dirty),
+            ollama: Boolean(d?.providerAvailability?.ollama?.reachable),
+          });
+        }
+      } catch {
+        /* engine card is best-effort */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [snap]);
 
   const load = useCallback(async (soft = false) => {
     if (!soft) setLoading(true);
@@ -199,6 +245,15 @@ export function MemoryView() {
                 reflections={reflections}
                 open={showReflections}
                 onToggle={() => setShowReflections((v) => !v)}
+              />
+            )}
+
+            {/* Index engine — memory and vectors are one system in OpenClaw. */}
+            {engine && (
+              <IndexSection
+                engine={engine}
+                busyKey={busy}
+                onReindex={(force) => void run(force ? "force" : "reindex", { action: "reindex", force })}
               />
             )}
           </div>
@@ -382,6 +437,80 @@ function ReflectionsSection({
           Show all {reflections.length} reflections
         </button>
       )}
+    </section>
+  );
+}
+
+// ── index engine (memory == vectors in OpenClaw) ────────────────────────────────
+
+function IndexSection({
+  engine,
+  busyKey,
+  onReindex,
+}: {
+  engine: EngineStatus;
+  busyKey: string | null;
+  onReindex: (force: boolean) => void;
+}) {
+  const reindexing = busyKey === "reindex" || busyKey === "force";
+  const rows: Array<[string, React.ReactNode]> = [
+    ["Provider", engine.provider || "—"],
+    ["Model", <span key="m" className="font-mono text-xs">{engine.model || "—"}</span>],
+    ["Dimensions", engine.dims ? `${engine.dims}-d` : "—"],
+    ["Documents", engine.files],
+    ["Chunks", engine.chunks],
+  ];
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+          <Layers className="size-3.5" /> Index &amp; embeddings
+        </h3>
+        <Link
+          href="/vectors"
+          className="inline-flex items-center gap-1 text-xs font-medium text-fg-subtle hover:text-foreground"
+        >
+          Advanced settings <ArrowUpRight className="size-3" />
+        </Link>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5">
+            {engine.dirty ? (
+              <Badge variant="warning">Index stale — reindex to catch up</Badge>
+            ) : (
+              <Badge variant="success">
+                <CircleCheck className="size-3" /> Up to date
+              </Badge>
+            )}
+            {engine.provider === "ollama" && !engine.ollama && (
+              <Badge variant="destructive">Ollama unreachable</Badge>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => onReindex(false)} disabled={reindexing}>
+              {busyKey === "reindex" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              Reindex
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onReindex(true)} disabled={reindexing}>
+              {busyKey === "force" ? <Loader2 className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}
+              Full rebuild
+            </Button>
+          </div>
+        </div>
+        <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+          {rows.map(([k, v], i) => (
+            <div key={i} className="flex items-center justify-between gap-2 border-b border-border/60 pb-1.5">
+              <dt className="text-fg-subtle">{k}</dt>
+              <dd className="truncate text-right font-medium text-foreground">{v}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-3 text-xs leading-relaxed text-fg-subtle">
+          Your memories are chunked and embedded into a searchable vector index — the same store your agent recalls
+          from. Memory and vectors are one system.
+        </p>
+      </div>
     </section>
   );
 }

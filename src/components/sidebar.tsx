@@ -18,7 +18,6 @@ import {
   MessageCircle,
   Terminal,
   Cpu,
-  Database,
   Users,
   Users2,
   BarChart3,
@@ -175,7 +174,6 @@ const ALL_NAV_ITEMS: NavItem[] = [
   // ── Knowledge ──
   { group: "Knowledge", section: "memory", label: "Memory", icon: Brain, href: "/memory" },
   { section: "docs", label: "Documents", icon: FolderOpen, href: "/documents" },
-  { section: "vectors", label: "Vector DB", icon: Database, href: "/vectors" },
   { section: "g-brain", label: "G-Brain", icon: YCombinatorIcon, href: "/g-brain", requiresGBrain: true },
   { section: "search", label: "Web Search", icon: Search, href: "/search" },
 
