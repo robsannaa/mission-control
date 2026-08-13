@@ -56,3 +56,6 @@ next-env.d.ts
 !public/**/*.png
 !.github/**/*.png
 .playwright-cli/
+
+# OpenClaw backup archives (created by the Backup view; never commit)
+*-openclaw-backup.tar.gz

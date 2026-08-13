@@ -129,6 +129,22 @@ const QuestionsView = dynamic(
   () => import("@/components/questions-view").then((m) => m.QuestionsView),
   { loading: () => <SectionLoading /> }
 );
+const McpView = dynamic(
+  () => import("@/components/mcp-view").then((m) => m.McpView),
+  { loading: () => <SectionLoading /> }
+);
+const CommitmentsView = dynamic(
+  () => import("@/components/commitments-view").then((m) => m.CommitmentsView),
+  { loading: () => <SectionLoading /> }
+);
+const BackupView = dynamic(
+  () => import("@/components/backup-view").then((m) => m.BackupView),
+  { loading: () => <SectionLoading /> }
+);
+const ApprovalsView = dynamic(
+  () => import("@/components/approvals-view").then((m) => m.ApprovalsView),
+  { loading: () => <SectionLoading /> }
+);
 
 const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
 
@@ -165,7 +181,11 @@ export type DashboardSection =
   | "help"
   | "g-brain"
   | "channels"
-  | "questions";
+  | "questions"
+  | "mcp"
+  | "commitments"
+  | "backup"
+  | "approvals";
 
 function SectionContent({ section }: { section: DashboardSection }) {
   if (isAgentbayHosting && section === "tailscale") {
@@ -237,6 +257,14 @@ function SectionContent({ section }: { section: DashboardSection }) {
       return <GBrainView />;
     case "questions":
       return <QuestionsView />;
+    case "mcp":
+      return <McpView />;
+    case "commitments":
+      return <CommitmentsView />;
+    case "backup":
+      return <BackupView />;
+    case "approvals":
+      return <ApprovalsView />;
     default:
       return <DashboardView />;
   }

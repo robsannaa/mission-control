@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState, useCallback, useSyncExternalStore, useRe
 import { cn } from "@/lib/utils";
 import {
   Activity,
+  Archive,
   LayoutDashboard,
   ListChecks,
   Calendar,
@@ -29,9 +30,12 @@ import {
   Search,
   Heart,
   HelpCircle,
+  Plug,
   Puzzle,
   Radio,
   CircleHelp,
+  Handshake,
+  ShieldCheck,
 } from "lucide-react";
 import { getChatUnreadCount, subscribeChatStore } from "@/lib/chat-store";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
@@ -151,6 +155,8 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { section: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { section: "activity", label: "Activity", icon: Activity, href: "/activity" },
   { section: "questions", label: "Questions", icon: CircleHelp, href: "/questions" },
+  { section: "commitments", label: "Commitments", icon: Handshake, href: "/commitments" },
+  { section: "approvals", label: "Approvals", icon: ShieldCheck, href: "/approvals" },
   { section: "usage", label: "Usage", icon: BarChart3, href: "/usage" },
   { section: "sessions", label: "Sessions", icon: MessageSquare, href: "/sessions" },
   // Self-hosted only for now — hosted lacks a Google-connect flow. Product
@@ -175,10 +181,12 @@ const ALL_NAV_ITEMS: NavItem[] = [
 
   // ── Connections ──
   { group: "Connections", section: "channels", label: "Channels", icon: Radio, href: "/channels" },
+  { section: "mcp", label: "MCP", icon: Plug, href: "/mcp" },
   { section: "integrations", label: "Integrations", icon: Puzzle, href: "/integrations", beta: true },
 
   // ── pinned bottom, below a hairline separator ──
   { section: "logs", label: "Logs", icon: Terminal, href: "/logs", pinnedBottom: true, selfHostedOnly: true },
+  { section: "backup", label: "Backup", icon: Archive, href: "/backup", pinnedBottom: true, selfHostedOnly: true },
   { section: "settings", label: "Settings", icon: Settings, href: "/settings", pinnedBottom: true },
   { section: "help", label: "Help & Support", icon: HelpCircle, href: "/help", pinnedBottom: true },
 ];
@@ -251,6 +259,7 @@ function deriveSectionFromPath(pathname: string): string | null {
     "skills",
     "accounts",
     "channels",
+    "mcp",
     "audio",
     "browser",
     "search",
@@ -266,6 +275,9 @@ function deriveSectionFromPath(pathname: string): string | null {
     "settings",
     "activity",
     "questions",
+    "commitments",
+    "approvals",
+    "backup",
     "help",
   ]);
   return known.has(first) ? first : null;
