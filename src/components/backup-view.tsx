@@ -97,8 +97,8 @@ export function BackupView() {
                   <h2 className="text-sm font-semibold text-foreground">Create a backup</h2>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     Writes a timestamped <span className="font-mono">.tar.gz</span> archive you can keep or move
-                    somewhere safe. It includes sessions and workspaces, so it can be large — you'll get the full
-                    path when it's done.
+                    somewhere safe. It includes sessions and workspaces, so it can be large — you’ll get the full
+                    path when it’s done.
                   </p>
                   {plan && plan.included.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
