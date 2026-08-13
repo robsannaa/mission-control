@@ -28,7 +28,7 @@ const FEATURES = [
 function ProductVisual() {
   return (
     <div
-      className="relative h-[300px] overflow-hidden bg-[#111111] sm:h-[400px] lg:h-[480px]"
+      className="relative h-[220px] overflow-hidden bg-[#111111] sm:h-[240px]"
       style={{
         backgroundImage:
           "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.085) 1px, transparent 0)",
@@ -55,7 +55,7 @@ function ProductVisual() {
         <circle cx="710" cy="300" r="5" fill="#a855f7" />
       </svg>
 
-      <div className="absolute left-[6%] top-[22%] w-[25%] min-w-44 rounded-2xl border border-white/10 bg-[#1b1b1b] p-3 shadow-2xl sm:p-4">
+      <div className="absolute left-[5%] top-[20%] w-[25%] min-w-36 rounded-2xl border border-white/10 bg-[#1b1b1b] p-3 shadow-2xl">
         <div className="mb-3 flex items-center justify-between">
           <span className="flex items-center gap-2 text-[11px] font-medium text-white/65">
             <Bot className="h-3.5 w-3.5" /> Agent
@@ -70,8 +70,8 @@ function ProductVisual() {
         </div>
       </div>
 
-      <div className="absolute left-1/2 top-[13%] w-[30%] min-w-52 -translate-x-1/2 rounded-2xl border border-white/15 bg-[#202020] p-3 shadow-[0_22px_60px_rgba(0,0,0,0.55)] sm:p-4">
-        <div className="mb-4 flex items-center gap-2">
+      <div className="absolute left-1/2 top-[12%] w-[30%] min-w-44 -translate-x-1/2 rounded-2xl border border-white/15 bg-[#202020] p-3 shadow-[0_22px_60px_rgba(0,0,0,0.55)]">
+        <div className="mb-3 flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-sm">🦞</div>
           <div>
             <p className="text-xs font-semibold text-white">Mission Control</p>
@@ -94,7 +94,7 @@ function ProductVisual() {
         </div>
       </div>
 
-      <div className="absolute right-[6%] top-[18%] w-[25%] min-w-44 rounded-2xl border border-white/10 bg-[#1b1b1b] p-3 shadow-2xl sm:p-4">
+      <div className="absolute right-[5%] top-[16%] w-[25%] min-w-36 rounded-2xl border border-white/10 bg-[#1b1b1b] p-3 shadow-2xl">
         <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-white/65">
           <MessageSquare className="h-3.5 w-3.5" /> First conversation
         </div>
@@ -108,7 +108,7 @@ function ProductVisual() {
         </div>
       </div>
 
-      <div className="absolute bottom-[9%] right-[9%] hidden w-[21%] min-w-40 rounded-2xl border border-white/10 bg-[#1b1b1b] p-3 shadow-2xl sm:block">
+      <div className="absolute bottom-[8%] right-[8%] hidden w-[21%] min-w-36 rounded-2xl border border-white/10 bg-[#1b1b1b] p-3 shadow-2xl sm:block">
         <div className="flex items-center gap-2 text-[11px] font-medium text-white/65">
           <Radio className="h-3.5 w-3.5 text-violet-400" /> Channels
         </div>
@@ -126,20 +126,20 @@ function ProductVisual() {
 
 export function OnboardingWelcome({ onStart }: { onStart: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f3f3f2] px-3 py-4 sm:px-6 sm:py-8">
-      <div className="mx-auto w-full max-w-[1024px] overflow-hidden rounded-[32px] border border-black/10 bg-white text-[#111111] shadow-[0_28px_70px_rgba(0,0,0,0.16)] sm:rounded-[44px]">
+    <div className="fixed inset-0 z-50 flex overflow-y-auto bg-[#f3f3f2] px-4 py-6">
+      <div className="m-auto w-full max-w-[560px] overflow-hidden rounded-3xl border border-black/10 bg-white text-[#111111] shadow-[0_24px_60px_rgba(0,0,0,0.14)]">
         <ProductVisual />
 
-        <div className="px-6 pb-6 pt-8 sm:px-14 sm:pb-10 sm:pt-12">
-          <h1 className="text-2xl font-semibold tracking-[-0.03em] sm:text-[34px] sm:leading-tight">
+        <div className="px-7 pb-7 pt-7 sm:px-9 sm:pt-8 sm:pb-9">
+          <h1 className="text-[22px] font-semibold tracking-[-0.02em]">
             Meet Mission Control
           </h1>
 
-          <div className="mt-7 space-y-5 sm:mt-10 sm:space-y-7">
+          <div className="mt-6 space-y-4">
             {FEATURES.map(({ icon: Icon, text }) => (
-              <div key={text} className="flex items-center gap-4 sm:gap-5">
-                <Icon className="h-6 w-6 shrink-0 stroke-[1.8] sm:h-7 sm:w-7" />
-                <p className="text-base font-medium leading-snug sm:text-[22px]">{text}</p>
+              <div key={text} className="flex items-center gap-3.5">
+                <Icon className="h-5 w-5 shrink-0 stroke-[1.8]" />
+                <p className="text-[15px] font-medium leading-snug">{text}</p>
               </div>
             ))}
           </div>
@@ -147,7 +147,7 @@ export function OnboardingWelcome({ onStart }: { onStart: () => void }) {
           <button
             type="button"
             onClick={onStart}
-            className="mt-9 flex h-14 w-full items-center justify-center rounded-2xl bg-[#111111] px-6 text-base font-medium text-white transition-transform hover:scale-[1.005] hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 active:scale-[0.995] sm:mt-12 sm:h-20 sm:text-[22px]"
+            className="mt-8 flex h-12 w-full items-center justify-center rounded-xl bg-[#111111] px-6 text-[15px] font-medium text-white transition-transform hover:scale-[1.005] hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 active:scale-[0.995]"
           >
             Get started
           </button>

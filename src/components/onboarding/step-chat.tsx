@@ -93,10 +93,10 @@ export function StepChat({
   );
 
   return (
-    <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+    <div className="flex min-h-full flex-col gap-5 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
-          <Sparkles className="h-3.5 w-3.5 text-fg-subtle dark:text-muted-foreground" />
+          <Sparkles className="h-3.5 w-3.5 text-fg-subtle" />
           <h2 className="text-base font-semibold tracking-tight text-foreground">
             Say hello to your agent
           </h2>
@@ -114,7 +114,7 @@ export function StepChat({
               type="button"
               onClick={() => void send(p)}
               disabled={streaming}
-              className="rounded-full border border-border bg-card dark:bg-sidebar px-3 py-1.5 text-xs text-fg-secondary dark:text-muted-foreground hover:border-success-border hover:text-success-fg transition-colors"
+              className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-fg-secondary hover:border-black/30 hover:text-[#111111] transition-colors"
             >
               {p}
             </button>
@@ -125,7 +125,7 @@ export function StepChat({
       {turns.length > 0 && (
         <div
           ref={scrollRef}
-          className="max-h-56 space-y-3 overflow-y-auto rounded-xl border border-border bg-muted dark:bg-sidebar p-3.5"
+          className="max-h-56 space-y-3 overflow-y-auto rounded-xl border border-border bg-muted p-3.5"
         >
           {turns.map((turn, i) => (
             <div
@@ -190,7 +190,7 @@ export function StepChat({
         <Celebration message="That's your agent, live and thinking. You're all set!" />
       )}
 
-      <div className="flex items-center justify-between gap-2 pt-1">
+      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
         <button type="button" onClick={onSkip} className={secondaryBtnClass}>
           Skip for now
         </button>

@@ -39,7 +39,7 @@ export function Celebration({
   return (
     <div
       className={cn(
-        "relative flex items-center gap-2.5 rounded-xl border border-success-border bg-success-bg px-3.5 py-3 animate-in fade-in zoom-in-95 duration-300",
+        "relative flex items-center gap-2.5 rounded-xl border border-black/10 bg-black/[0.04] px-3.5 py-3 animate-in fade-in zoom-in-95 duration-300",
         className,
       )}
       role="status"
@@ -50,11 +50,11 @@ export function Celebration({
           100% { transform: translate(var(--dx), var(--dy)) rotate(540deg) scale(0.4); opacity: 0; }
         }
       `}</style>
-      <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-success text-primary-foreground">
+      <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white">
         <Check className="h-3.5 w-3.5" />
-        {burst && <span className="absolute inset-0 rounded-full bg-success animate-ping" />}
+        {burst && <span className="absolute inset-0 rounded-full bg-black/30 animate-ping" />}
       </span>
-      <p className="text-xs font-medium leading-relaxed text-success-fg">
+      <p className="text-xs font-medium leading-relaxed text-[#111111]">
         {message}
       </p>
       {burst && (

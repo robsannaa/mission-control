@@ -38,6 +38,10 @@ function isAdvisedModel(provider: string, modelId: string): boolean {
   return modelId === advised || modelId.endsWith(advised.replace(/^[^/]+\//, ""));
 }
 
+const isHosted =
+  process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true" ||
+  process.env.AGENTBAY_HOSTED === "true";
+
 /* ── Local provider metadata (client-side mirror of src/lib/provider-auth.ts
  * LOCAL_PROVIDER_DEFAULTS — kept as plain constants here rather than
  * importing the server lib into a client component). ── */
@@ -80,6 +84,7 @@ export function StepModel({
   onSkip: () => void;
 }) {
   const [providers, setProviders] = useState<ProviderCatalogEntry[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [existingDefault, setExistingDefault] = useState<string | null>(null);
   const [providerId, setProviderId] = useState("openrouter");
   const [apiKey, setApiKey] = useState("");
@@ -133,7 +138,8 @@ export function StepModel({
         if (data?.hasOllama === true) setHasOllama(true);
         if (data?.hasLmStudio === true) setHasLmStudio(true);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setCatalogLoaded(true));
   }, []);
 
   const activeProvider = providers.find((p) => p.id === providerId);
@@ -392,25 +398,26 @@ export function StepModel({
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+    <div className="flex min-h-full flex-col gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
-          <Key className="h-3.5 w-3.5 text-fg-subtle dark:text-muted-foreground" />
+          <Key className="h-3.5 w-3.5 text-fg-subtle" />
           <h2 className="text-base font-semibold tracking-tight text-foreground">
             Connect an AI model
           </h2>
         </div>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Paste an API key, connect a subscription, or point at a model already running on this
-          machine — no paid service required.
+          {isHosted
+            ? "Paste an API key to power your agent. It stays inside your instance — we never see it."
+            : "Paste an API key, connect a subscription, or point at a model already running on this machine — no paid service required."}
         </p>
       </div>
 
       {alreadyConfigured && (
         <div className={cardClass}>
-          <p className="text-xs leading-relaxed text-fg-secondary dark:text-muted-foreground">
+          <p className="text-xs leading-relaxed text-fg-secondary">
             A model is already configured:{" "}
-            <span className="font-mono text-foreground dark:text-fg-secondary">
+            <span className="font-mono text-foreground">
               {getFriendlyModelName(existingDefault!)}
             </span>
           </p>
@@ -425,17 +432,18 @@ export function StepModel({
         </div>
       )}
 
-      {/* Top-level chooser: Cloud | Subscription | Local */}
-      <div className="inline-flex rounded-full border border-border bg-muted dark:bg-sidebar p-0.5">
+      {/* Top-level chooser: Cloud | Subscription | Local — hosted is cloud-only */}
+      {!isHosted && (
+      <div className="inline-flex items-center gap-0.5 rounded-lg border border-black/10 bg-[#f5f3f1] p-1">
         <button
           type="button"
           onClick={() => switchMode("cloud")}
           disabled={validating || saving || subSaving || localSaving}
           className={cn(
-            "rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200",
+            "rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-200",
             mode === "cloud" && authMode === "api-key"
-              ? "bg-card text-foreground shadow-sm"
-              : "text-fg-subtle hover:text-fg-secondary",
+              ? "bg-white text-[#111111] shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-black/10"
+              : "text-black/45 hover:text-black/70",
           )}
         >
           Cloud
@@ -445,10 +453,10 @@ export function StepModel({
           onClick={jumpToSubscription}
           disabled={validating || saving || subSaving || localSaving}
           className={cn(
-            "rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200",
+            "rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-200",
             mode === "cloud" && authMode === "subscription"
-              ? "bg-card text-foreground shadow-sm"
-              : "text-fg-subtle hover:text-fg-secondary",
+              ? "bg-white text-[#111111] shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-black/10"
+              : "text-black/45 hover:text-black/70",
           )}
         >
           Subscription
@@ -458,20 +466,39 @@ export function StepModel({
           onClick={() => switchMode("local")}
           disabled={validating || saving || subSaving || localSaving}
           className={cn(
-            "flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200",
+            "flex items-center gap-1 rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-200",
             mode === "local"
-              ? "bg-card text-foreground shadow-sm"
-              : "text-fg-subtle hover:text-fg-secondary",
+              ? "bg-white text-[#111111] shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-black/10"
+              : "text-black/45 hover:text-black/70",
           )}
         >
           Local
           {(hasOllama || hasLmStudio) && mode !== "local" && (
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            <span className="h-1.5 w-1.5 rounded-full bg-[#111111]" />
           )}
         </button>
       </div>
+      )}
 
-      {mode === "cloud" && (
+      {/* Until the provider catalog arrives, mirror the final layout as a
+          skeleton — rendering the key input first and swapping in the cards a
+          beat later reads as a glitch. */}
+      {mode === "cloud" && !catalogLoaded && (
+        <div className="space-y-6" aria-hidden="true">
+          <div className="grid grid-cols-3 gap-2">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-[68px] animate-pulse rounded-xl border border-black/5 bg-black/[0.04]" />
+            ))}
+          </div>
+          <div className="h-4 w-2/3 animate-pulse rounded bg-black/[0.05]" />
+          <div className="space-y-1.5">
+            <div className="h-3 w-36 animate-pulse rounded bg-black/[0.05]" />
+            <div className="h-12 animate-pulse rounded-xl border border-black/5 bg-black/[0.03]" />
+          </div>
+        </div>
+      )}
+
+      {mode === "cloud" && catalogLoaded && (
         <>
           {/* Provider cards */}
           <div className="grid grid-cols-3 gap-2">
@@ -492,20 +519,17 @@ export function StepModel({
                   className={cn(
                     "group relative flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3.5 transition-all duration-200",
                     isSelected
-                      ? "border-border-strong dark:border-border/60 bg-foreground/[0.04] dark:bg-muted/[0.07] shadow-sm"
-                      : "border-border bg-card dark:bg-sidebar hover:border-border-strong dark:hover:border-border hover:-translate-y-px hover:shadow-sm",
+                      ? "border-border-strong bg-foreground/[0.04] shadow-sm"
+                      : "border-border bg-card hover:border-border-strong hover:-translate-y-px hover:shadow-sm",
                     (validating || saving) && "opacity-50 cursor-not-allowed",
                   )}
                 >
-                  {isSelected && (
-                    <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-success" />
-                  )}
                   <span
                     className={cn(
                       "text-xs font-semibold transition-colors",
                       isSelected
                         ? "text-foreground"
-                        : "text-muted-foreground dark:text-fg-subtle",
+                        : "text-muted-foreground",
                     )}
                   >
                     {p.label}
@@ -534,7 +558,7 @@ export function StepModel({
 
           {/* API key vs. subscription — first-class, no CLI commands either way */}
           {supportsSubscription && (
-            <div className="inline-flex rounded-full border border-border bg-muted dark:bg-sidebar p-0.5">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-black/10 bg-[#f5f3f1] p-1">
               {(["api-key", "subscription"] as const).map((am) => (
                 <button
                   key={am}
@@ -542,10 +566,10 @@ export function StepModel({
                   onClick={() => setAuthMode(am)}
                   disabled={validating || saving || subSaving}
                   className={cn(
-                    "rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200",
+                    "rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-200",
                     authMode === am
-                      ? "bg-card text-foreground shadow-sm"
-                      : "text-fg-subtle hover:text-fg-secondary",
+                      ? "bg-white text-[#111111] shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-black/10"
+                      : "text-black/45 hover:text-black/70",
                   )}
                 >
                   {am === "api-key" ? "API key" : "I have a Claude subscription"}
@@ -589,8 +613,8 @@ export function StepModel({
                     className={cn(
                       "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-300",
                       validating
-                        ? "bg-muted dark:bg-secondary text-muted-foreground"
-                        : "bg-success-bg text-success-fg ring-1 ring-success-border",
+                        ? "bg-muted text-muted-foreground"
+                        : "bg-black/[0.04] text-[#111111] ring-1 ring-black/10",
                     )}
                   >
                     {validating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
@@ -633,7 +657,7 @@ export function StepModel({
               <label className={labelClass}>Setup token</label>
               <p className="text-xs leading-relaxed text-muted-foreground">
                 On a machine where you&apos;re signed in to Claude Code, run{" "}
-                <span className="font-mono text-foreground dark:text-fg-secondary">claude setup-token</span>{" "}
+                <span className="font-mono text-foreground">claude setup-token</span>{" "}
                 and paste the result here. Needs a Claude Pro or Max plan.{" "}
                 <a
                   href="https://support.claude.com/en/articles/11145838-using-claude-code-with-your-pro-or-max-plan"
@@ -690,24 +714,21 @@ export function StepModel({
                   className={cn(
                     "group relative flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3.5 transition-all duration-200",
                     isSelected
-                      ? "border-border-strong dark:border-border/60 bg-foreground/[0.04] dark:bg-muted/[0.07] shadow-sm"
-                      : "border-border bg-card dark:bg-sidebar hover:border-border-strong dark:hover:border-border hover:-translate-y-px hover:shadow-sm",
+                      ? "border-border-strong bg-foreground/[0.04] shadow-sm"
+                      : "border-border bg-card hover:border-border-strong hover:-translate-y-px hover:shadow-sm",
                     (localProbing || localSaving) && "opacity-50 cursor-not-allowed",
                   )}
                 >
-                  {isSelected && (
-                    <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-success" />
-                  )}
                   <span
                     className={cn(
                       "text-xs font-semibold transition-colors",
-                      isSelected ? "text-foreground" : "text-muted-foreground dark:text-fg-subtle",
+                      isSelected ? "text-foreground" : "text-muted-foreground",
                     )}
                   >
                     {LOCAL_KIND_LABEL[kind]}
                   </span>
                   {detected && (
-                    <span className="text-[10px] font-medium text-success-fg">Detected</span>
+                    <span className="text-[10px] font-medium text-black/60">Detected</span>
                   )}
                 </button>
               );
@@ -821,10 +842,15 @@ export function StepModel({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-2 pt-1">
-        <button type="button" onClick={onSkip} className={secondaryBtnClass}>
-          Skip for now
-        </button>
+      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+        {/* Hosted: an instance without a model is dead weight — no skipping */}
+        {isHosted ? (
+          <span />
+        ) : (
+          <button type="button" onClick={onSkip} className={secondaryBtnClass}>
+            Skip for now
+          </button>
+        )}
 
         {mode === "local" ? (
           localVerified ? (

@@ -94,7 +94,7 @@ export function OnboardingWizard({ onComplete }: Props) {
   }, [loaded, welcomeDismissed, state?.startedAt, activeStep, advance]);
 
   if (!loaded || activeStep === null) {
-    return <ScreenLoadingState className="bg-muted dark:bg-background" />;
+    return <ScreenLoadingState className="bg-muted" />;
   }
 
   if (!welcomeDismissed && !state?.startedAt) {
@@ -112,7 +112,7 @@ export function OnboardingWizard({ onComplete }: Props) {
   // past "gateway" on hosted deployments — a brief spinner beats flashing the
   // gateway step it's already skipping.
   if (isHosted && activeStep === "gateway") {
-    return <ScreenLoadingState className="bg-muted dark:bg-background" />;
+    return <ScreenLoadingState className="bg-muted" />;
   }
 
   const activeIdx = VISIBLE_STEP_IDS.indexOf(activeStep);
@@ -121,8 +121,8 @@ export function OnboardingWizard({ onComplete }: Props) {
     // Mobile (<640px): a truly full-screen native-app surface — no floating
     // card, no dimmed backdrop peeking around the edges. sm+: a polished
     // centered panel over a dimmed backdrop, matching welcome.tsx's feel.
-    <div className="fixed inset-0 z-50 flex flex-col bg-card dark:bg-background sm:items-center sm:justify-center sm:bg-foreground/60 sm:p-4 sm:backdrop-blur-sm sm:dark:bg-black/70">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card sm:max-h-[calc(100vh-2rem)] sm:w-full sm:max-w-[560px] sm:flex-none sm:rounded-2xl sm:border sm:border-border sm:shadow-2xl sm:shadow-black/30">
+    <div className="onboarding-light fixed inset-0 z-50 flex flex-col bg-white text-[#111111] sm:items-center sm:justify-center sm:bg-[#f3f3f2] sm:p-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white sm:max-h-[calc(100vh-2rem)] sm:w-full sm:max-w-[560px] sm:flex-none sm:rounded-3xl sm:border sm:border-black/10 sm:shadow-[0_24px_60px_rgba(0,0,0,0.14)]">
         {/* Step rail */}
         <div className="px-5 pt-6 pb-4 sm:px-8 sm:pt-7 sm:pb-5">
           <div className="flex items-center gap-0">
@@ -144,10 +144,10 @@ export function OnboardingWizard({ onComplete }: Props) {
                       className={cn(
                         "flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ring-1 transition-all duration-300",
                         done && !active
-                          ? "bg-success text-primary-foreground ring-success-border"
+                          ? "bg-[#111111] text-white ring-black/15"
                           : active
                             ? "bg-primary text-primary-foreground ring-border-strong"
-                            : "bg-transparent text-fg-subtle dark:text-fg-secondary ring-border",
+                            : "bg-transparent text-fg-subtle ring-border",
                       )}
                     >
                       {done && !active ? <Check className="h-3.5 w-3.5" /> : i + 1}
@@ -158,8 +158,8 @@ export function OnboardingWizard({ onComplete }: Props) {
                         active
                           ? "text-foreground"
                           : done
-                            ? "text-success-fg"
-                            : "text-fg-subtle dark:text-fg-secondary",
+                            ? "text-black/60"
+                            : "text-fg-subtle",
                       )}
                     >
                       {STEP_LABELS[id]}
@@ -169,7 +169,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                     <div className="relative mx-2 mb-4 flex-1">
                       <div className="h-px w-full bg-secondary" />
                       <div
-                        className="absolute inset-y-0 left-0 h-px bg-success transition-all duration-500"
+                        className="absolute inset-y-0 left-0 h-px bg-[#111111] transition-all duration-500"
                         style={{ width: i < activeIdx ? "100%" : "0%" }}
                       />
                     </div>
@@ -180,7 +180,7 @@ export function OnboardingWizard({ onComplete }: Props) {
           </div>
         </div>
 
-        <div className="h-px bg-muted dark:bg-secondary" />
+        <div className="h-px bg-black/10" />
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:max-h-[min(72vh,560px)] sm:flex-none sm:px-8 sm:py-7">
           {activeStep === "gateway" && (

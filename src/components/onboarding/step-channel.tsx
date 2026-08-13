@@ -217,10 +217,10 @@ export function StepChannel({
   }, [deepLink]);
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+    <div className="flex min-h-full flex-col gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
-          <MessageCircle className="h-3.5 w-3.5 text-fg-subtle dark:text-muted-foreground" />
+          <MessageCircle className="h-3.5 w-3.5 text-fg-subtle" />
           <h2 className="text-base font-semibold tracking-tight text-foreground">
             Put your agent in your pocket
           </h2>
@@ -324,7 +324,7 @@ export function StepChannel({
             </div>
           )}
           <div className="min-w-0 space-y-1">
-            <p className="text-xs font-semibold text-foreground dark:text-fg-secondary">
+            <p className="text-xs font-semibold text-foreground">
               Scan with your phone
             </p>
             <p className="text-xs leading-relaxed text-muted-foreground">
@@ -360,7 +360,7 @@ export function StepChannel({
 
       {pairing.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-foreground dark:text-fg-secondary">
+          <p className="text-xs font-semibold text-foreground">
             Approve access for:
           </p>
           {pairing.map((req) => (
@@ -395,7 +395,7 @@ export function StepChannel({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-2 pt-1">
+      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
         <button type="button" onClick={onSkip} className={secondaryBtnClass}>
           Skip for now
         </button>

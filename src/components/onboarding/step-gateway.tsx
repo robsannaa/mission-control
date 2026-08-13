@@ -28,12 +28,12 @@ function StatusRow({
     <div className="flex items-center gap-3 py-2">
       <span className="relative flex h-2 w-2 shrink-0">
         {ok && (
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-black/40 opacity-60" />
         )}
         <span
           className={cn(
             "relative inline-flex h-2 w-2 rounded-full",
-            pending ? "bg-border-strong" : ok ? "bg-success" : "bg-danger",
+            pending ? "bg-border-strong" : ok ? "bg-[#111111]" : "bg-danger",
           )}
         />
       </span>
@@ -108,12 +108,12 @@ export function StepGateway({
   const running = detect?.running === true;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+    <div className="flex min-h-full flex-col gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
-          <Server className="h-3.5 w-3.5 text-fg-subtle dark:text-muted-foreground" />
+          <Server className="h-3.5 w-3.5 text-fg-subtle" />
           <h2 className="text-base font-semibold tracking-tight text-foreground">
-            Your OpenClaw gateway
+            Your gateway
           </h2>
         </div>
         <p className="text-sm leading-relaxed text-muted-foreground">
@@ -121,9 +121,9 @@ export function StepGateway({
         </p>
       </div>
 
-      <div className={cn(cardClass, "divide-y divide-border dark:divide-border-subtle py-1")}>
+      <div className={cn(cardClass, "divide-y divide-border py-1")}>
         <StatusRow
-          label="OpenClaw installed"
+          label="Engine installed"
           ok={detect?.installed === true}
           pending={checking}
           detail={detect?.cliVersion ? `v${detect.cliVersion}` : checking ? "checking…" : "not found"}
@@ -144,7 +144,7 @@ export function StepGateway({
 
       {detect && !detect.installed && (
         <p className="text-xs leading-relaxed text-warning-fg">
-          OpenClaw was not found on this machine. If it is hosted for you, this page will light up
+          The engine was not found on this machine. If it is hosted for you, this page will light up
           as soon as your instance is provisioned.
         </p>
       )}
@@ -176,7 +176,7 @@ export function StepGateway({
         <Celebration message="Gateway is up and answering. Nicely done." />
       )}
 
-      <div className="flex items-center justify-between gap-2 pt-1">
+      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
         <button type="button" onClick={onSkip} className={secondaryBtnClass}>
           Skip for now
         </button>
