@@ -492,13 +492,15 @@ function FlowCard({
 }) {
   const [busy, setBusy] = useState(false);
   const bucket = statusBucket(flow.status);
+  const ts = flow.taskSummary;
   const summary =
-    typeof flow.taskSummary === "string"
-      ? flow.taskSummary
-      : flow.taskSummary
-        ? Object.entries(flow.taskSummary)
+    typeof ts === "string"
+      ? ts
+      : ts && typeof ts === "object"
+        ? Object.entries(ts)
+            .filter(([, v]) => typeof v === "number") // scalar counts only, skip byStatus/byRuntime objects
             .map(([k, v]) => `${v} ${k}`)
-            .join(" · ")
+            .join(" · ") || `${flow.tasks?.length ?? 0} tasks`
         : `${flow.tasks?.length ?? 0} tasks`;
 
   return (

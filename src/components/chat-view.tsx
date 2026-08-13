@@ -273,6 +273,10 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
   visibleRef.current = isVisible;
   const historyRequestRef = useRef(0);
   const seenMessagesRef = useRef(0);
+  // A session key we already gave up on (e.g. the gateway 403s the internal
+  // `agent:<id>:main` session). Never re-adopt it, or the URL->state effect
+  // loops forever restarting a chat it can't open (Maximum update depth).
+  const bailedSessionRef = useRef<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   /* ── Bootstrap ───────────────────────────────────────────────────────── */
@@ -429,6 +433,7 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
         if (historyRequestRef.current !== requestId) return;
 
         if (res.status === 404 || res.status === 403) {
+          bailedSessionRef.current = key;
           setNotice({
             title: "That conversation is not available",
             body:
@@ -474,6 +479,10 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
   // and an in-app click follow exactly the same path.
   useEffect(() => {
     if (!agentId) return;
+
+    // Never re-adopt a session we already bailed on (see bailedSessionRef) —
+    // this is what breaks the infinite restart loop on an unopenable session.
+    if (urlSession && bailedSessionRef.current === urlSession) return;
 
     if (!urlSession) {
       if (!sessionKey || !sessionKey.startsWith(`agent:${agentId}:`)) {

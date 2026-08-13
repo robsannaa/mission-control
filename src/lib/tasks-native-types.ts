@@ -46,7 +46,8 @@ export interface TaskFlow {
   updatedAt?: number;
   endedAt?: number;
   tasks?: string[];
-  taskSummary?: Record<string, number> | string;
+  // Nested: { total, active, terminal, failures, byStatus:{…}, byRuntime:{…} }.
+  taskSummary?: Record<string, unknown> | string;
 }
 
 export interface TasksSnapshot {
