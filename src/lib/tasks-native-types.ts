@@ -146,6 +146,84 @@ export function runtimeLabel(runtime: TaskRuntime): string {
   }
 }
 
+// ── audit + maintenance (ledger health) ─────────────────────────────────────
+
+export interface AuditFinding {
+  kind: "task" | "flow" | string;
+  severity: "warn" | "error" | string;
+  code: string;
+  detail: string;
+  ageMs?: number;
+  status?: string;
+  token?: string;
+  task?: NativeTask;
+}
+
+export interface AuditSummary {
+  total: number;
+  warnings: number;
+  errors: number;
+  byCode?: Record<string, number>;
+  combined?: { total: number; errors: number; warnings: number };
+}
+
+export interface AuditResult {
+  count: number;
+  summary: AuditSummary;
+  findings: AuditFinding[];
+}
+
+export interface MaintenanceResult {
+  mode: "preview" | "apply" | string;
+  maintenance: {
+    tasks?: { reconciled?: number; recovered?: number; cleanupStamped?: number; pruned?: number };
+    taskFlows?: { reconciled?: number; pruned?: number };
+    sessions?: {
+      retentionMs?: number;
+      runningCronJobs?: number;
+      pruned?: number;
+      stores?: Array<{ agentId?: string; beforeCount?: number; afterCount?: number; pruned?: number }>;
+    };
+  };
+}
+
+const FINDING_CODE_LABEL: Record<string, string> = {
+  stale_queued: "Stuck queued",
+  stale_running: "Stuck running",
+  lost: "Lost",
+  delivery_failed: "Delivery failed",
+  missing_cleanup: "Missing cleanup",
+  inconsistent_timestamps: "Bad timestamps",
+  restore_failed: "Restore failed",
+  stale_waiting: "Stuck waiting",
+  stale_blocked: "Stuck blocked",
+  cancel_stuck: "Cancel stuck",
+  missing_linked_tasks: "Missing linked tasks",
+  blocked_task_missing: "Blocked task missing",
+};
+
+export function findingCodeLabel(code: string): string {
+  return FINDING_CODE_LABEL[code] ?? code.replace(/_/g, " ");
+}
+
+/** One-line human summary of what a maintenance run did (or would do). */
+export function maintenanceSummary(r: MaintenanceResult): string {
+  const t = r.maintenance?.tasks ?? {};
+  const f = r.maintenance?.taskFlows ?? {};
+  const s = r.maintenance?.sessions ?? {};
+  const parts: string[] = [];
+  const changed =
+    (t.reconciled ?? 0) + (t.recovered ?? 0) + (t.cleanupStamped ?? 0) + (t.pruned ?? 0) + (f.reconciled ?? 0) + (f.pruned ?? 0) + (s.pruned ?? 0);
+  if (t.reconciled) parts.push(`${t.reconciled} reconciled`);
+  if (t.recovered) parts.push(`${t.recovered} recovered`);
+  if (t.cleanupStamped) parts.push(`${t.cleanupStamped} cleaned`);
+  if (t.pruned) parts.push(`${t.pruned} tasks pruned`);
+  if (f.pruned) parts.push(`${f.pruned} flows pruned`);
+  if (s.pruned) parts.push(`${s.pruned} sessions pruned`);
+  if (changed === 0) return "Everything is tidy — nothing to reconcile or prune.";
+  return parts.join(" · ");
+}
+
 /** Relative "3m ago" style time. */
 export function relativeTime(ms: number | undefined): string {
   if (!ms) return "";

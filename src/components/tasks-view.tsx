@@ -2,16 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Ban,
   Bell,
+  CheckCircle2,
   Clock,
   Cpu,
   GitBranch,
   Loader2,
   RefreshCw,
+  Stethoscope,
   Terminal,
+  Wrench,
   Workflow,
-  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,12 +32,16 @@ import {
 import { cn } from "@/lib/utils";
 import {
   BUCKET_TONE,
+  findingCodeLabel,
   groupTasks,
   isCancellable,
+  maintenanceSummary,
   relativeTime,
   runtimeLabel,
   statusBucket,
   taskTitle,
+  type AuditResult,
+  type MaintenanceResult,
   type NativeTask,
   type TaskFlow,
   type TasksSnapshot,
@@ -74,6 +81,24 @@ export function TasksView() {
   const [error, setError] = useState<string | null>(null);
   const [scope, setScope] = useState<Scope>("active");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [auditCount, setAuditCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/tasks?view=audit", { cache: "no-store" });
+        const body = await res.json();
+        if (active && res.ok) setAuditCount(body?.summary?.combined?.total ?? body?.count ?? 0);
+      } catch {
+        /* health badge is best-effort */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const load = useCallback(async (soft = false) => {
     if (soft) setRefreshing(true);
@@ -134,6 +159,13 @@ export function TasksView() {
                 </button>
               ))}
             </div>
+            <Button variant="outline" size="sm" onClick={() => setHealthOpen(true)}>
+              <Stethoscope className="size-4" />
+              Health
+              {auditCount != null && auditCount > 0 && (
+                <Badge variant="warning" className="ml-0.5">{auditCount}</Badge>
+              )}
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -205,7 +237,176 @@ export function TasksView() {
       {openTask && (
         <TaskDrawer taskId={openTask.taskId} initial={openTask} onClose={() => setOpenId(null)} onChanged={apply} scope={scope} />
       )}
+
+      <TaskHealthDrawer
+        open={healthOpen}
+        onClose={() => setHealthOpen(false)}
+        onAuditCount={setAuditCount}
+        onMaintained={() => void load(true)}
+      />
     </SectionLayout>
+  );
+}
+
+// ── ledger health drawer (audit + maintenance) ────────────────────────────────
+
+function TaskHealthDrawer({
+  open,
+  onClose,
+  onAuditCount,
+  onMaintained,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onAuditCount: (n: number) => void;
+  onMaintained: () => void;
+}) {
+  const [audit, setAudit] = useState<AuditResult | null>(null);
+  const [preview, setPreview] = useState<MaintenanceResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState<MaintenanceResult | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setLoading(true);
+    setApplied(null);
+    (async () => {
+      try {
+        const [a, m] = await Promise.all([
+          fetch("/api/tasks?view=audit", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/tasks?view=maintenance", { cache: "no-store" }).then((r) => r.json()),
+        ]);
+        if (!active) return;
+        setAudit(a as AuditResult);
+        setPreview(m as MaintenanceResult);
+        onAuditCount(a?.summary?.combined?.total ?? a?.count ?? 0);
+      } catch {
+        /* surfaced as empty state */
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [open, onAuditCount]);
+
+  const findings = audit?.findings ?? [];
+
+  const apply = async () => {
+    setApplying(true);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "maintenance-apply" }),
+      });
+      const body = await res.json();
+      if (res.ok && body.maintenance) {
+        setApplied(body.maintenance as MaintenanceResult);
+        onMaintained();
+        // Re-audit after applying.
+        const a = await fetch("/api/tasks?view=audit", { cache: "no-store" }).then((r) => r.json());
+        setAudit(a as AuditResult);
+        onAuditCount(a?.summary?.combined?.total ?? a?.count ?? 0);
+      }
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-lg">
+        <SheetHeader className="border-b border-border px-6 py-5">
+          <SheetTitle className="flex items-center gap-2 text-lg">
+            <Stethoscope className="size-4 text-fg-subtle" /> Ledger health
+          </SheetTitle>
+          <SheetDescription>
+            Find stale, lost, or stuck background work — and reconcile or prune it in one click.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          {loading ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <InlineSpinner /> Checking the ledger…
+            </div>
+          ) : (
+            <>
+              {/* Audit findings */}
+              <section className="space-y-2.5">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Findings</h3>
+                {findings.length === 0 ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-success-border bg-success-bg px-3 py-2.5 text-sm text-success-fg">
+                    <CheckCircle2 className="size-4" /> No issues — the task ledger is healthy.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {findings.map((f, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          "flex items-start gap-2.5 rounded-xl border px-3 py-2.5",
+                          f.severity === "error" ? "border-danger-border bg-danger-bg" : "border-warning-border bg-warning-bg",
+                        )}
+                      >
+                        <AlertTriangle
+                          className={cn("mt-0.5 size-3.5 shrink-0", f.severity === "error" ? "text-danger-fg" : "text-warning-fg")}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant={f.severity === "error" ? "destructive" : "warning"}>
+                              {findingCodeLabel(f.code)}
+                            </Badge>
+                            {f.task?.label && <span className="truncate text-xs font-medium text-foreground">{f.task.label}</span>}
+                          </div>
+                          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{f.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Maintenance */}
+              <section className="space-y-2.5 rounded-xl border border-border bg-card p-4">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Wrench className="size-4 text-fg-subtle" /> Maintenance
+                </h3>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {applied
+                    ? maintenanceSummary(applied)
+                    : preview
+                      ? `Preview: ${maintenanceSummary(preview)}`
+                      : "Reconciles half-finished tasks, recovers lost ones, and prunes old records."}
+                </p>
+                {applied ? (
+                  <div className="flex items-center gap-2 text-sm font-medium text-success-fg">
+                    <CheckCircle2 className="size-4" /> Maintenance applied.
+                  </div>
+                ) : (
+                  <Button size="sm" onClick={() => void apply()} disabled={applying}>
+                    {applying ? <Loader2 className="size-3.5 animate-spin" /> : <Wrench className="size-3.5" />}
+                    Run maintenance
+                  </Button>
+                )}
+              </section>
+            </>
+          )}
+        </div>
+
+        <SheetFooter className="flex-row justify-end border-t border-border px-6 py-4">
+          <SheetClose asChild>
+            <Button variant="outline" size="sm">
+              Close
+            </Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 

@@ -4,10 +4,12 @@
  * `openclaw tasks flow {list,show,cancel}`. There is no kanban store.
  */
 
-import { runCli, runCliJson, CONFIG_WRITE_TIMEOUT_MS } from "@/lib/openclaw";
+import { runCli, runCliCaptureBoth, runCliJson, CONFIG_WRITE_TIMEOUT_MS } from "@/lib/openclaw";
 import {
   isActive,
   statusBucket,
+  type AuditResult,
+  type MaintenanceResult,
   type NativeTask,
   type TaskFlow,
   type TasksSnapshot,
@@ -118,4 +120,38 @@ export async function setNotify(lookup: string, policy: string): Promise<void> {
   if (!id) throw new Error("A task id is required");
   if (!NOTIFY_POLICIES.has(policy)) throw new Error("Notify policy must be done_only, state_changes, or silent");
   await runCli(["tasks", "notify", id, policy], CONFIG_WRITE_TIMEOUT_MS);
+}
+
+// ── ledger health: audit + maintenance ──────────────────────────────────────
+
+/** Stale / broken / lost tasks and TaskFlows, optionally filtered by code. */
+export async function auditTasks(code?: string): Promise<AuditResult> {
+  const args = ["tasks", "audit"];
+  if (code) args.push("--code", code);
+  const raw = await runCliJson<AuditResult>(args, 25_000);
+  return {
+    count: raw?.count ?? 0,
+    summary: raw?.summary ?? { total: 0, warnings: 0, errors: 0 },
+    findings: Array.isArray(raw?.findings) ? raw.findings : [],
+  };
+}
+
+/**
+ * Reconcile / recover / cleanup-stamp / prune the ledger. Without `apply` this
+ * is a dry-run preview; with it, changes are written.
+ */
+export async function runMaintenance(apply = false): Promise<MaintenanceResult> {
+  const args = ["tasks", "maintenance"];
+  if (apply) args.push("--apply");
+  // `tasks maintenance --json` writes its JSON report to STDERR, mixed with a
+  // `[state-migrations]` preamble that starts with "[" — so parse the object by
+  // its brace boundaries rather than trusting the stream to be clean JSON.
+  const { stdout, stderr } = await runCliCaptureBoth([...args, "--json"], CONFIG_WRITE_TIMEOUT_MS);
+  const source = stdout.includes('"maintenance"') ? stdout : stderr;
+  const start = source.indexOf("{");
+  const end = source.lastIndexOf("}");
+  if (start < 0 || end <= start) {
+    throw new Error("maintenance produced no JSON report");
+  }
+  return JSON.parse(source.slice(start, end + 1)) as MaintenanceResult;
 }

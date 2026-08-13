@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cancelFlow, cancelTask, getTasksSnapshot, setNotify, showTask } from "@/lib/tasks-native";
+import {
+  auditTasks,
+  cancelFlow,
+  cancelTask,
+  getTasksSnapshot,
+  runMaintenance,
+  setNotify,
+  showTask,
+} from "@/lib/tasks-native";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +23,14 @@ export async function GET(request: NextRequest) {
       const task = await showTask(id);
       if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
       return NextResponse.json({ task });
+    }
+    const view = params.get("view");
+    if (view === "audit") {
+      return NextResponse.json(await auditTasks(params.get("code")?.trim() || undefined));
+    }
+    if (view === "maintenance") {
+      // Dry-run preview only. Applying is an explicit POST.
+      return NextResponse.json(await runMaintenance(false));
     }
     const scope = params.get("scope") === "all" ? "all" : "active";
     return NextResponse.json(await getTasksSnapshot(scope));
@@ -42,6 +58,9 @@ export async function POST(request: NextRequest) {
       await cancelFlow(String(body.id || ""));
     } else if (action === "notify") {
       await setNotify(String(body.id || ""), String(body.policy || ""));
+    } else if (action === "maintenance-apply") {
+      const result = await runMaintenance(true);
+      return NextResponse.json({ ok: true, maintenance: result });
     } else {
       return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
