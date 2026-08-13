@@ -80,6 +80,25 @@ export function sessionKindOf(session: { kind?: string; key?: string }): string 
   return "";
 }
 
+/**
+ * Programmatic / automated sessions that share the `openresponses` origin with
+ * real chats but are machine work, not conversations the user had: Mission
+ * Control's own knowledge-extraction calls, memory "dreaming", gbrain parsing.
+ * They belong on the Tasks/Sessions pages, never in the chat picker. Detected by
+ * their opening line, since the origin alone can't tell them apart.
+ */
+export function isAutomatedSessionTitle(title?: string): boolean {
+  const t = String(title || "").trim();
+  if (!t) return false;
+  return (
+    /^TASK:/i.test(t) ||
+    /called programmatically by mission control/i.test(t) ||
+    /read-only knowledge extraction/i.test(t) ||
+    /^@memory\/dreaming/i.test(t) ||
+    /^\[?(memory|gbrain)[ _-]?(extraction|dream|promotion)/i.test(t)
+  );
+}
+
 export function classifySessionKind(kind: string): SessionKindInfo {
   return {
     kind,

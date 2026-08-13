@@ -11,6 +11,7 @@ import { gatewayCall } from "@/lib/openclaw";
 import {
   CHAT_SESSION_KINDS,
   classifySessionKind,
+  isAutomatedSessionTitle,
   sessionAgentIdOf,
   sessionKindOf,
   sessionTitleOf,
@@ -219,6 +220,9 @@ function toRow(session: GatewaySession): ChatSessionRow | null {
   if (!classifySessionKind(sessionKindOf(session)).isChat) return null;
 
   const explicit = session.label?.trim() || session.displayName?.trim() || "";
+  // Cheap early drop: a session already labeled like a machine run (e.g.
+  // "TASK: read-only knowledge extraction") is never a user conversation.
+  if (explicit && isAutomatedSessionTitle(explicit)) return null;
   const updatedAt =
     Number(session.updatedAt) || Number(session.lastActivityAt) || 0;
 
@@ -270,10 +274,19 @@ export async function listChatSessions(
     return b.updatedAt - a.updatedAt;
   });
 
-  const page = visible.slice(0, limit);
+  // Derive titles for a window wider than the page so we can drop automated,
+  // programmatic sessions (memory extraction, dreaming, gbrain) BEFORE paging.
+  // They open with a "TASK:" system line and, without labels, only reveal
+  // themselves once their first message is read. They are machine runs — their
+  // home is the Tasks / Sessions pages, not the user's conversation list.
+  const window = visible.slice(0, Math.max(limit * 3, 90));
+  await fillDerivedTitles(window, window.length);
+  const human = visible.filter((row) => !isAutomatedSessionTitle(row.title));
+
+  const page = human.slice(0, limit);
   await fillDerivedTitles(page, limit);
 
-  return { sessions: page, total: visible.length, archivedCount };
+  return { sessions: page, total: human.length, archivedCount };
 }
 
 /* ── Write-side guard ─────────────────────────────────────────────────────── */
