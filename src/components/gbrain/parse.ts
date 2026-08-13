@@ -181,19 +181,30 @@ export function parsePageList(text: string | undefined | null): PageListItem[] {
   return items;
 }
 
-export type GraphEdge = { relation: string; target: string; depth: number };
+export type GraphEdge = { source: string; relation: string; target: string; depth: number };
 
 /** Parses the ASCII tree output of `gbrain graph-query`. */
 export function parseGraphQuery(text: string | undefined | null): { root: string | null; edges: GraphEdge[] } {
   if (!text) return { root: null, edges: [] };
   const rootM = text.match(/^\[depth 0\]\s+(\S+)/m);
+  const root = rootM ? rootM[1] : null;
   const edges: GraphEdge[] = [];
-  const re = /--(\S+)->\s+(\S+)\s+\(depth (\d+)\)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    edges.push({ relation: m[1], target: m[2], depth: Number(m[3]) });
+  const nodeAtDepth: string[] = root ? [root] : [];
+
+  // The CLI emits a depth-first ASCII tree. Tracking the most recent node at
+  // each depth reconstructs the source of every edge without depending on the
+  // exact indentation characters (which have changed between G-Brain builds).
+  for (const line of text.split("\n")) {
+    const m = line.match(/--(\S+)->\s+(\S+)\s+\(depth (\d+)\)/);
+    if (!m) continue;
+    const depth = Number(m[3]);
+    const target = m[2];
+    const source = nodeAtDepth[Math.max(0, depth - 1)] || root;
+    if (source) edges.push({ source, relation: m[1], target, depth });
+    nodeAtDepth[depth] = target;
+    nodeAtDepth.length = depth + 1;
   }
-  return { root: rootM ? rootM[1] : null, edges };
+  return { root, edges };
 }
 
 export type TimelineEntry = { date: string; text: string };

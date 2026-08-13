@@ -9,7 +9,7 @@
  * directly from API routes or lib helpers.
  */
 
-import { getClient, type TransportMode } from "./openclaw-client";
+import { getClient, getTransportMode, type TransportMode } from "./openclaw-client";
 import type { RunCliResult } from "./openclaw-cli";
 import { toPairingRequiredError } from "./gateway-errors";
 
@@ -73,4 +73,22 @@ export async function gatewayCall<T>(
 export async function resolveTransport(): Promise<TransportMode> {
   const client = await getClient();
   return client.resolveTransport();
+}
+
+export function configuredTransport(): TransportMode {
+  return getTransportMode();
+}
+
+/**
+ * Execute an argv array on the Mission Control host without ever serialising
+ * it into a shell command. This is intentionally separate from the transport
+ * abstraction: catalog Git/Skills.sh references are user input, while the
+ * HTTP exec bridge currently accepts only a command string.
+ */
+export async function runLocalCliCapture(
+  args: string[],
+  timeout = 15_000,
+): Promise<RunCliResult> {
+  const { runCliCaptureBoth } = await import("./openclaw-cli");
+  return runCliCaptureBoth(args, timeout);
 }

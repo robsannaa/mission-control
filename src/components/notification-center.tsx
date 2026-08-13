@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, BellOff, CheckCheck, CheckCircle, Clock, AlertCircle, AlertTriangle, Info, Zap, Terminal, Radio, X } from "lucide-react";
+import { Bell, BellOff, CheckCheck, CheckCircle, Clock, AlertCircle, AlertTriangle, Info, Zap, Terminal, Radio, X, CircleHelp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import {
@@ -12,12 +12,15 @@ import {
 
 type NotificationEvent = {
   id: string;
-  type: "cron" | "session" | "log" | "system" | "pairing" | "usage-alert";
+  type: "cron" | "session" | "log" | "system" | "pairing" | "usage-alert" | "question";
   timestamp: number;
   title: string;
   detail?: string;
   status?: "ok" | "error" | "info" | "warning";
   source?: string;
+  logAnchor?: string;
+  interactionId?: string;
+  href?: string;
 };
 
 type PairingResponse = {
@@ -41,8 +44,22 @@ type PairingResponse = {
 
 /** Stable signature so a recurring log/warning stays dismissed across re-polls
  *  even though each poll assigns it a fresh, timestamp-based id. */
-function signatureOf(type: string, title: string, source?: string): string {
+function signatureOf(type: string, title: string, source?: string, id?: string): string {
+  // A dismissed log may stay dismissed across equivalent re-polls. A question
+  // is different: each durable interaction is a new request for the user, even
+  // when the same cron source asks with the same title later.
+  if (type === "question" && id) return `question|${id}`;
   return `${type}|${source ?? ""}|${title}`;
+}
+
+function initialSurfacedQuestionIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const stored = sessionStorage.getItem("notif_surfaced_question_ids");
+    return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
 }
 
 /**
@@ -51,7 +68,7 @@ function signatureOf(type: string, title: string, source?: string): string {
  * `warning` severity and used to crowd out the notifications that matter.
  */
 const NOISE_LOG_RE =
-  /\[trace|embedded-run|prep stages|prep_stages|runid=|sessionid=|\bdebug\b/i;
+  /\[trace|embedded-run|prep stages|prep_stages|runid=|sessionid=|\bdebug\b|\[mission-control-awareness\]|plugins\.allow is empty|dangerous config flags enabled|skipped permission hardening|legacy state migration|gateway restart failed|port \d+ still in use|killing \d+ stale gateway|multiple listeners detected/i;
 
 function isNoiseLog(e: NotificationEvent): boolean {
   if (e.type !== "log" && e.type !== "system") return false;
@@ -80,7 +97,7 @@ function isUserFacingCron(e: NotificationEvent): boolean {
  */
 function worthShowing(e: NotificationEvent): boolean {
   if (isNoiseLog(e)) return false;
-  return e.status === "error" || e.status === "warning" || isUserFacingCron(e);
+  return e.type === "question" || e.status === "error" || e.status === "warning" || isUserFacingCron(e);
 }
 
 function timeAgo(ts: number): string {
@@ -109,6 +126,7 @@ const TYPE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   system: Radio,
   pairing: Bell,
   "usage-alert": AlertTriangle,
+  question: CircleHelp,
 };
 
 const TYPE_ROUTE: Record<string, string> = {
@@ -118,6 +136,7 @@ const TYPE_ROUTE: Record<string, string> = {
   system: "/activity",
   pairing: "/dashboard",
   "usage-alert": "/usage",
+  question: "/questions",
 };
 
 const TYPE_QUERY_PARAM: Record<string, string> = {
@@ -134,6 +153,9 @@ type DisplayItem = {
   detail?: string;
   status: string;
   source?: string;
+  logAnchor?: string;
+  interactionId?: string;
+  href?: string;
   read: boolean;
   /** If from the notification store, the original notification. */
   storeNotification?: AppNotification;
@@ -179,7 +201,8 @@ export function NotificationCenter() {
   const panelRef = useRef<HTMLDivElement>(null);
   // Ids we've already surfaced, so a re-poll of the same event doesn't re-notify.
   const seenEventIdsRef = useRef<Set<string>>(new Set());
-  const slowBackgroundPolling = !open || muted;
+  const surfacedQuestionIdsRef = useRef<Set<string>>(initialSurfacedQuestionIds());
+  const slowBackgroundPolling = muted;
 
   // Subscribe to store-pushed bell notifications
   const storeNotifications = useSyncExternalStore(
@@ -207,12 +230,13 @@ export function NotificationCenter() {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const [activityRes, pairingRes, alertsRes] = await Promise.all([
+      const [activityRes, pairingRes, alertsRes, questionsRes] = await Promise.all([
         fetch("/api/activity", { cache: "no-store", signal: AbortSignal.timeout(6000) })
           .catch(() => new Response("[]", { status: 200 })),
         fetch("/api/pairing", { cache: "no-store", signal: AbortSignal.timeout(6000) })
           .catch(() => new Response("{}", { status: 200 })),
         fetch("/api/usage/alerts?poll=1", { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch("/api/interactions?status=active&limit=50", { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
       ]);
 
       const activityData = activityRes.ok ? ((await activityRes.json()) as NotificationEvent[]) : [];
@@ -220,10 +244,28 @@ export function NotificationCenter() {
       const alertsData = alertsRes?.ok
         ? ((await alertsRes.json()) as { alerts?: Array<{ id: string; message: string; firedAt?: number }> })
         : {};
+      const questionsData = questionsRes?.ok
+        ? ((await questionsRes.json()) as { interactions?: Array<{ id: string; title: string; question: string; createdAt: number; source?: { label?: string } }> })
+        : {};
+
+      const questionEvents: NotificationEvent[] = (questionsData.interactions || []).map((item) => ({
+        id: `question-${item.id}`,
+        type: "question",
+        timestamp: item.createdAt,
+        title: item.title,
+        detail: item.question,
+        status: "info",
+        source: item.source?.label,
+        interactionId: item.id,
+        href: `/chat?interaction=${encodeURIComponent(item.id)}`,
+      }));
 
       // Errors, warnings, and things the agent did on its own (cron/reminders) —
       // minus internal trace noise. See worthShowing().
-      const actionable = (Array.isArray(activityData) ? activityData : []).filter(worthShowing);
+      const actionable = [
+        ...(Array.isArray(activityData) ? activityData : []),
+        ...questionEvents,
+      ].filter(worthShowing);
 
       // Actively surface anything NEW since the last poll: a badge is easy to
       // miss, and the whole point of a reminder is that it reaches you. The
@@ -234,7 +276,12 @@ export function NotificationCenter() {
         for (const e of actionable) {
           if (seen.has(e.id)) continue;
           seen.add(e.id);
-          if (seeding || muted) continue;
+          const isUnsurfacedQuestion =
+            e.type === "question" && !surfacedQuestionIdsRef.current.has(e.id);
+          // Historical logs seed silently. An unresolved clarification is an
+          // inbox item, not history, so surface it once per browser session even
+          // when it was already open before Mission Control loaded.
+          if ((seeding && !isUnsurfacedQuestion) || muted) continue;
           notificationStore.push({
             type: e.type,
             severity:
@@ -242,9 +289,23 @@ export function NotificationCenter() {
             title: e.title,
             detail: e.detail,
             source: e.source,
+            href: e.href,
+            logAnchor: e.logAnchor,
             displayMode: "toast",
+            actions: e.type === "question" && e.href
+              ? [{ label: "Answer", callback: () => router.push(e.href as string) }]
+              : undefined,
             dedupKey: `activity:${e.id}`,
           });
+          if (e.type === "question") {
+            surfacedQuestionIdsRef.current.add(e.id);
+            try {
+              sessionStorage.setItem(
+                "notif_surfaced_question_ids",
+                JSON.stringify([...surfacedQuestionIdsRef.current].slice(-100)),
+              );
+            } catch { /* ignore */ }
+          }
           if (typeof Notification !== "undefined" && Notification.permission === "granted") {
             try {
               new Notification(e.title, { body: e.detail, tag: e.id, icon: "/favicon.ico" });
@@ -308,9 +369,9 @@ export function NotificationCenter() {
     } catch {
       /* ignore */
     }
-  }, [open, muted]);
+  }, [muted, router]);
 
-  useSmartPoll(fetchNotifications, { intervalMs: slowBackgroundPolling ? 60_000 : 20_000 });
+  useSmartPoll(fetchNotifications, { intervalMs: slowBackgroundPolling ? 60_000 : 10_000 });
 
   // Close on click outside
   useEffect(() => {
@@ -347,6 +408,9 @@ export function NotificationCenter() {
       detail: e.detail,
       status: e.status || "info",
       source: e.source,
+      logAnchor: e.logAnchor,
+      interactionId: e.interactionId,
+      href: e.href,
       read: e.timestamp <= lastSeenTs || readIds.has(e.id),
       polledEvent: e,
     }));
@@ -359,6 +423,8 @@ export function NotificationCenter() {
       detail: n.detail,
       status: n.severity,
       source: n.source,
+      logAnchor: n.logAnchor,
+      href: n.href,
       read: n.read,
       storeNotification: n,
     }));
@@ -367,7 +433,7 @@ export function NotificationCenter() {
     const byId = new Map<string, DisplayItem>();
     for (const item of [...polledItems, ...storeItems]) {
       if (byId.has(item.id)) continue;
-      if (dismissedSigs.has(signatureOf(item.type, item.title, item.source))) continue;
+      if (dismissedSigs.has(signatureOf(item.type, item.title, item.source, item.id))) continue;
       byId.set(item.id, item);
     }
     return Array.from(byId.values())
@@ -382,7 +448,7 @@ export function NotificationCenter() {
     if (item.storeNotification) notificationStore.dismiss(item.id);
     setDismissedSigs((prev) => {
       const next = new Set(prev);
-      next.add(signatureOf(item.type, item.title, item.source));
+      next.add(signatureOf(item.type, item.title, item.source, item.id));
       return next;
     });
   }, []);
@@ -413,7 +479,7 @@ export function NotificationCenter() {
     setDismissedSigs((prev) => {
       const next = new Set(prev);
       for (const item of displayItems) {
-        next.add(signatureOf(item.type, item.title, item.source));
+        next.add(signatureOf(item.type, item.title, item.source, item.id));
         if (item.storeNotification) notificationStore.dismiss(item.id);
       }
       return next;
@@ -441,11 +507,24 @@ export function NotificationCenter() {
     if (item.storeNotification?.actions?.length) return;
 
     // Navigate to relevant page
+    if (item.href) {
+      setOpen(false);
+      router.push(item.href);
+      return;
+    }
+
     const base = TYPE_ROUTE[item.type] || "/activity";
     const paramKey = TYPE_QUERY_PARAM[item.type];
-    const route = paramKey && item.source
+    let route = paramKey && item.source
       ? `${base}?${paramKey}=${encodeURIComponent(item.source)}`
       : base;
+    if (item.type === "log") {
+      const params = new URLSearchParams();
+      if (item.logAnchor) params.set("anchor", item.logAnchor);
+      params.set("time", String(item.timestamp));
+      if (item.source) params.set("source", item.source);
+      route = `${base}?${params.toString()}`;
+    }
     setOpen(false);
     router.push(route);
   };

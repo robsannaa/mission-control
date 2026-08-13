@@ -25,6 +25,10 @@ export type AppNotification = {
   title: string;
   detail?: string;
   source?: string;
+  /** Optional in-app destination opened when the notification is selected. */
+  href?: string;
+  /** Stable target for deep-linking a log notification to its exact row. */
+  logAnchor?: string;
   timestamp: number;
   displayMode: NotificationDisplayMode;
   actions?: NotificationAction[];
@@ -133,6 +137,8 @@ export const notificationStore = {
     title: string;
     detail?: string;
     source?: string;
+    href?: string;
+    logAnchor?: string;
     displayMode?: NotificationDisplayMode;
     actions?: NotificationAction[];
     autoDismissMs?: number;
@@ -147,7 +153,7 @@ export const notificationStore = {
     if (existing) {
       notifications = notifications.map((n) =>
         n.id === existing.id
-          ? { ...n, timestamp: Date.now(), detail: opts.detail ?? n.detail, read: false }
+          ? { ...n, timestamp: Date.now(), detail: opts.detail ?? n.detail, href: opts.href ?? n.href, logAnchor: opts.logAnchor ?? n.logAnchor, read: false }
           : n,
       );
       updateSnapshot();
@@ -162,6 +168,8 @@ export const notificationStore = {
       title: opts.title,
       detail: opts.detail,
       source: opts.source,
+      href: opts.href,
+      logAnchor: opts.logAnchor,
       timestamp: Date.now(),
       displayMode: opts.displayMode ?? "both",
       actions: opts.actions,

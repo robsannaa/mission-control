@@ -1,120 +1,128 @@
-![Mission Control — OpenClaw GUI 与 AI 智能体仪表盘](cover.png)
+![Mission Control — AI 智能体 Harness 与仪表盘](cover.png)
 
 # Mission Control（任务控制中心）
 
 [English](README.md) | **中文** | [日本語](README.ja.md)
 
-**你的 [OpenClaw](https://github.com/openclaw) 指挥中心。一屏总览，一键掌控。**
+**一套用来在一块屏幕上驾驭 AI 智能体舰队的 harness。看见一切、调度一切，全部跑在你自己的机器上。**
 
-实时监控你的 AI 智能体、与它们对话、调度定时任务、追踪费用、管理记忆 —— 一切在浏览器中完成，一切在你自己的设备上运行。
+我同时跑着很多智能体。一个在写代码，一个在翻研究资料，一个盯着收件箱，还有几个在做我早上随手交代的活儿。超过两三个，终端就不再是一个能用的界面了。于是我给自己造了这套 harness。就是它。
 
-## ⚡ 让 AI 智能体帮你安装 —— 复制、粘贴、完成
+Mission Control 是这支舰队之上的控制面。实时看着智能体干活、把任务丢给它们让它们自己接手、随手拉起子智能体并把它们铺开、看清每一分花费、让整支舰队保持健康。它跑在本地，底层由 [OpenClaw](https://github.com/openclaw) 作为引擎驱动。
 
-在用 Claude Code、Codex、或 OpenClaw 本身？把下面这段粘贴给它，剩下的交给智能体：
+## ⚡ 交给你的智能体来安装
+
+现在谁还手动装东西。把 Claude Code、Codex，或者你惯用的任何工具指向下面这段，剩下的它自己搞定：
 
 ```text
-在这台机器上安装 Mission Control（OpenClaw 的仪表盘）。
+Install Mission Control, the dashboard for OpenClaw, on this machine.
 
-1. 检查前提：`node --version` 必须 >= 20，`openclaw --version` 必须可用。
-   如果没装 OpenClaw，先按 https://docs.openclaw.ai/install 安装并完成初始化。
-2. 安装：
+1. Check prerequisites: `node --version` must be >= 20, and `openclaw --version`
+   must work. If OpenClaw is missing, install it first per
+   https://docs.openclaw.ai/install and complete its onboarding.
+2. Install:
      cd ~/.openclaw
      git clone https://github.com/robsannaa/openclaw-mission-control.git
      cd openclaw-mission-control
      ./setup.sh
-   （setup.sh 失败后可安全重跑。）
-3. 如果 3333 端口被占用，改用：PORT=3344 ./setup.sh
-4. 验证：`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3333`
-   必须输出 200（用你实际选择的端口）。
-5. 该检查通过前不要结束任务；完成后告诉我打开哪个 URL，
-   以及后台服务是如何注册的（launchd/systemd/nohup）。
+   (setup.sh is safe to re-run if anything fails.)
+3. If port 3333 is already taken, re-run as: PORT=3344 ./setup.sh
+4. Verify it works: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3333`
+   must print 200 (use the port you chose).
+5. Do not finish until that check passes, then tell me the exact URL to open
+   and how the background service was registered (launchd/systemd/nohup).
 ```
 
-## 如果觉得好用，欢迎请我喝杯咖啡（或买个 Claude Code 订阅）！
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
+这里面有相当一部分，是由它所驱动的这些智能体写出来的。这正是它存在的意义。
+
+## 请考虑支持我，给我买一份 Claude Code 订阅！
+[![Buy Me a Claude Code Subscription!](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
+
+[![AI Agent Harness](https://img.shields.io/badge/AI_Agent-Harness-7c3aed?style=flat-square)](https://github.com/robsannaa/openclaw-mission-control) ![Self-Hosted](https://img.shields.io/badge/Self--Hosted-Local_AI-f59e0b?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
 ---
 
-## 为什么选择 Mission Control？
+## 为什么会有它
 
-**告别多个终端窗口。** 如果你在用 OpenClaw，你已经了解它的强大。Mission Control 给你全局视野 —— 在一个地方看到智能体在做什么、花了多少钱、系统是否健康。
+超过两三个智能体之后，瓶颈就不再是模型，而是你自己。你在一堆终端之间切来切去，记不清什么还在跑，也猜不出花了多少钱。一套 harness 就能解决这件事。你把一个智能体指向某个问题，丢到看板上，然后转身去开下一个，它自己会跑。
 
-**数据不出你的机器。** Mission Control 完全本地运行。没有云端账户、没有遥测上报。它只是一扇窗，通向你机器上已经在运行的 OpenClaw 系统。
-
-**开箱即用。** 安装后打开浏览器即可。Mission Control 自动发现你的 OpenClaw 环境 —— 无需配置文件，无需搭建数据库。
+harness 永远不该是最有意思的那部分。智能体才是正事。Mission Control 被造来待在它们身后、不碍事：没有东西要照看，没有东西要同步，也很难弄坏。你应该能忘了它的存在，只管一路往前发货。
 
 ---
 
-## 「薄层」哲学
+## 刻意做薄
 
-Mission Control **不是**一个独立平台。它不保存你的数据副本，也不试图成为「事实来源」。
+Mission Control 不存你的数据、不跑数据库，也不试图成为“真相之源”。它直接读写底层引擎，实时进行。你在这里改一下，立刻生效，没有同步步骤，也没有会过期的缓存。它自己只保留两个很小的本地文件：用量历史和任务看板。
 
-它是通向 OpenClaw 的**透明窗口**。屏幕上的每个数字、每个状态都实时来自你正在运行的 OpenClaw。你在 Mission Control 里做的每个修改都直接写入 OpenClaw —— 没有同步延迟，没有过期缓存。（Mission Control 自身只保留极少量本地文件：用量历史和看板数据，绝不复制你的 OpenClaw 数据。）
+这样一来，它：
 
-**这对你意味着：**
-- **永远准确** —— 你看到的就是正在发生的
-- **零维护** —— 没有数据库迁移、没有备份脚本
-- **坏不了** —— 就算 Mission Control 挂了，你的智能体照常运行
+- **永远准确。** 你看到的，就是此刻真正在跑的。
+- **维护起来无聊。** 没有迁移、没有备份、没有清理任务。故意如此。
+- **很难弄坏。** 仪表盘挂了，智能体照样继续跑。
+- **即刻可用。** 无需预置，版本间也无需升级。
 
-就像汽车的仪表盘：显示速度、油量、引擎状态 —— 但拆掉它，车照样能开。
+把仪表盘拆掉，舰队照样运转。它是引擎之上的那块玻璃，不是引擎本身。
 
 ---
 
-## 功能一览
+## 它能做什么
 
-### 一眼看清全局
-**仪表盘**打开即见实时总览 —— 活跃的智能体、网关健康状态、运行中的定时任务、系统资源（CPU、内存、磁盘）。
+### 看清整支舰队
+**仪表盘**打开就是实时总览：哪些智能体在活动、网关是否健康、哪些定时任务在跑、系统负载（CPU、内存、磁盘）。不用到处点，就知道一切是否正常。
 
-### 与智能体对话
-**聊天**让你在浏览器里直接与任意智能体交谈。支持附件、选择模型、流式回复，切换智能体不丢上下文。
+### 和它们任何一个对话
+**聊天**是在浏览器里与任意智能体的真正对话。附加文件、挑选模型、流式回复、切换智能体也不丢上下文。`/` 唤出命令，`@` 引入文件。
 
-### 可视化管理工作
-**任务**是内置看板（待办、进行中、评审、完成），与工作区同步。拖拽卡片，掌握进度。
+### 把智能体指向工作，看着它推进
+**任务**是一块看板（待办、进行中、评审、完成），但这里的卡片不是便利贴，而是一个智能体真正会去跑的活儿。丢进去，一个智能体接手，你看着它横穿到“完成”。所谓“把几个智能体指向问题然后放手”，在这里变成看得见的东西。
 
-### 想调度什么都行
-**定时任务**支持「每天早上总结我的收件箱」这类周期任务。创建、编辑、暂停、测试，完整运行历史一目了然。
+### 让智能体在你不在时继续干
+**定时任务**让智能体按计划工作：每天早上总结收件箱，每小时查一次更新。创建、编辑、暂停、测试，带完整运行历史，你能确切知道昨夜发生了什么。
 
-### 花了多少钱，清清楚楚
-**用量**追踪每个模型、每个智能体的每一个 token。图表化的费用拆解，一眼看出谁在烧预算。
+### 指挥这支团队
+**智能体**把整个层级画成一张实时组织图：每一个智能体和子智能体、谁在活动、连着哪些渠道、在哪个工作区。随手拉起新的子智能体，当场把它们铺开。
 
-### 管理你的智能体团队
-**智能体**以交互式组织架构图展示全部智能体 —— 谁在线、连了哪些渠道、用哪个工作区，随时启停子智能体。
+### 精确到每个 token 的花费
+**用量**追踪每个模型、每个智能体上的每一个 token。费用拆解、哪个智能体在烧预算、钱到底花在了哪儿。用图表，不是电子表格。
 
-### 保持记忆敏锐
-**记忆**可查看和编辑智能体的长期记忆与日志。**向量搜索**让你即刻找到语义记忆里的任何内容。
+### 让它们的记忆保持锋利
+**记忆**查看并编辑长期记忆和每日日志。**向量搜索**瞬间在语义记忆里找到任何东西。
 
-### 管理模型与密钥
-**模型**在一处集中查看所有可用 AI 模型、配置提供商凭证、设置回退链、按智能体切换模型。不用再手改配置文件。
+### 掌控模型与密钥
+**模型**把一切集中到一处：查看所有可用模型、配置供应商凭证、设置回退链、按智能体切换模型。不用再手改配置文件。
 
-### 健康监控
-**诊断**运行体检并指出问题所在，常见问题一键修复。**网关**状态始终可见。
+### 让舰队保持健康
+**Doctor** 跑诊断，明确告诉你什么健康、什么需要关注，常见问题一键修复。**网关**状态始终可见，你随时知道它是否连通。
 
-### 内置终端
-**终端**在仪表盘里给你完整命令行 —— 多标签、彩色输出，无需切换窗口。
+### 进一个 shell
+**终端**在仪表盘里给你一个完整命令行：多标签、彩色支持，不用切窗口。
 
-### 连接消息渠道
-**渠道**配置智能体与 Telegram、Discord、WhatsApp、Signal、Slack 的连接，支持二维码配对。
+### 在你已在的地方触达它们
+**渠道**把你的智能体接到 Telegram、Discord、WhatsApp、Signal 和 Slack，支持的地方用二维码配对。
 
-### 浏览文件
-**文档**浏览所有工作区文件。**搜索**（`Cmd+K`）全局语义搜索。
+### 浏览它们碰过的一切
+**文档**浏览各智能体的工作区文件。**搜索**（`Cmd+K`）对全部内容做即时语义搜索。
 
-### 安全为先
-**安全**审计你的配置并标记问题。**权限**控制智能体可以执行什么。**账户与密钥**统一管理所有凭证。
+### 始终掌控
+**安全**审计你的配置并标出问题。**权限**控制智能体被允许执行什么。**账户与密钥**在一处管理每一份凭证，并妥善打码。
 
-### 远程访问
-**Tailscale** 集成让你从任何地方安全访问仪表盘和智能体。
+### 从任何地方运行它
+**Tailscale** 集成让你从任意机器安全地访问仪表盘与智能体，隧道控制内建其中。
 
-### 崩溃隔离
-每个板块都有**错误边界** —— 一个视图出问题，其余照常工作。
+### 一处出问题，不会拖垮全部
+每个板块都包在**错误边界**里。一个视图坏了，其余照常运行。点一下重试就回来，无需整页刷新。
 
 ---
 
 ## 快速开始
 
-### 1. 确认已安装 OpenClaw
+### 1. 先确保引擎已装好
 
 ```bash
+# Install OpenClaw if you haven't already
 curl -fsSL https://openclaw.ai/install.sh | bash
+
+# Verify it's running
 openclaw --version
 ```
 
@@ -127,37 +135,39 @@ cd openclaw-mission-control
 ./setup.sh
 ```
 
-完成。浏览器打开 `http://localhost:3333`。
+就这样。打开 `http://localhost:3333`。
 
 **其他启动方式：**
 
 ```bash
-# 换端口
+# Change the port
 PORT=8080 ./setup.sh
 
-# 开发模式（不注册后台服务）
+# Development mode (no background service)
 ./setup.sh --dev --no-service
 
-# 手动模式
+# Manual mode
 npm install && npm run dev
 ```
 
-> **零配置。** Mission Control 自动找到你的 `~/.openclaw` 目录和 `openclaw` 命令。
+> **零配置。** 它会自己找到你的 `~/.openclaw` 目录和 `openclaw` 可执行文件。无需设置。
 
-### 让你的智能体替你安装
+### 或者，直接让你的智能体来
 
-已经在和 OpenClaw 智能体聊天？直接说：
+已经在和某个智能体对话了？把活儿交给它：
 
 ```
-帮我安装 Mission Control，仓库在这里：
+Hey, install Mission Control for me — here's the repo:
 https://github.com/robsannaa/openclaw-mission-control
 ```
+
+它会克隆仓库、安装依赖并启动起来。
 
 ---
 
 ## 远程访问
 
-OpenClaw 跑在服务器上？用 SSH 隧道从笔记本访问：
+跑在服务器上？用 SSH 隧道从笔记本触达：
 
 ```bash
 ssh -N -L 3333:127.0.0.1:3333 user@your-server
@@ -169,43 +179,50 @@ ssh -N -L 3333:127.0.0.1:3333 user@your-server
 
 ## 环境变量（可选）
 
-一切自动检测，需要时可覆盖：
+一切都会自动检测。需要时可以覆盖：
 
 | 变量 | 默认值 | 作用 |
 |---|---|---|
-| `OPENCLAW_HOME` | `~/.openclaw` | OpenClaw 数据目录 |
-| `OPENCLAW_BIN` | 自动检测 | `openclaw` 命令路径 |
-| `OPENCLAW_WORKSPACE` | 自动检测 | 默认工作区目录 |
-| `OPENCLAW_TRANSPORT` | `auto` | 网关连接方式：`auto`、`http` 或 `cli` |
-| `OPENCLAW_GATEWAY_URL` | `http://127.0.0.1:18789` | 网关地址（远程部署用） |
-| `OPENCLAW_GATEWAY_TOKEN` | _（空）_ | 网关 HTTP 认证令牌 |
+| `OPENCLAW_HOME` | `~/.openclaw` | 你的智能体数据所在处 |
+| `OPENCLAW_BIN` | 自动检测 | `openclaw` 命令的路径 |
+| `OPENCLAW_WORKSPACE` | 自动检测 | 你的默认工作区目录 |
+| `OPENCLAW_TRANSPORT` | `auto` | 如何连接网关：`auto`、`http` 或 `cli` |
+| `OPENCLAW_GATEWAY_URL` | `http://127.0.0.1:18789` | 网关地址（用于远程配置） |
+| `OPENCLAW_GATEWAY_TOKEN` | _（空）_ | 通过 HTTP 访问网关的 Bearer 令牌 |
+| `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS` | _（未设置）_ | 设为 `1` 以允许 CLI 连接私有/自签名的 WebSocket 端点（例如本地网关的 `ws://`）。Mission Control 在调用 CLI 时会设置它；仅在你需要不同行为时覆盖。 |
 
 ---
 
 ## 常见问题
 
 <details>
-<summary><strong>提示「OpenClaw not found」怎么办？</strong></summary>
+<summary><strong>提示 “OpenClaw not found” 怎么办？</strong></summary>
 
-先确认终端里 `openclaw --version` 能正常执行。如果可以但仪表盘仍报错，直接指定路径：
+先确认 `openclaw` 命令在终端里能用：
+
+```bash
+openclaw --version
+```
+
+如果它能用，但仪表盘仍然报错，就直接指定路径：
 
 ```bash
 OPENCLAW_BIN=$(which openclaw) npm run dev
 ```
 
-还没安装 OpenClaw？[点这里安装](https://docs.openclaw.ai/install)。
+如果还没装，[点这里获取](https://docs.openclaw.ai/install)。
 </details>
 
 <details>
-<summary><strong>我的数据会被发送到别处吗？</strong></summary>
+<summary><strong>它会把我的数据发到哪儿吗？</strong></summary>
 
-Mission Control 自身不向任何地方发送数据 —— 没有统计、没有追踪。唯一的网络请求是你自己配置的：你的 OpenClaw 网关，以及你选择的 AI 模型提供商（包括完全本地的模型）。
+不会。Mission Control 什么都不往外发：没有分析、没有追踪、不回传。唯一的网络请求，是你自己配置的那些：你的网关，以及你所设置的模型供应商（由你挑选，包括完全本地的模型）。
 </details>
 
 <details>
-<summary><strong>能同时管理多套 OpenClaw 吗？</strong></summary>
+<summary><strong>可以同时管理多套安装吗？</strong></summary>
 
-可以，指向另一个安装即可：
+可以。指向另一份安装即可：
 
 ```bash
 OPENCLAW_HOME=/path/to/other/.openclaw npm run dev -- --port 3001
@@ -213,7 +230,9 @@ OPENCLAW_HOME=/path/to/other/.openclaw npm run dev -- --port 3001
 </details>
 
 <details>
-<summary><strong>端口被占用？</strong></summary>
+<summary><strong>端口被占用了？</strong></summary>
+
+换一个：
 
 ```bash
 npm run dev -- --port 8080
@@ -224,7 +243,7 @@ npm run dev -- --port 8080
 
 ## 参与贡献
 
-欢迎 Pull Request。发现 bug 或有想法？[提交 issue](https://github.com/robsannaa/openclaw-mission-control/issues)。
+欢迎提 PR。发现 bug 或有想法？[开个 issue](https://github.com/robsannaa/openclaw-mission-control/issues)。
 
 ---
 

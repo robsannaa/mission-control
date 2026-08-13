@@ -10,6 +10,9 @@ import { CONFIG_WRITE_TIMEOUT_MS, gatewayCall, runCliCaptureBoth } from "./openc
 import { getOpenClawHome } from "./paths";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
+import { normalizeModelPriority } from "./model-priority";
+
+export { normalizeModelPriority, moveModelPriority } from "./model-priority";
 
 // ── Helpers ──────────────────────────────────────
 
@@ -330,6 +333,13 @@ export type BindingEntry = {
   match: {
     channel: string;
     accountId?: string;
+    peer?: {
+      kind: string;
+      id: string;
+    };
+    guildId?: string;
+    teamId?: string;
+    roles?: string[];
   };
   [key: string]: unknown;
 };
@@ -415,6 +425,23 @@ export function mergeModelPrimary(
 ): Record<string, unknown> {
   const existingObj = isPlainObject(existingModel) ? existingModel : {};
   return { ...existingObj, primary };
+}
+
+/** Preserve future model keys while atomically replacing primary + fallbacks. */
+export function mergeModelPriority(
+  existingModel: unknown,
+  models: unknown[],
+): Record<string, unknown> {
+  const normalized = normalizeModelPriority(models);
+  if (normalized.length === 0) {
+    throw new Error("At least one model is required");
+  }
+  const existingObj = isPlainObject(existingModel) ? existingModel : {};
+  return {
+    ...existingObj,
+    primary: normalized[0],
+    fallbacks: normalized.slice(1),
+  };
 }
 
 /**
@@ -517,12 +544,21 @@ export function extractBindings(configData: ConfigData): BindingEntry[] {
     : [];
   return bindings.filter(isRecord).map((b) => {
     const match = isRecord(b.match) ? b.match : {};
+    const peer = isRecord(match.peer) ? match.peer : {};
+    const peerKind = typeof peer.kind === "string" ? peer.kind.trim() : "";
+    const peerId = typeof peer.id === "string" ? peer.id.trim() : "";
     return {
       ...b,
       agentId: String(b.agentId || ""),
       match: {
         channel: String(match.channel || ""),
         accountId: typeof match.accountId === "string" ? match.accountId : undefined,
+        peer: peerKind && peerId ? { kind: peerKind, id: peerId } : undefined,
+        guildId: typeof match.guildId === "string" ? match.guildId : undefined,
+        teamId: typeof match.teamId === "string" ? match.teamId : undefined,
+        roles: Array.isArray(match.roles)
+          ? match.roles.map((role) => String(role || "").trim()).filter(Boolean)
+          : undefined,
       },
     };
   }) as BindingEntry[];

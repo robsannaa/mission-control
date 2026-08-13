@@ -131,9 +131,36 @@ function normalizePathQuery(pathValue: string | null, workspaceValue: string | n
   if (!pathValue) return null;
   const cleanPath = pathValue.replace(/\\/g, "/").replace(/^\/+/, "").trim();
   if (!cleanPath) return null;
-  if (cleanPath.startsWith("workspace")) return cleanPath;
+
+  const parts = cleanPath.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) return null;
+
+  // Links copied from logs or chat may contain an absolute path. Documents use
+  // OpenClaw-relative paths, so retain the path from its workspace segment.
+  const workspaceIndex = parts.findIndex((part) => part.startsWith("workspace"));
+  if (workspaceIndex >= 0) return parts.slice(workspaceIndex).join("/");
+
   const ws = normalizeWorkspaceQuery(workspaceValue);
   return ws ? `${ws}/${cleanPath}` : cleanPath;
+}
+
+function findRequestedDoc(docs: Doc[], requestedPath: string): Doc | null {
+  const exact = docs.find((doc) => doc.path === requestedPath);
+  if (exact) return exact;
+
+  // A path such as `MEMORY.md` or `memory/2026-08-11.md` means the main
+  // workspace unless the link explicitly names another workspace.
+  const mainWorkspace = docs.find(
+    (doc) => doc.path === `workspace/${requestedPath}`
+  );
+  if (mainWorkspace) return mainWorkspace;
+
+  // Per-agent installations do not always have a folder literally named
+  // `workspace`. A unique suffix match still gives bare links a deterministic
+  // destination without silently choosing between multiple agents.
+  const suffix = `/${requestedPath}`;
+  const matches = docs.filter((doc) => doc.path.endsWith(suffix));
+  return matches.length === 1 ? matches[0] : null;
 }
 
 /* ── JSON Viewer ──────────────────────────────── */
@@ -439,7 +466,7 @@ export function DocsView() {
           requestedDocPath &&
           deepLinkedDocRef.current !== requestedDocPath
         ) {
-          const target = nextDocs.find((doc) => doc.path === requestedDocPath);
+          const target = findRequestedDoc(nextDocs, requestedDocPath);
           if (target) {
             deepLinkedDocRef.current = requestedDocPath;
             setSelected(target);

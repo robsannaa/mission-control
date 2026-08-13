@@ -5,6 +5,8 @@ import { getOpenClawHome } from "@/lib/paths";
 import { fetchGatewaySessions } from "@/lib/gateway-sessions";
 import { gatewayCall } from "@/lib/openclaw";
 import { isPairingRequiredError, pairingRequiredResponse } from "@/lib/gateway-errors";
+import { classifySessionKind, sessionKindOf } from "@/lib/session-kinds";
+import { createLogAnchor } from "@/lib/log-anchor";
 
 // OpenClaw v2026.3.23+ writes tslog JSON to /tmp/openclaw/openclaw-YYYY-MM-DD.log.
 const TMP_LOG_CANDIDATES = [
@@ -28,6 +30,26 @@ type ActivityEvent = {
   detail?: string;
   status?: ActivityEventStatus;
   source?: string;
+  logAnchor?: string;
+  session?: {
+    key: string;
+    sessionId: string;
+    kind: string;
+    kindLabel: string;
+    inspectable: boolean;
+    status: string;
+    hasActiveRun: boolean;
+    model: string;
+    modelProvider?: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    startedAt: number;
+    endedAt: number;
+    runtimeMs: number;
+    estimatedCostUsd: number | null;
+    originLabel?: string;
+  };
 };
 
 type CronRunEntry = {
@@ -247,6 +269,7 @@ async function aggregateLogEvents(): Promise<ActivityEvent[]> {
         title: `${source}: ${message}`,
         status: level === "WARN" ? "warning" : "error",
         source,
+        logAnchor: createLogAnchor(line),
       });
     }
   }
@@ -278,6 +301,7 @@ async function aggregateLogEvents(): Promise<ActivityEvent[]> {
       title: `${match[2]}: ${match[3]}`,
       status: isWarning ? "warning" : "error",
       source: match[2],
+      logAnchor: createLogAnchor(line),
     });
   }
 
@@ -299,15 +323,40 @@ async function aggregateSessionEvents(): Promise<{
       const totalTokens = session.totalTokens ?? 0;
       const model = session.model || "unknown";
       const timestamp = session.updatedAt || Date.now();
+      const kind = sessionKindOf({ key });
+      const classification = classifySessionKind(kind);
+      const isRunning = session.hasActiveRun || session.status === "running";
+      const status = session.status || (isRunning ? "running" : "done");
 
       events.push({
-        id: `session-${session.sessionId || key}-${timestamp}`,
+        // Keep the id stable while the gateway updates token/timestamp fields,
+        // otherwise an open inspector remounts on every activity poll.
+        id: `session-${session.sessionId || key}`,
         type: "session",
         timestamp,
-        title: `Session active: ${key}`,
-        detail: `${totalTokens} tokens · ${model}`,
+        title: `Session ${isRunning ? "active" : "finished"}: ${key}`,
+        detail: `${totalTokens} context tokens · ${model}`,
         status: "info",
         source: key,
+        session: {
+          key,
+          sessionId: session.sessionId,
+          kind,
+          kindLabel: classification.label,
+          inspectable: classification.isInspectable,
+          status,
+          hasActiveRun: isRunning,
+          model,
+          modelProvider: session.modelProvider,
+          inputTokens: session.inputTokens,
+          outputTokens: session.outputTokens,
+          totalTokens,
+          startedAt: session.startedAt,
+          endedAt: session.endedAt,
+          runtimeMs: session.runtimeMs,
+          estimatedCostUsd: session.estimatedCostUsd,
+          originLabel: session.originLabel,
+        },
       });
     }
   } catch (err) {

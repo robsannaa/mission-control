@@ -12,7 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { TextStreamChatTransport } from "ai";
 import type { UIMessage } from "ai";
-import { ArrowDown, PanelLeft, Pencil, Plus } from "lucide-react";
+import { ArrowDown, CircleHelp, PanelLeft, Pencil, Plus } from "lucide-react";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { useChatSessions } from "@/hooks/use-chat-sessions";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,9 @@ import {
   type ChatAgent,
   type ChatSessionRow,
 } from "@/components/chat/types";
+import type { InteractionRequest } from "@/lib/awareness/types";
+import { announceInteractionsChanged } from "@/lib/interaction-events";
+import { interactionReplyMessages } from "@/lib/interaction-chat";
 
 /**
  * Mission Control chat.
@@ -243,6 +246,7 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
   const searchParams = useSearchParams();
   const urlAgent = searchParams.get("agent")?.trim() ?? "";
   const urlSession = searchParams.get("session")?.trim() ?? "";
+  const interactionId = searchParams.get("interaction")?.trim() ?? "";
 
   const [agents, setAgents] = useState<BootstrapAgent[]>([]);
   const [agentsLoaded, setAgentsLoaded] = useState(false);
@@ -259,6 +263,9 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
   const [atBottom, setAtBottom] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const [commandRunning, setCommandRunning] = useState(false);
+  const [interaction, setInteraction] = useState<InteractionRequest | null>(null);
+  const [interactionLoading, setInteractionLoading] = useState(false);
+  const [interactionBusy, setInteractionBusy] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -299,6 +306,64 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
   useEffect(() => {
     setChatActive(isVisible);
   }, [isVisible]);
+
+  const loadInteraction = useCallback(async () => {
+    if (!interactionId) return;
+    setInteractionLoading(true);
+    try {
+      const response = await fetch(
+        `/api/interactions?id=${encodeURIComponent(interactionId)}`,
+        { cache: "no-store" },
+      );
+      const payload = await response.json() as { interaction?: InteractionRequest; error?: string };
+      if (!response.ok || !payload.interaction) {
+        throw new Error(payload.error || "Could not load this question");
+      }
+      setInteraction(payload.interaction);
+    } catch (cause) {
+      setInteraction(null);
+      setNotice({
+        title: "That question is not available",
+        body: cause instanceof Error ? cause.message : String(cause),
+        tone: "warning",
+      });
+    } finally {
+      setInteractionLoading(false);
+    }
+  }, [interactionId]);
+
+  useEffect(() => {
+    void loadInteraction();
+  }, [loadInteraction]);
+
+  const loadActiveInteraction = useCallback(async () => {
+    if (interactionId || !visibleRef.current) return;
+    try {
+      const response = await fetch("/api/interactions?status=active&limit=1", {
+        cache: "no-store",
+      });
+      const payload = await response.json() as {
+        interactions?: InteractionRequest[];
+      };
+      if (!response.ok) return;
+      setInteraction(payload.interactions?.[0] ?? null);
+    } catch {
+      // Chat remains usable if the interaction inbox has a temporary problem.
+    }
+  }, [interactionId]);
+
+  useEffect(() => {
+    if (interactionId || !isVisible) return;
+    void loadActiveInteraction();
+    const timer = window.setInterval(() => void loadActiveInteraction(), 8_000);
+    return () => window.clearInterval(timer);
+  }, [interactionId, isVisible, loadActiveInteraction]);
+
+  useEffect(() => {
+    if (interaction?.status !== "resuming") return;
+    const timer = window.setInterval(() => void loadInteraction(), 3_000);
+    return () => window.clearInterval(timer);
+  }, [interaction?.status, loadInteraction]);
 
   /* ── Resolve the agent from the URL ──────────────────────────────────── */
 
@@ -516,6 +581,52 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
 
   const handleSubmit = useCallback(
     async (submission: ComposerSubmission) => {
+      if (interaction?.status === "open") {
+        const answer = submission.text.trim();
+        if (!answer || interactionBusy) return;
+        setInteractionBusy(true);
+        setNotice(null);
+        try {
+          const response = await fetch("/api/interactions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "answer",
+              id: interaction.id,
+              answer,
+              channel: "mission-control-chat",
+            }),
+          });
+          const payload = await response.json() as {
+            interaction?: InteractionRequest;
+            resumed?: boolean;
+            scheduleResumed?: boolean;
+            error?: string;
+          };
+          if (!response.ok || !payload.interaction) {
+            throw new Error(payload.error || "Could not send your answer");
+          }
+          setInteraction(payload.interaction);
+          announceInteractionsChanged();
+          if (payload.resumed && payload.scheduleResumed === false) {
+            setNotice({
+              title: "The run continued, but its schedule is still paused",
+              body: payload.error || "Enable this Cron Job again from Cron Jobs.",
+              tone: "warning",
+            });
+          }
+        } catch (cause) {
+          setNotice({
+            title: "Your answer was not sent",
+            body: cause instanceof Error ? cause.message : String(cause),
+            tone: "warning",
+          });
+        } finally {
+          setInteractionBusy(false);
+        }
+        return;
+      }
+
       const key = sessionKey || newSessionKey(agentId);
       if (!sessionKey) setSessionKey(key);
       clearError();
@@ -533,7 +644,7 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
       );
       void sessions.refresh();
     },
-    [agentId, clearError, registerDraftSession, sendMessage, sessionKey, sessions],
+    [agentId, clearError, interaction, interactionBusy, registerDraftSession, sendMessage, sessionKey, sessions],
   );
 
   const handleCommand = useCallback(
@@ -619,7 +730,7 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
     if (!isVisible) return;
     if (!atBottom) return;
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, status, isVisible, atBottom]);
+  }, [messages, status, interaction?.id, interaction?.updatedAt, isVisible, atBottom]);
 
   /* ── Unread badges ───────────────────────────────────────────────────── */
 
@@ -680,7 +791,7 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
   );
 
   const noModels = modelCount === 0 && warmupExpired;
-  const isEmpty = messages.length === 0 && !historyLoading;
+  const isEmpty = messages.length === 0 && !historyLoading && !interaction && !interactionLoading;
   const streamingId =
     isStreaming && messages.length
       ? messages[messages.length - 1].role === "assistant"
@@ -689,6 +800,10 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
       : null;
 
   const errorShape = error ? classifyChatError(error.message) : null;
+  const interactionReplies = useMemo(
+    () => interactionReplyMessages(interaction),
+    [interaction],
+  );
 
   useEffect(() => {
     if (renaming) requestAnimationFrame(() => renameInputRef.current?.select());
@@ -704,7 +819,23 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
     );
   }
 
-  const headerTitle = activeRow?.title ?? (sessionIsDraft ? "New conversation" : "Conversation");
+  const headerTitle =
+    interaction?.status === "open"
+      ? interaction.title
+      : activeRow?.title ?? (sessionIsDraft ? "New conversation" : "Conversation");
+  const conversationAttention = interaction?.status === "open"
+    ? {
+        id: interaction.id,
+        title: interaction.title,
+        question: interaction.question,
+        createdAt: interaction.createdAt,
+        sessionKey: interaction.source.sessionKey,
+      }
+    : null;
+  const selectConversationAttention = (attention: { id: string }) => {
+    setSidebarOpen(false);
+    router.push(`/chat?interaction=${encodeURIComponent(attention.id)}`);
+  };
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -724,6 +855,8 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
             if (key === sessionKey) startNewChat(agentId, { push: false });
           }}
           onRetry={() => void sessions.refresh()}
+          attention={conversationAttention}
+          onSelectAttention={selectConversationAttention}
         />
       </aside>
 
@@ -750,6 +883,8 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
                 if (key === sessionKey) startNewChat(agentId, { push: false });
               }}
               onRetry={() => void sessions.refresh()}
+              attention={conversationAttention}
+              onSelectAttention={selectConversationAttention}
               onClose={() => setSidebarOpen(false)}
             />
           </div>
@@ -852,9 +987,42 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
                 </p>
               )}
               <MessageList messages={messages} streamingId={streamingId} />
-              {(status === "submitted" || commandRunning) && (
+              {interaction && (
+                <div className="mt-2 mb-6 rounded-lg border border-border bg-card p-4 shadow-sm" data-interaction-id={interaction.id}>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-muted text-fg-subtle">
+                      <CircleHelp className="h-4 w-4" aria-hidden />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-foreground">{interaction.title}</p>
+                        <span className="rounded-full border border-border px-2 py-0.5 text-xs capitalize text-muted-foreground">
+                          {interaction.status === "open" ? "Needs your answer" : interaction.status}
+                        </span>
+                      </div>
+                      {interaction.context && (
+                        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{interaction.context}</p>
+                      )}
+                      <p className="mt-3 text-[15px] font-medium leading-relaxed text-foreground">{interaction.question}</p>
+                      {interaction.status === "open" && (
+                        <p className="mt-2 text-xs text-fg-subtle">Reply in the message box below. Your answer will resume the paused cron run.</p>
+                      )}
+                      {interaction.status === "resuming" && (
+                        <p className="mt-2 text-xs text-muted-foreground">Answer received. The original run is continuing from its checkpoint.</p>
+                      )}
+                      {interaction.status === "completed" && (
+                        <p className="mt-2 text-xs text-success-fg">The resumed work finished.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {interactionReplies.length > 0 && (
+                <MessageList messages={interactionReplies} streamingId={null} />
+              )}
+              {(status === "submitted" || commandRunning || interactionBusy) && (
                 <ThinkingIndicator
-                  label={commandRunning ? "Running command" : "Thinking"}
+                  label={interactionBusy ? "Resuming background work" : commandRunning ? "Running command" : "Thinking"}
                 />
               )}
               <div ref={bottomRef} />
@@ -919,8 +1087,9 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
                 ? "Connect a model provider to start chatting"
                 : "Waiting for the gateway…"
             }
-            isStreaming={isStreaming || status === "submitted"}
-            showStarters={isEmpty && !noModels}
+            placeholder={interaction?.status === "open" ? "Type your clarification…" : undefined}
+            isStreaming={isStreaming || status === "submitted" || interactionBusy}
+            showStarters={isEmpty && !noModels && !interaction}
             onSubmit={(submission) => void handleSubmit(submission)}
             onCommand={(command) => void handleCommand(command)}
             onStop={stop}

@@ -55,13 +55,21 @@ import {
   RotateCcw,
   Terminal,
   Wrench,
+  BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { requestRestart } from "@/lib/restart-store";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
 import { InlineSpinner, ContentLoadingState } from "@/components/ui/loading-state";
+import { ProviderLogo } from "@/components/ui/provider-logo";
 import { SubagentsManagerView } from "@/components/subagents-manager-view";
 import { ModelsView } from "@/components/models-view";
+import {
+  buildDenseTopologyPositions,
+  compactAgentRouteLabel,
+  type AgentRouteBinding,
+  type ConfiguredTopologyChannel,
+} from "@/lib/agent-topology";
 
 const POSITIONS_STORAGE_KEY = "mc-agents-node-positions";
 const AGENT_ORDER_STORAGE_KEY = "mc-agents-order";
@@ -165,17 +173,19 @@ type Agent = {
   status: "active" | "idle" | "unknown";
 };
 
-type ConfiguredChannel = {
-  channel: string;
-  enabled: boolean;
-};
-
 type AgentsResponse = {
   agents: Agent[];
   owner: string | null;
   defaultModel: string;
   defaultFallbacks: string[];
-  configuredChannels?: ConfiguredChannel[];
+  configuredChannels?: ConfiguredTopologyChannel[];
+  routeBindings?: AgentRouteBinding[];
+};
+
+type GbrainDetection = {
+  installed: boolean;
+  engine?: string;
+  schemaPack?: string;
 };
 
 /* ================================================================
@@ -238,6 +248,7 @@ const AGENT_GRAPH_COLORS = {
   route: "var(--chart-4)",
   routeLabel: "var(--chart-4)",
   workspace: "var(--chart-3)",
+  knowledge: "var(--chart-5)",
   muted: "var(--chart-muted)",
   mutedSoft: "var(--chart-tick-muted)",
 };
@@ -384,21 +395,41 @@ function RuntimeSubagentNodeComponent({ data }: NodeProps) {
 }
 
 function ChannelNodeComponent({ data }: NodeProps) {
-  const d = data as { channel: string; accountIds: string[] };
+  const d = data as {
+    channel: string;
+    accountId: string;
+    accountName?: string;
+    isDefault: boolean;
+    enabled: boolean;
+    connected: boolean;
+  };
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-info-border bg-info-bg px-3 py-2 min-w-32">
+    <div
+      className={cn(
+        "flex min-w-40 items-center gap-2 rounded-lg border px-3 py-2",
+        d.enabled
+          ? "border-info-border bg-info-bg"
+          : "border-border bg-muted opacity-70",
+      )}
+    >
       <Handle type="source" position={Position.Right} className="!bg-info !border-info-border !w-2 !h-2" />
       <span className="text-sm">{channelIcon(d.channel)}</span>
-      <div>
-        <p className="text-xs font-semibold text-info-fg capitalize">
-          {d.channel}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-xs font-semibold text-info-fg capitalize">{d.channel}</p>
+          <span
+            className={cn(
+              "h-1.5 w-1.5 shrink-0 rounded-full",
+              d.connected ? "bg-success" : "bg-muted-foreground",
+            )}
+            title={d.connected ? "Connected" : "Configured, not connected"}
+          />
+        </div>
+        <p className="truncate text-xs text-info-fg">
+          {d.accountName || (d.accountId === "default" ? "Default account" : d.accountId)}
+          {d.isDefault && d.accountId !== "default" ? " · default" : ""}
         </p>
-        {d.accountIds.length > 0 && (
-          <p className="text-xs text-info-fg">
-            {d.accountIds.join(", ")}
-          </p>
-        )}
       </div>
     </div>
   );
@@ -430,10 +461,43 @@ function WorkspaceNodeComponent({ data }: NodeProps) {
           {shortPath(d.path)}
         </p>
         <p className="text-xs text-warning-fg">
-          {d.agentNames.join(", ")}
+          Agent files · {d.agentNames.join(", ")}
         </p>
       </div>
     </div>
+  );
+}
+
+function GbrainNodeComponent({ data }: NodeProps) {
+  const d = data as {
+    engine?: string;
+    schemaPack?: string;
+    onClick: () => void;
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={d.onClick}
+      className="flex min-w-40 items-center gap-2 rounded-lg border border-[var(--accent-brand-border)] bg-[var(--accent-brand-subtle)] px-3 py-2 text-left transition-colors hover:bg-[var(--accent-brand-ring)]"
+      title="Open G-Brain"
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!h-2 !w-2 !border-[var(--accent-brand-border)] !bg-[var(--accent-brand)]"
+      />
+      <BrainCircuit className="h-4 w-4 shrink-0 text-[var(--accent-brand-text)]" />
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <p className="text-xs font-semibold text-foreground">G-Brain</p>
+          <span className="h-1.5 w-1.5 rounded-full bg-success" aria-label="Detected" />
+        </div>
+        <p className="truncate text-xs text-muted-foreground">
+          Local knowledge{d.engine ? ` · ${d.engine}` : ""}
+        </p>
+      </div>
+    </button>
   );
 }
 
@@ -443,6 +507,7 @@ const nodeTypes = {
   runtimeSubagent: RuntimeSubagentNodeComponent,
   channel: ChannelNodeComponent,
   workspace: WorkspaceNodeComponent,
+  gbrain: GbrainNodeComponent,
 };
 
 /* ================================================================
@@ -455,41 +520,78 @@ function buildGraph(
   onSelectAgent: (id: string) => void,
   selectedWorkspacePath: string | null,
   onSelectWorkspace: (workspacePath: string) => void,
+  gbrain: GbrainDetection,
+  onOpenGbrain: () => void,
   savedPositions?: Record<string, { x: number; y: number }>
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   const agents = data.agents;
 
-  // Gather unique channels/workspaces and explicit binding routes.
-  const channelMap = new Map<string, Set<string>>(); // channel → account ids
-  const workspaceMap = new Map<string, string[]>(); // workspace → agent names
-  const channelRoutes = new Map<
+  // Gather the exact configured channel accounts, workspaces, and route rules.
+  // Account identity matters: OpenClaw can route two accounts on the same
+  // provider to different agents.
+  const routeBindings = data.routeBindings || [];
+  const channelAccounts = new Map<
     string,
-    Array<{ agentId: string; accountId: string | null; raw: string }>
-  >(); // channel -> explicit routes
+    {
+      id: string;
+      channel: string;
+      accountId: string;
+      accountName?: string;
+      isDefault: boolean;
+      enabled: boolean;
+      connected: boolean;
+    }
+  >();
+  const workspaceMap = new Map<string, string[]>(); // workspace → agent names
+  const channelNodeId = (channel: string, accountId: string) =>
+    `ch-${channel}-${accountId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const channelDefaults = new Map<string, string>();
 
-  for (const ch of data.configuredChannels || []) {
-    if (ch.enabled && ch.channel) channelMap.set(ch.channel, new Set());
+  for (const configured of data.configuredChannels || []) {
+    if (!configured.channel) continue;
+    channelDefaults.set(configured.channel, configured.defaultAccount || "default");
+    const configuredAccounts = configured.accounts || [];
+    const accounts = configuredAccounts.length > 0
+      ? configuredAccounts
+      : [{ id: configured.defaultAccount || "default", enabled: configured.enabled, connected: configured.connected }];
+    for (const account of accounts) {
+      const accountId = account.id || configured.defaultAccount || "default";
+      const id = channelNodeId(configured.channel, accountId);
+      channelAccounts.set(id, {
+        id,
+        channel: configured.channel,
+        accountId,
+        accountName: account.name,
+        isDefault: accountId === configured.defaultAccount,
+        enabled: configured.enabled && account.enabled,
+        connected: configured.connected && account.connected,
+      });
+    }
   }
 
   for (const a of agents) {
-    for (const b of a.bindings) {
-      const ch = b.split(" ")[0]?.trim();
-      if (!ch) continue;
-      const accMatch = b.match(/accountId=(\S+)/);
-      const accId = accMatch ? accMatch[1] : null;
-      if (!channelMap.has(ch)) channelMap.set(ch, new Set());
-      if (accId) channelMap.get(ch)!.add(accId);
-      if (!channelRoutes.has(ch)) channelRoutes.set(ch, []);
-      channelRoutes.get(ch)!.push({
-        agentId: a.id,
-        accountId: accId,
-        raw: b,
-      });
-    }
     if (!workspaceMap.has(a.workspace)) workspaceMap.set(a.workspace, []);
     workspaceMap.get(a.workspace)!.push(a.name);
+  }
+
+  // A binding can be present even when a channel account is currently
+  // disconnected or omitted from status. Keep it visible as configured truth.
+  for (const binding of routeBindings) {
+    if (!binding.channel || binding.accountId === "*") continue;
+    const accountId = binding.accountId || channelDefaults.get(binding.channel) || "default";
+    const id = channelNodeId(binding.channel, accountId);
+    if (!channelAccounts.has(id)) {
+      channelAccounts.set(id, {
+        id,
+        channel: binding.channel,
+        accountId,
+        isDefault: !binding.accountId,
+        enabled: true,
+        connected: false,
+      });
+    }
   }
 
   // ── Classify agents ──
@@ -504,7 +606,7 @@ function buildGraph(
 
   // ── Dagre-based automatic layout ──
   // Uses dagre graph layout to prevent overlaps at any scale.
-  // Layers left→right: Channels → Gateway → Agents (+subs) → Workspaces
+  // Layers left→right: Channels → Gateway → Agents (+subs) → owned/optional resources.
   const RUNTIME_SUBAGENT_OFFSET_X = 290;
   const RUNTIME_SUBAGENT_SPACING_Y = 94;
 
@@ -521,10 +623,12 @@ function buildGraph(
   const AGENT_NODE_H = 110;
   const GATEWAY_NODE_W = 160;
   const GATEWAY_NODE_H = 80;
-  const CHANNEL_NODE_W = 140;
+  const CHANNEL_NODE_W = 170;
   const CHANNEL_NODE_H = 60;
   const WORKSPACE_NODE_W = 180;
   const WORKSPACE_NODE_H = 70;
+  const GBRAIN_NODE_W = 190;
+  const GBRAIN_NODE_H = 70;
   const RUNTIME_NODE_W = 200;
   const RUNTIME_NODE_H = 70;
 
@@ -558,12 +662,11 @@ function buildGraph(
   }
 
   // Channels
-  const channels = Array.from(channelMap.entries()).map(([channel, accountIds]) => [
-    channel,
-    Array.from(accountIds),
-  ] as const);
-  for (const [ch] of channels) {
-    if (dagreGraph) dagreGraph.setNode(`ch-${ch}`, { width: CHANNEL_NODE_W, height: CHANNEL_NODE_H });
+  const channels = Array.from(channelAccounts.values()).sort((a, b) =>
+    a.channel.localeCompare(b.channel) || a.accountId.localeCompare(b.accountId)
+  );
+  for (const channel of channels) {
+    if (dagreGraph) dagreGraph.setNode(channel.id, { width: CHANNEL_NODE_W, height: CHANNEL_NODE_H });
   }
 
   // Workspaces
@@ -571,6 +674,11 @@ function buildGraph(
   workspaces.forEach((_ws, i) => {
     if (dagreGraph) dagreGraph.setNode(`ws-${i}`, { width: WORKSPACE_NODE_W, height: WORKSPACE_NODE_H });
   });
+
+  const gbrainNodeId = "gbrain";
+  if (gbrain.installed && dagreGraph) {
+    dagreGraph.setNode(gbrainNodeId, { width: GBRAIN_NODE_W, height: GBRAIN_NODE_H });
+  }
 
   // Runtime subagents
   const runtimeNodeIds: string[] = [];
@@ -588,8 +696,8 @@ function buildGraph(
   // ── Register all edges with dagre ──
 
   // Channel → Gateway (so channels rank left of gateway)
-  for (const [ch] of channels) {
-    if (dagreGraph) dagreGraph.setEdge(`ch-${ch}`, gatewayId);
+  for (const channel of channels) {
+    if (dagreGraph) dagreGraph.setEdge(channel.id, gatewayId);
   }
 
   // Gateway → top-level agents
@@ -619,6 +727,13 @@ function buildGraph(
       }
     }
   });
+
+  // G-Brain is an optional knowledge service. It is not inside the workspace
+  // and is not owned by the Gateway, so it sits beside the workspace and is
+  // reached from the default agent across an explicit integration boundary.
+  if (gbrain.installed && defaultAgent && dagreGraph) {
+    dagreGraph.setEdge(`agent-${defaultAgent.id}`, gbrainNodeId);
+  }
 
   // Parent agent → runtime subagent
   for (const parent of agents) {
@@ -650,6 +765,19 @@ function buildGraph(
     }
   }
 
+  const densePositions =
+    agents.length > 12 || channels.length > 10
+      ? buildDenseTopologyPositions({
+          agents: agents.map((agent) => ({ id: agent.id, workspace: agent.workspace })),
+          channelNodeIds: channels.map((channel) => channel.id),
+          workspaceNodeIds: workspaces.map(([workspace], index) => ({
+            id: `ws-${index}`,
+            workspace,
+          })),
+          gbrainNodeId: gbrain.installed ? gbrainNodeId : undefined,
+        })
+      : null;
+
   // Fallback position helper (if dagre unavailable or fails)
   const FALLBACK_GATEWAY_X = 0;
   const FALLBACK_GATEWAY_Y = 0;
@@ -659,6 +787,7 @@ function buildGraph(
   function getPosition(nodeId: string, fallbackX: number, fallbackY: number) {
     // User-saved positions take priority over dagre layout
     if (savedPositions && savedPositions[nodeId]) return savedPositions[nodeId];
+    if (densePositions) return densePositions.get(nodeId) || { x: fallbackX, y: fallbackY };
     return dagrePositions.get(nodeId) || { x: fallbackX, y: fallbackY };
   }
 
@@ -692,13 +821,22 @@ function buildGraph(
       draggable: true,
     });
 
-    // Gateway → Agent
+    const agentBindings = routeBindings.filter((binding) => binding.agentId === agent.id);
+    const routeLabel = compactAgentRouteLabel(
+      agentBindings,
+      defaultAgent?.id === agent.id,
+    );
+
+    // Gateway owns the runtime and routes channel traffic to the agent.
     edges.push({
       id: `gw-${agent.id}`,
       source: gatewayId,
       target: nodeId,
       type: "default",
       style: gatewayEdgeStyle,
+      label: routeLabel,
+      labelStyle: { fill: "var(--muted-foreground)", fontSize: 10, fontWeight: 500 },
+      labelBgStyle: { fill: "var(--card)", fillOpacity: 0.9 },
       markerEnd: gatewayEdgeMarker,
     });
   }
@@ -792,48 +930,43 @@ function buildGraph(
   const FALLBACK_CHANNEL_X = -350;
   const chFallbackSpacing = 180;
 
-  channels.forEach(([ch, accountIds], i) => {
-    const nodeId = `ch-${ch}`;
+  channels.forEach((channel, i) => {
+    const nodeId = channel.id;
     const fallbackY = -((channels.length - 1) * chFallbackSpacing) / 2 + i * chFallbackSpacing;
     nodes.push({
       id: nodeId,
       type: "channel",
       position: getPosition(nodeId, FALLBACK_CHANNEL_X, fallbackY),
-      data: { channel: ch, accountIds },
+      data: {
+        channel: channel.channel,
+        accountId: channel.accountId,
+        accountName: channel.accountName,
+        isDefault: channel.isDefault,
+        enabled: channel.enabled,
+        connected: channel.connected,
+      },
       draggable: true,
     });
 
-    // Channel → Agent routes (one edge per explicit binding route).
-    const explicitRoutes = channelRoutes.get(ch) || [];
-    const routes =
-      explicitRoutes.length > 0
-        ? explicitRoutes
-        : defaultAgent
-          ? [{ agentId: defaultAgent.id, accountId: null, raw: "implicit-default" }]
-          : [];
-
-    routes.forEach((route, routeIdx) => {
-      const implicitDefault = route.raw === "implicit-default";
-      edges.push({
-        id: `ch-${ch}-${route.agentId}-${route.accountId || "all"}-${i}-${routeIdx}`,
-        source: nodeId,
-        target: `agent-${route.agentId}`,
-        type: "default",
-        style: { stroke: AGENT_GRAPH_COLORS.route, strokeWidth: implicitDefault ? 1.25 : 1.5 },
-        label: implicitDefault
-          ? "default route"
-          : route.accountId
-            ? route.accountId
-            : "all accounts",
-        labelStyle: { fill: AGENT_GRAPH_COLORS.routeLabel, fontSize: 10, fontWeight: 500 },
-        labelBgStyle: { fill: "var(--card)", fillOpacity: 0.85 },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: AGENT_GRAPH_COLORS.route,
-          width: 14,
-          height: 10,
-        },
-      });
+    edges.push({
+      id: `${nodeId}-gateway-${i}`,
+      source: nodeId,
+      target: gatewayId,
+      type: "default",
+      style: {
+        stroke: channel.enabled ? AGENT_GRAPH_COLORS.route : AGENT_GRAPH_COLORS.muted,
+        strokeWidth: 1.5,
+        ...(channel.enabled ? {} : { strokeDasharray: "4 4" }),
+      },
+      label: channel.connected ? "connected" : channel.enabled ? "configured" : "disabled",
+      labelStyle: { fill: AGENT_GRAPH_COLORS.routeLabel, fontSize: 10, fontWeight: 500 },
+      labelBgStyle: { fill: "var(--card)", fillOpacity: 0.9 },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: channel.enabled ? AGENT_GRAPH_COLORS.route : AGENT_GRAPH_COLORS.muted,
+        width: 14,
+        height: 10,
+      },
     });
   });
 
@@ -865,6 +998,9 @@ function buildGraph(
           source: `agent-${a.id}`,
           target: nodeId,
           style: { stroke: AGENT_GRAPH_COLORS.workspace, strokeWidth: 1.5 },
+          label: "works in",
+          labelStyle: { fill: AGENT_GRAPH_COLORS.workspace, fontSize: 10, fontWeight: 500 },
+          labelBgStyle: { fill: "var(--card)", fillOpacity: 0.9 },
           markerEnd: {
             type: MarkerType.ArrowClosed,
             color: AGENT_GRAPH_COLORS.workspace,
@@ -875,6 +1011,48 @@ function buildGraph(
       }
     }
   });
+
+  if (gbrain.installed && defaultAgent) {
+    const nodeId = gbrainNodeId;
+    const defaultAgentNode = nodes.find((node) => node.id === `agent-${defaultAgent.id}`);
+    nodes.push({
+      id: nodeId,
+      type: "gbrain",
+      position: getPosition(
+        nodeId,
+        (defaultAgentNode?.position.x ?? FALLBACK_AGENT_X) + 360,
+        (defaultAgentNode?.position.y ?? FALLBACK_GATEWAY_Y) + 130
+      ),
+      data: {
+        engine: gbrain.engine,
+        schemaPack: gbrain.schemaPack,
+        onClick: onOpenGbrain,
+      },
+      draggable: true,
+    });
+
+    edges.push({
+      id: `gbrain-${defaultAgent.id}`,
+      source: `agent-${defaultAgent.id}`,
+      target: nodeId,
+      type: "default",
+      animated: false,
+      style: {
+        stroke: AGENT_GRAPH_COLORS.knowledge,
+        strokeWidth: 1.5,
+        strokeDasharray: "5 4",
+      },
+      label: "knowledge available",
+      labelStyle: { fill: AGENT_GRAPH_COLORS.knowledge, fontSize: 10, fontWeight: 500 },
+      labelBgStyle: { fill: "var(--card)", fillOpacity: 0.9 },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: AGENT_GRAPH_COLORS.knowledge,
+        width: 14,
+        height: 10,
+      },
+    });
+  }
 
   return { nodes, edges };
 }
@@ -1481,12 +1659,16 @@ function FlowViewInner({
   onSelect,
   selectedWorkspacePath,
   onSelectWorkspace,
+  gbrain,
+  onOpenGbrain,
 }: {
   data: AgentsResponse;
   selectedId: string | null;
   onSelect: (id: string) => void;
   selectedWorkspacePath: string | null;
   onSelectWorkspace: (workspacePath: string) => void;
+  gbrain: GbrainDetection;
+  onOpenGbrain: () => void;
 }) {
   const { fitView } = useReactFlow();
   const [savedPos, setSavedPos] = useState<Record<string, { x: number; y: number }>>(loadSavedPositions);
@@ -1499,9 +1681,11 @@ function FlowViewInner({
         onSelect,
         selectedWorkspacePath,
         onSelectWorkspace,
+        gbrain,
+        onOpenGbrain,
         savedPos
       ),
-    [data, selectedId, onSelect, selectedWorkspacePath, onSelectWorkspace, savedPos]
+    [data, selectedId, onSelect, selectedWorkspacePath, onSelectWorkspace, gbrain, onOpenGbrain, savedPos]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -1515,6 +1699,8 @@ function FlowViewInner({
       onSelect,
       selectedWorkspacePath,
       onSelectWorkspace,
+      gbrain,
+      onOpenGbrain,
       savedPos
     );
     setNodes(newNodes);
@@ -1525,6 +1711,8 @@ function FlowViewInner({
     onSelect,
     selectedWorkspacePath,
     onSelectWorkspace,
+    gbrain,
+    onOpenGbrain,
     savedPos,
     setNodes,
     setEdges,
@@ -1563,7 +1751,7 @@ function FlowViewInner({
       fitView
       fitViewOptions={{ padding: 0.15 }}
       proOptions={{ hideAttribution: true }}
-      minZoom={0.1}
+      minZoom={data.agents.length > 12 ? 0.03 : 0.1}
       maxZoom={2}
       defaultEdgeOptions={{ type: "default" }}
     >
@@ -1572,6 +1760,15 @@ function FlowViewInner({
         showInteractive={false}
         className="!bg-card dark:!bg-muted !border-border !shadow-xl [&>button]:!bg-secondary [&>button]:!border-border [&>button]:!text-muted-foreground [&>button:hover]:!bg-accent"
       />
+      <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-card/95 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur dark:bg-muted/95">
+        <span className="font-medium text-foreground">Live topology</span>
+        <span>· {data.agents.length} agent{data.agents.length === 1 ? "" : "s"}</span>
+        <span>
+          · {(data.configuredChannels || []).reduce((sum, channel) => sum + Math.max(1, channel.accounts?.length || 0), 0)} channel account{(data.configuredChannels || []).reduce((sum, channel) => sum + Math.max(1, channel.accounts?.length || 0), 0) === 1 ? "" : "s"}
+        </span>
+        <span>· {new Set(data.agents.map((agent) => agent.workspace)).size} workspace{new Set(data.agents.map((agent) => agent.workspace)).size === 1 ? "" : "s"}</span>
+        <span>· {(data.routeBindings || []).length} route{(data.routeBindings || []).length === 1 ? "" : "s"}</span>
+      </div>
       {Object.keys(savedPos).length > 0 && (
         <div className="absolute top-3 right-3 z-10">
           <button
@@ -1594,12 +1791,16 @@ function FlowView({
   onSelect,
   selectedWorkspacePath,
   onSelectWorkspace,
+  gbrain,
+  onOpenGbrain,
 }: {
   data: AgentsResponse;
   selectedId: string | null;
   onSelect: (id: string) => void;
   selectedWorkspacePath: string | null;
   onSelectWorkspace: (workspacePath: string) => void;
+  gbrain: GbrainDetection;
+  onOpenGbrain: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
@@ -1634,6 +1835,8 @@ function FlowView({
               onSelect={onSelect}
               selectedWorkspacePath={selectedWorkspacePath}
               onSelectWorkspace={onSelectWorkspace}
+              gbrain={gbrain}
+              onOpenGbrain={onOpenGbrain}
             />
           </ReactFlowProvider>
         </div>
@@ -1670,18 +1873,24 @@ type AuthProviderInfo = {
 
 /* ── Provider metadata for display ── */
 
-const PROVIDER_META: Record<string, { label: string; icon: string; color: string; keyUrl?: string; keyHint: string }> = {
-  anthropic: { label: "Anthropic", icon: "🟣", color: "violet", keyUrl: "https://console.anthropic.com/settings/keys", keyHint: "sk-ant-..." },
-  openai: { label: "OpenAI", icon: "🟢", color: "emerald", keyUrl: "https://platform.openai.com/api-keys", keyHint: "sk-..." },
-  google: { label: "Google", icon: "🔵", color: "blue", keyUrl: "https://aistudio.google.com/apikey", keyHint: "AIza..." },
-  openrouter: { label: "OpenRouter", icon: "🟠", color: "orange", keyUrl: "https://openrouter.ai/keys", keyHint: "sk-or-..." },
-  minimax: { label: "MiniMax", icon: "🟡", color: "yellow", keyUrl: "https://platform.minimaxi.com/", keyHint: "eyJ..." },
-  groq: { label: "Groq", icon: "⚡", color: "cyan", keyUrl: "https://console.groq.com/keys", keyHint: "gsk_..." },
-  xai: { label: "xAI", icon: "𝕏", color: "zinc", keyUrl: "https://console.x.ai/", keyHint: "xai-..." },
-  mistral: { label: "Mistral", icon: "🌊", color: "sky", keyUrl: "https://console.mistral.ai/api-keys/", keyHint: "" },
-  zai: { label: "Z.AI", icon: "💎", color: "indigo", keyHint: "" },
-  cerebras: { label: "Cerebras", icon: "🧠", color: "pink", keyHint: "" },
-  ollama: { label: "Ollama (local)", icon: "🦙", color: "lime", keyHint: "Local — no key needed" },
+const PROVIDER_META: Record<string, { label: string; color: string; keyUrl?: string; keyHint: string }> = {
+  anthropic: { label: "Anthropic", color: "violet", keyUrl: "https://console.anthropic.com/settings/keys", keyHint: "sk-ant-..." },
+  openai: { label: "OpenAI", color: "emerald", keyUrl: "https://platform.openai.com/api-keys", keyHint: "sk-..." },
+  google: { label: "Google", color: "blue", keyUrl: "https://aistudio.google.com/apikey", keyHint: "AIza..." },
+  openrouter: { label: "OpenRouter", color: "orange", keyUrl: "https://openrouter.ai/keys", keyHint: "sk-or-..." },
+  minimax: { label: "MiniMax", color: "yellow", keyUrl: "https://platform.minimaxi.com/", keyHint: "eyJ..." },
+  groq: { label: "Groq", color: "cyan", keyUrl: "https://console.groq.com/keys", keyHint: "gsk_..." },
+  moonshot: { label: "Moonshot AI / Kimi", color: "blue", keyUrl: "https://platform.moonshot.ai/console/api-keys", keyHint: "sk-..." },
+  moonshotai: { label: "Moonshot AI / Kimi", color: "blue", keyUrl: "https://platform.moonshot.ai/console/api-keys", keyHint: "sk-..." },
+  kimi: { label: "Kimi Coding", color: "blue", keyUrl: "https://www.kimi.com/code/console", keyHint: "sk-kimi-..." },
+  xai: { label: "xAI", color: "zinc", keyUrl: "https://console.x.ai/", keyHint: "xai-..." },
+  mistral: { label: "Mistral", color: "sky", keyUrl: "https://console.mistral.ai/api-keys/", keyHint: "" },
+  deepseek: { label: "DeepSeek", color: "blue", keyUrl: "https://platform.deepseek.com/api_keys", keyHint: "sk-..." },
+  qwen: { label: "Qwen", color: "violet", keyHint: "" },
+  zai: { label: "Z.AI", color: "indigo", keyHint: "" },
+  cerebras: { label: "Cerebras", color: "pink", keyHint: "" },
+  ollama: { label: "Ollama (local)", color: "lime", keyHint: "Local — no key needed" },
+  lmstudio: { label: "LM Studio (local)", color: "zinc", keyHint: "Local — no key needed" },
 };
 
 // Offline fallback ordering only — the "Recommended" section is derived from
@@ -1887,7 +2096,14 @@ function ModelPicker({
           disabled && "opacity-40 cursor-not-allowed"
         )}
       >
-        {selectedMeta && <span className="text-sm">{selectedMeta.icon}</span>}
+        {selectedProvider && (
+          <ProviderLogo
+            provider={selectedProvider}
+            name={selectedMeta?.label}
+            className="h-5 w-5 rounded-md border-0 bg-transparent"
+            iconClassName="h-4 w-4"
+          />
+        )}
         <span className={cn("flex-1 truncate", !value && "text-fg-subtle")}>
           {displayLabel}
         </span>
@@ -1977,7 +2193,12 @@ function ModelPicker({
                         !isAvailable && "opacity-60"
                       )}
                     >
-                      <span className="text-xs">{meta?.icon || "🤖"}</span>
+                      <ProviderLogo
+                        provider={provider}
+                        name={meta?.label}
+                        className="h-5 w-5 rounded-md border-0 bg-transparent"
+                        iconClassName="h-3.5 w-3.5"
+                      />
                       <span className="flex-1 font-medium">{m.name || key.split("/").pop()}</span>
                       {isAvailable ? (
                         <ShieldCheck className="h-3 w-3 text-success-fg" />
@@ -2007,7 +2228,12 @@ function ModelPicker({
               return (
                 <div key={provider}>
                   <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
-                    <span className="text-xs">{meta?.icon || "🤖"}</span>
+                    <ProviderLogo
+                      provider={provider}
+                      name={meta?.label}
+                      className="h-5 w-5 rounded-md border-0 bg-transparent"
+                      iconClassName="h-3.5 w-3.5"
+                    />
                     <span className="text-xs font-bold uppercase tracking-wider text-fg-subtle">
                       {meta?.label || provider}
                     </span>
@@ -2062,7 +2288,12 @@ function ModelPicker({
                         onClick={() => setAddingProvider(p)}
                         className="flex items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/5 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:border-[var(--accent-brand-border)] hover:text-foreground"
                       >
-                        <span>{meta?.icon || "🤖"}</span>
+                        <ProviderLogo
+                          provider={p}
+                          name={meta?.label}
+                          className="h-5 w-5 rounded-md border-0 bg-transparent"
+                          iconClassName="h-3.5 w-3.5"
+                        />
                         <span className="truncate font-medium">{meta?.label || p}</span>
                         <Plus className="ml-auto h-2.5 w-2.5 text-fg-subtle" />
                       </button>
@@ -2077,7 +2308,12 @@ function ModelPicker({
           {addingProvider && (
             <div className="border-t border-foreground/10 bg-foreground/5 px-3 py-3">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm">{PROVIDER_META[addingProvider]?.icon || "🤖"}</span>
+                <ProviderLogo
+                  provider={addingProvider}
+                  name={PROVIDER_META[addingProvider]?.label}
+                  className="h-6 w-6 rounded-md"
+                  iconClassName="h-3.5 w-3.5"
+                />
                 <span className="text-xs font-semibold text-foreground">
                   Connect {PROVIDER_META[addingProvider]?.label || addingProvider}
                 </span>
@@ -2354,10 +2590,10 @@ function ChannelBindingPicker({
                       }}
                       disabled={disabled || alreadyBound}
                       className={cn(
-                        "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+                        "flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors",
                         alreadyBound
                           ? "border-[var(--accent-brand-border)] bg-[var(--accent-brand-subtle)] text-[var(--accent-brand-text)] opacity-60 cursor-not-allowed"
-                          : "border-foreground/10 bg-foreground/5 text-fg-secondary hover:border-[var(--accent-brand-border)] hover:bg-[var(--accent-brand-subtle)] hover:text-[var(--accent-brand-text)] disabled:opacity-40"
+                          : "border-border-subtle bg-muted/30 text-fg-secondary hover:border-[var(--accent-brand-border)] hover:bg-[var(--accent-brand-subtle)] hover:text-[var(--accent-brand-text)] disabled:opacity-40"
                       )}
                     >
                       <span className="text-xs">{ch.icon}</span>
@@ -2391,7 +2627,7 @@ function ChannelBindingPicker({
                       type="button"
                       onClick={() => { setSelectedChannel(ch); setSetupMode(true); }}
                       disabled={disabled}
-                      className="flex items-center gap-2 rounded-lg border border-dashed border-foreground/10 bg-transparent px-3 py-2 text-left text-xs text-fg-subtle transition-colors hover:border-foreground/15 hover:text-fg-secondary disabled:opacity-40"
+                      className="flex items-center gap-2 rounded-xl border border-dashed border-border-subtle bg-transparent px-3 py-2 text-left text-xs text-fg-subtle transition-colors hover:border-border-strong hover:text-fg-secondary disabled:opacity-40"
                     >
                       <span className="text-sm opacity-60">{ch.icon}</span>
                       <div className="flex-1 min-w-0">
@@ -2414,7 +2650,7 @@ function ChannelBindingPicker({
         </div>
       ) : (
         /* Selected channel: bind or set up */
-        <div className="rounded-lg border border-[var(--accent-brand-border)] bg-[var(--accent-brand-subtle)] p-3">
+        <div className="rounded-xl border border-[var(--accent-brand-border)] bg-[var(--accent-brand-subtle)] p-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xs">{selectedChannel.icon}</span>
@@ -2445,7 +2681,7 @@ function ChannelBindingPicker({
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleBindChannel(selectedChannel); } }}
                   placeholder="Account ID (optional — leave empty for all)"
                   aria-label="Account ID (optional)"
-                  className="flex-1 rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="flex-1 rounded-lg border border-border-subtle bg-card px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)]"
                   autoFocus
                   disabled={disabled}
                 />
@@ -2453,7 +2689,7 @@ function ChannelBindingPicker({
                   type="button"
                   onClick={() => handleBindChannel(selectedChannel)}
                   disabled={disabled}
-                  className="shrink-0 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-xs font-medium transition-colors hover:bg-primary/90 disabled:opacity-40"
+                  className="shrink-0 rounded-xl bg-primary text-primary-foreground px-3 py-2 text-xs font-medium transition-colors hover:opacity-90 disabled:opacity-40"
                 >
                   Bind
                 </button>
@@ -2486,7 +2722,7 @@ function ChannelBindingPicker({
                       onKeyDown={(e) => { if (e.key === "Enter" && tokenInput.trim()) { e.preventDefault(); handleSetupToken(); } }}
                       placeholder={selectedChannel.tokenPlaceholder || "Paste token here..."}
                       aria-label={selectedChannel.tokenLabel || "Token"}
-                      className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
+                      className="w-full rounded-lg border border-border-subtle bg-card px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-subtle transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)]"
                       autoFocus
                       disabled={saving}
                     />
@@ -2502,7 +2738,7 @@ function ChannelBindingPicker({
                         onChange={(e) => setAppTokenInput(e.target.value)}
                         placeholder="xapp-..."
                         aria-label="App Token (Socket Mode)"
-                        className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
+                        className="w-full rounded-lg border border-border-subtle bg-card px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-subtle transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)]"
                         disabled={saving}
                       />
                     </div>
@@ -2512,7 +2748,7 @@ function ChannelBindingPicker({
                       type="button"
                       onClick={handleSetupToken}
                       disabled={!tokenInput.trim() || saving}
-                      className="rounded-lg bg-primary text-primary-foreground px-3 py-2 text-xs font-medium transition-colors hover:bg-primary/90 disabled:opacity-40"
+                      className="rounded-xl bg-primary text-primary-foreground px-3 py-2 text-xs font-medium transition-colors hover:opacity-90 disabled:opacity-40"
                     >
                       {saving ? (
                         <span className="flex items-center gap-1.5"><span className="inline-flex items-center gap-0.5"><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" /><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" /><span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" /></span> Connecting...</span>
@@ -2538,7 +2774,7 @@ function ChannelBindingPicker({
               {/* QR-based setup (WhatsApp) */}
               {selectedChannel.setupType === "qr" && (
                 <div className="space-y-2">
-                  <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
+                  <div className="rounded-xl border border-warning-border bg-warning-bg px-3 py-2">
                     <p className="text-xs font-medium text-warning-fg mb-1">Interactive setup required</p>
                     <p className="text-xs text-fg-subtle">
                       {selectedChannel.label} requires scanning a QR code. Open the Terminal and run:
@@ -2569,7 +2805,7 @@ function ChannelBindingPicker({
               {/* CLI-based setup */}
               {selectedChannel.setupType === "cli" && (
                 <div className="space-y-2">
-                  <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2">
+                  <div className="rounded-xl border border-border-subtle bg-muted/30 px-3 py-2">
                     {selectedChannel.setupCommand ? (
                       <>
                         <p className="text-xs text-fg-subtle mb-1">
@@ -3461,41 +3697,41 @@ function EditAgentModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-backdrop-in"
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-backdrop-in"
         onClick={() => {
           if (!mutating) onClose();
         }}
       />
 
-      <div className="relative z-10 flex h-full max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl glass-strong animate-modal-in">
+      <div className="relative z-10 flex h-full max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl animate-modal-in">
         {/* ── Header ── */}
-        <div className="flex shrink-0 items-center justify-between border-b border-foreground/10 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent-brand-subtle)] ring-1 ring-[var(--accent-brand-border)] text-sm font-bold shadow"
-            >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border-subtle px-5 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-brand-subtle)] ring-1 ring-[var(--accent-brand-border)] text-base">
               {agent.emoji}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xs font-bold text-foreground">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <h2 className="truncate text-sm font-semibold text-foreground">
                   {agent.name}
                 </h2>
-                <span className={cn("h-2 w-2 rounded-full", sc.dot)} />
-                <span className={cn("text-xs font-medium", sc.text)}>
-                  {agent.status === "active"
-                    ? "Active"
-                    : agent.status === "idle"
-                      ? "Idle"
-                      : "Unknown"}
+                <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", sc.dot)} />
+                  <span className={sc.text}>
+                    {agent.status === "active"
+                      ? "Active"
+                      : agent.status === "idle"
+                        ? "Idle"
+                        : "Unknown"}
+                  </span>
                 </span>
                 {agent.isDefault && (
-                  <span className="rounded-full bg-[var(--accent-brand-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--accent-brand-text)]">
+                  <span className="shrink-0 rounded-full bg-[var(--accent-brand-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--accent-brand-text)]">
                     Default
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-0.5 truncate text-xs text-fg-subtle">
                 {agent.id} · {formatAgo(agent.lastActive)} ·{" "}
                 {agent.sessionCount} sessions · {formatTokens(agent.totalTokens)}{" "}
                 tokens
@@ -3506,29 +3742,30 @@ function EditAgentModal({
             type="button"
             onClick={onClose}
             disabled={mutating}
-            className="rounded p-1 text-fg-subtle hover:text-fg-secondary disabled:opacity-40"
+            aria-label="Close"
+            className="shrink-0 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* ── Scrollable form ── */}
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
           {/* 1. Identity + default */}
-          <div className="space-y-3 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
+          <section className="space-y-4 rounded-xl border border-border-subtle bg-surface-inset p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-fg-secondary">Agent order</p>
-              <div className="flex items-center gap-1.5">
+              <h3 className="text-[11px] font-semibold text-fg-subtle">Agent order</h3>
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => {
                     void moveAgent("up");
                   }}
                   disabled={mutating || idx <= 0}
-                  className="rounded-md border border-foreground/10 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                   title="Move agent up"
                 >
-                  Move up
+                  <ChevronUp className="h-3 w-3" /> Up
                 </button>
                 <button
                   type="button"
@@ -3536,80 +3773,83 @@ function EditAgentModal({
                     void moveAgent("down");
                   }}
                   disabled={mutating || idx >= allAgents.length - 1}
-                  className="rounded-md border border-foreground/10 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                   title="Move agent down"
                 >
-                  Move down
+                  <ChevronDown className="h-3 w-3" /> Down
                 </button>
               </div>
             </div>
-            <label className="block text-xs font-semibold text-fg-secondary">
-              Display Name (dashboard label)
+
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-fg-secondary">
+                Display name <span className="font-normal text-fg-subtle">— dashboard label</span>
+              </span>
               <input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder={agent.id}
-                className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-sm text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
+                className="w-full rounded-xl border border-border-subtle bg-card px-3 py-2 text-sm text-foreground placeholder:text-fg-subtle transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)]"
                 disabled={mutating}
               />
             </label>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-fg-secondary">
-                Identity name
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-fg-secondary">Identity name</span>
                 <input
                   type="text"
                   value={identityName}
                   onChange={(e) => setIdentityName(e.target.value)}
                   placeholder={agent.name}
-                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="w-full rounded-xl border border-border-subtle bg-card px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)]"
                   disabled={mutating}
                 />
               </label>
-              <label className="block text-xs font-semibold text-fg-secondary">
-                Identity emoji
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-fg-secondary">Identity emoji</span>
                 <input
                   type="text"
                   value={identityEmoji}
                   onChange={(e) => setIdentityEmoji(e.target.value)}
                   placeholder={agent.emoji}
-                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="w-full rounded-xl border border-border-subtle bg-card px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)]"
                   disabled={mutating}
                 />
               </label>
-              <label className="block text-xs font-semibold text-fg-secondary">
-                Identity theme
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-fg-secondary">Identity theme</span>
                 <input
                   type="text"
                   value={identityTheme}
                   onChange={(e) => setIdentityTheme(e.target.value)}
                   placeholder={agent.identityTheme || "default"}
-                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="w-full rounded-xl border border-border-subtle bg-card px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)]"
                   disabled={mutating}
                 />
               </label>
-              <label className="block text-xs font-semibold text-fg-secondary">
-                Identity avatar (path/url/data URI)
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-fg-secondary">Identity avatar</span>
                 <input
                   type="text"
                   value={identityAvatar}
                   onChange={(e) => setIdentityAvatar(e.target.value)}
                   placeholder={agent.identityAvatar || "avatars/agent.png"}
-                  className="mt-1.5 w-full rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle focus:border-[var(--accent-brand-border)] focus:outline-none"
+                  className="w-full rounded-xl border border-border-subtle bg-card px-3 py-2 text-xs text-foreground placeholder:text-fg-subtle transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)]"
                   disabled={mutating}
                 />
               </label>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-3.5">
               <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
                 <input
                   type="checkbox"
                   checked={setAsDefault}
                   onChange={(e) => setSetAsDefault(e.target.checked)}
                   disabled={mutating}
-                  className="h-3.5 w-3.5 rounded border-foreground/20 text-[var(--accent-brand)] focus:ring-[var(--accent-brand-ring)]"
+                  className="h-3.5 w-3.5 rounded border-border-strong text-[var(--accent-brand)] focus:ring-[var(--accent-brand-ring)]"
                 />
                 Set as default agent
               </label>
@@ -3617,20 +3857,21 @@ function EditAgentModal({
                 type="button"
                 onClick={handleLoadIdentityFromWorkspace}
                 disabled={mutating}
-                className="rounded-lg border border-foreground/10 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-40"
+                className="rounded-full border border-border-subtle px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground disabled:opacity-40"
               >
                 Load from IDENTITY.md
               </button>
             </div>
-          </div>
+          </section>
 
           {/* 1. Primary Model */}
-          <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
-              <Cpu className="h-3 w-3 text-[var(--accent-brand-text)]" /> Primary Model
-            </label>
+          <section>
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <Cpu className="h-3 w-3 text-fg-subtle" />
+              <h3 className="text-[11px] font-semibold text-fg-subtle">Primary model</h3>
+            </div>
             {modelsLoading ? (
-              <div className="flex items-center rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5">
+              <div className="flex items-center rounded-xl border border-border-subtle bg-muted/30 px-3 py-2.5">
                 <InlineSpinner size="sm" />
               </div>
             ) : (
@@ -3638,7 +3879,7 @@ function EditAgentModal({
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 disabled={busy}
-                className="w-full appearance-none rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2.5 text-sm text-foreground focus:border-[var(--accent-brand-border)] focus:outline-none disabled:opacity-40"
+                className="w-full appearance-none rounded-xl border border-border-subtle bg-card px-3 py-2.5 text-sm text-foreground transition-colors focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-[var(--accent-brand-ring)] disabled:opacity-40"
               >
                 <option value="">
                   Use default ({shortModel(defaultModel)})
@@ -3653,26 +3894,27 @@ function EditAgentModal({
               </select>
             )}
             {!modelsLoading && models.length > 0 && (
-              <p className="mt-1 text-xs text-fg-subtle">
+              <p className="mt-1.5 text-xs text-fg-subtle">
                 {models.length} authenticated models.{" "}
                 <Link
                   href="/agents?tab=models"
-                  className="text-[var(--accent-brand-text)] hover:text-[var(--accent-brand)]"
+                  className="text-[var(--accent-brand-text)] hover:underline"
                 >
                   Manage providers →
                 </Link>
               </p>
             )}
-          </div>
+          </section>
 
           {/* 2. Fallback Models (multi-select checkboxes) */}
-          <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
-              <Layers className="h-3 w-3 text-[var(--accent-brand-text)]" /> Fallback Models
-              <span className="text-xs font-normal text-fg-subtle">
-                — priority order
-              </span>
-            </label>
+          <section>
+            <div className="mb-1.5 flex items-baseline gap-1.5">
+              <Layers className="relative top-px h-3 w-3 shrink-0 text-fg-subtle" />
+              <h3 className="text-[11px] font-semibold text-fg-subtle">
+                Fallback models{" "}
+                <span className="font-normal text-fg-subtle">— priority order</span>
+              </h3>
+            </div>
             {modelsLoading ? (
               <div className="flex items-center">
                 <InlineSpinner size="sm" />
@@ -3682,7 +3924,7 @@ function EditAgentModal({
                 No authenticated models available
               </p>
             ) : (
-              <div className="max-h-36 space-y-0.5 overflow-y-auto rounded-lg border border-foreground/10 p-1.5">
+              <div className="max-h-36 space-y-0.5 overflow-y-auto rounded-xl border border-border-subtle bg-surface-inset p-1.5">
                 {models
                   .filter((m) => m.key !== model)
                   .map((m) => {
@@ -3696,8 +3938,8 @@ function EditAgentModal({
                         className={cn(
                           "flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors",
                           checked
-                            ? "bg-[var(--accent-brand-subtle)] text-[var(--accent-brand)]"
-                            : "text-muted-foreground hover:bg-foreground/5"
+                            ? "bg-[var(--accent-brand-subtle)] text-[var(--accent-brand-text)]"
+                            : "text-muted-foreground hover:bg-muted/60"
                         )}
                       >
                         <input
@@ -3709,10 +3951,10 @@ function EditAgentModal({
                         />
                         <div
                           className={cn(
-                            "flex h-4 w-4 shrink-0 items-center justify-center rounded border text-xs font-bold",
+                            "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold",
                             checked
-                              ? "border-[var(--accent-brand)] bg-[var(--accent-brand-subtle)] text-[var(--accent-brand)]"
-                              : "border-foreground/10 bg-foreground/5"
+                              ? "border-[var(--accent-brand)] bg-[var(--accent-brand-subtle)] text-[var(--accent-brand-text)]"
+                              : "border-border-subtle bg-card"
                           )}
                         >
                           {order ?? ""}
@@ -3729,26 +3971,26 @@ function EditAgentModal({
               </div>
             )}
             {fallbacks.length > 0 && (
-              <p className="mt-1 text-xs text-fg-subtle">
+              <p className="mt-1.5 text-xs text-fg-subtle">
                 {fallbacks.length} fallback{fallbacks.length !== 1 && "s"}{" "}
                 selected — numbered in priority order
               </p>
             )}
-          </div>
+          </section>
 
           {/* 3. Delegation targets (multi-select) */}
           {otherAgents.length > 0 && (
-            <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
-                <Network className="h-3 w-3 text-[var(--accent-brand-text)]" /> Delegation Targets
-                <span className="text-xs font-normal text-fg-subtle">
-                  — select agents this one can hand work to
-                </span>
-              </label>
-              <p className="mb-1.5 text-xs text-fg-subtle">
-                Checked = this agent is allowed to delegate tasks to that agent.
-              </p>
-              <div className="space-y-0.5 rounded-lg border border-foreground/10 p-1.5">
+            <section>
+              <div className="mb-1.5 flex items-baseline gap-1.5">
+                <Network className="relative top-px h-3 w-3 shrink-0 text-fg-subtle" />
+                <h3 className="text-[11px] font-semibold text-fg-subtle">
+                  Delegation targets{" "}
+                  <span className="font-normal text-fg-subtle">
+                    — agents this one can hand work to
+                  </span>
+                </h3>
+              </div>
+              <div className="space-y-0.5 rounded-xl border border-border-subtle bg-surface-inset p-1.5">
                 {otherAgents.map((a) => {
                   const checked = subagents.includes(a.id);
                   return (
@@ -3757,8 +3999,8 @@ function EditAgentModal({
                       className={cn(
                         "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors",
                         checked
-                          ? "bg-[var(--accent-brand-subtle)] text-[var(--accent-brand)]"
-                          : "text-muted-foreground hover:bg-foreground/5"
+                          ? "bg-[var(--accent-brand-subtle)] text-[var(--accent-brand-text)]"
+                          : "text-muted-foreground hover:bg-muted/60"
                       )}
                     >
                       <input
@@ -3773,7 +4015,7 @@ function EditAgentModal({
                           "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
                           checked
                             ? "border-[var(--accent-brand)] bg-[var(--accent-brand-subtle)]"
-                            : "border-foreground/10 bg-foreground/5"
+                            : "border-border-subtle bg-card"
                         )}
                       >
                         {checked && (
@@ -3791,19 +4033,22 @@ function EditAgentModal({
                   );
                 })}
               </div>
-            </div>
+            </section>
           )}
 
           {/* 4. Per-agent skill filtering */}
           {availableSkills.length > 0 && (
-            <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
-                <Wrench className="h-3 w-3 text-warning-fg" /> Skills
-                <span className="text-xs font-normal text-fg-subtle">
-                  — control which skills this agent can use
-                </span>
-              </label>
-              <div className="mb-2 flex items-center gap-3">
+            <section>
+              <div className="mb-1.5 flex items-baseline gap-1.5">
+                <Wrench className="relative top-px h-3 w-3 shrink-0 text-fg-subtle" />
+                <h3 className="text-[11px] font-semibold text-fg-subtle">
+                  Skills{" "}
+                  <span className="font-normal text-fg-subtle">
+                    — which skills this agent can use
+                  </span>
+                </h3>
+              </div>
+              <div className="mb-2 flex items-center gap-4">
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground">
                   <input
                     type="radio"
@@ -3813,7 +4058,7 @@ function EditAgentModal({
                     disabled={busy}
                     className="h-3 w-3 text-[var(--accent-brand)]"
                   />
-                  All skills (inherit global)
+                  Inherit defaults
                 </label>
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground">
                   <input
@@ -3829,7 +4074,7 @@ function EditAgentModal({
               </div>
               {skillsMode === "custom" && (
                 <>
-                  <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-lg border border-foreground/10 p-1.5">
+                  <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-xl border border-border-subtle bg-surface-inset p-1.5">
                     {availableSkills.map((skill) => {
                       const checked = selectedSkills.includes(skill);
                       return (
@@ -3838,8 +4083,8 @@ function EditAgentModal({
                           className={cn(
                             "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors",
                             checked
-                              ? "bg-warning-bg text-warning-fg"
-                              : "text-muted-foreground hover:bg-foreground/5"
+                              ? "bg-[var(--accent-brand-subtle)] text-[var(--accent-brand-text)]"
+                              : "text-muted-foreground hover:bg-muted/60"
                           )}
                         >
                           <input
@@ -3859,12 +4104,12 @@ function EditAgentModal({
                             className={cn(
                               "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
                               checked
-                                ? "border-warning-border bg-warning-bg"
-                                : "border-foreground/10 bg-foreground/5"
+                                ? "border-[var(--accent-brand)] bg-[var(--accent-brand-subtle)]"
+                                : "border-border-subtle bg-card"
                             )}
                           >
                             {checked && (
-                              <CheckCircle className="h-2.5 w-2.5 text-warning-fg" />
+                              <CheckCircle className="h-2.5 w-2.5 text-[var(--accent-brand-text)]" />
                             )}
                           </div>
                           <span className="flex-1 truncate font-medium">
@@ -3874,21 +4119,22 @@ function EditAgentModal({
                       );
                     })}
                   </div>
-                  <p className="mt-1 text-xs text-fg-subtle">
+                  <p className="mt-1.5 text-xs text-fg-subtle">
                     {selectedSkills.length === 0
                       ? "No skills selected — agent will have no skills loaded"
                       : `${selectedSkills.length} skill${selectedSkills.length !== 1 ? "s" : ""} selected`}
                   </p>
                 </>
               )}
-            </div>
+            </section>
           )}
 
           {/* 5. Channel Bindings */}
-          <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-fg-secondary">
-              <Globe className="h-3 w-3 text-info-fg" /> Channel Bindings
-            </label>
+          <section>
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <Globe className="h-3 w-3 text-fg-subtle" />
+              <h3 className="text-[11px] font-semibold text-fg-subtle">Channel bindings</h3>
+            </div>
             <ChannelBindingPicker
               bindings={bindings}
               onAdd={addBinding}
@@ -3896,20 +4142,24 @@ function EditAgentModal({
               onChannelsChanged={onChannelsChanged}
               disabled={busy}
             />
-          </div>
+          </section>
 
           {/* Workspace (read-only) */}
-          <div className="rounded-lg border border-foreground/5 bg-foreground/5 px-3 py-2.5">
-            <div className="flex items-center gap-1.5 text-xs text-fg-subtle">
-              <FolderOpen className="h-3 w-3 text-warning-fg" /> Workspace
+          <section className="rounded-xl border border-border-subtle bg-surface-inset px-3.5 py-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-fg-subtle">
+              <FolderOpen className="h-3 w-3" /> Workspace
             </div>
-            <code className="mt-0.5 block truncate text-xs text-fg-secondary">
+            <code className="mt-1 block truncate text-xs text-fg-secondary">
               {agent.workspace}
             </code>
-          </div>
+            <p className="mt-1 text-xs text-fg-subtle">
+              Set at creation time. OpenClaw has no supported way to relocate an
+              existing agent&apos;s workspace — create a new agent to use a different path.
+            </p>
+          </section>
 
-          <div className="rounded-lg border border-danger-border bg-danger-bg px-3 py-2.5">
-            <p className="text-xs font-semibold text-danger-fg">Danger Zone</p>
+          <section className="rounded-xl border border-danger-border bg-danger-bg px-3.5 py-3">
+            <p className="text-xs font-semibold text-danger-fg">Danger zone</p>
             <p className="mt-1 text-xs text-danger-fg">
               Delete this agent and prune workspace/state (CLI parity: <code>openclaw agents delete</code>).
             </p>
@@ -3922,12 +4172,12 @@ function EditAgentModal({
                   setError(null);
                 }}
                 disabled={mutating}
-                className="mt-2 rounded-lg border border-danger-border px-3 py-1.5 text-xs font-medium text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-40"
+                className="mt-2.5 rounded-full border border-danger-border px-3 py-1.5 text-xs font-medium text-danger-fg transition-colors hover:bg-danger-bg/80 disabled:opacity-40"
               >
-                Delete Agent…
+                Delete agent…
               </button>
             ) : (
-              <div className="mt-2 space-y-2">
+              <div className="mt-2.5 space-y-2">
                 <p className="text-xs text-danger-fg">
                   Type <code>{agent.id}</code> to confirm.
                 </p>
@@ -3937,7 +4187,7 @@ function EditAgentModal({
                   onChange={(e) => setDeleteConfirmText(e.target.value)}
                   placeholder={agent.id}
                   aria-label={`Type ${agent.id} to confirm deletion`}
-                  className="w-full rounded-lg border border-danger-border bg-black/20 px-3 py-2 text-xs text-danger-fg placeholder:text-danger-fg focus:border-danger-border focus:outline-none"
+                  className="w-full rounded-xl border border-danger-border bg-card px-3 py-2 text-xs text-danger-fg placeholder:text-danger-fg/50 focus:outline-none focus:ring-2 focus:ring-danger-border"
                   disabled={mutating}
                 />
                 <div className="flex items-center gap-2">
@@ -3957,7 +4207,7 @@ function EditAgentModal({
                         Deleting…
                       </span>
                     ) : (
-                      "Confirm Delete"
+                      "Confirm delete"
                     )}
                   </button>
                   <button
@@ -3967,18 +4217,18 @@ function EditAgentModal({
                       setDeleteConfirmText("");
                     }}
                     disabled={mutating}
-                    className="rounded-lg border border-danger-border px-3 py-1.5 text-xs text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-40"
+                    className="rounded-full border border-danger-border px-3 py-1.5 text-xs text-danger-fg transition-colors hover:bg-danger-bg/80 disabled:opacity-40"
                   >
                     Cancel
                   </button>
                 </div>
               </div>
             )}
-          </div>
+          </section>
 
           {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger-fg">
+            <div className="flex items-center gap-2 rounded-xl border border-danger-border bg-danger-bg px-3 py-2.5 text-xs text-danger-fg">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               {error}
             </div>
@@ -3986,7 +4236,7 @@ function EditAgentModal({
 
           {/* Success */}
           {success && (
-            <div className="flex items-center gap-2 rounded-lg border border-success-border bg-success-bg px-3 py-2 text-xs text-success-fg">
+            <div className="flex items-center gap-2 rounded-xl border border-success-border bg-success-bg px-3 py-2.5 text-xs text-success-fg">
               <CheckCircle className="h-3.5 w-3.5 shrink-0" />
               Settings saved! Restarting gateway to apply…
             </div>
@@ -3994,12 +4244,12 @@ function EditAgentModal({
         </div>
 
         {/* ── Footer ── */}
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-foreground/10 px-5 py-3">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border-subtle px-5 py-3">
           <button
             type="button"
             onClick={onClose}
             disabled={mutating}
-            className="rounded-lg border border-foreground/10 px-4 py-2 text-xs text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-40"
+            className="rounded-full px-3.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
           >
             Cancel
           </button>
@@ -4007,7 +4257,7 @@ function EditAgentModal({
             type="button"
             onClick={handleSave}
             disabled={mutating || success}
-            className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-4 py-2 text-xs font-medium transition-colors hover:bg-primary/90 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-40"
           >
             {busy ? (
               <>
@@ -4457,6 +4707,7 @@ export function AgentsView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | null>(null);
+  const [gbrain, setGbrain] = useState<GbrainDetection>({ installed: false });
   const [showAddModal, setShowAddModal] = useState(false);
   const [savedAgentOrder, setSavedAgentOrder] = useState<string[]>(loadSavedAgentOrder);
 
@@ -4468,6 +4719,10 @@ export function AgentsView() {
   const handleWorkspaceClick = useCallback((workspacePath: string) => {
     setSelectedWorkspacePath(workspacePath);
   }, []);
+
+  const handleOpenGbrain = useCallback(() => {
+    router.push("/g-brain");
+  }, [router]);
 
   const openDocumentForWorkspace = useCallback((workspacePath: string, relativePath?: string | null) => {
     const normalizedWorkspacePath = workspacePath.replace(/\\/g, "/");
@@ -4513,6 +4768,25 @@ export function AgentsView() {
     }
   }, [savedAgentOrder]);
 
+  const fetchGbrain = useCallback(async () => {
+    try {
+      const response = await fetch("/api/g-brain?scope=detect", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) return;
+      const detection = (await response.json()) as GbrainDetection;
+      setGbrain({
+        installed: Boolean(detection.installed),
+        engine: detection.engine,
+        schemaPack: detection.schemaPack,
+      });
+    } catch {
+      // G-Brain is optional; a detection failure must not block the agents view.
+      setGbrain({ installed: false });
+    }
+  }, []);
+
   const reorderAgents = useCallback(
     async (agentId: string, direction: "up" | "down") => {
       if (!data) return;
@@ -4525,8 +4799,9 @@ export function AgentsView() {
       const tmp = reordered[index];
       reordered[index] = reordered[nextIndex];
       reordered[nextIndex] = tmp;
-      setSavedAgentOrder(reordered);
-      saveAgentOrder(reordered);
+
+      // Optimistic UI update — reverted below if the gateway write fails.
+      const prevData = data;
       setData((prev) =>
         prev
           ? {
@@ -4535,6 +4810,32 @@ export function AgentsView() {
             }
           : prev
       );
+
+      try {
+        // Persist the real order to agents.list in the gateway config, not
+        // just localStorage — order also decides which agent is the implicit
+        // default when no agent has `default: true` set explicitly.
+        const res = await fetch("/api/agents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reorder", agentIds: reordered }),
+        });
+        const json = await res.json().catch(() => ({}) as Record<string, unknown>);
+        if (!res.ok || json.error) {
+          throw new Error(
+            typeof json.error === "string"
+              ? json.error
+              : `Failed to reorder agents (HTTP ${res.status})`
+          );
+        }
+        // Keep localStorage as a same-browser cache so ordering survives a
+        // moment of gateway unavailability on the next load.
+        setSavedAgentOrder(reordered);
+        saveAgentOrder(reordered);
+      } catch (err) {
+        setData(prevData);
+        throw err;
+      }
     },
     [data]
   );
@@ -4544,20 +4845,29 @@ export function AgentsView() {
   }, [fetchAgents]);
 
   useEffect(() => {
+    void fetchGbrain();
+  }, [fetchGbrain]);
+
+  useEffect(() => {
     const pollId = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         void fetchAgents();
+        void fetchGbrain();
       }
     }, 5000);
     return () => window.clearInterval(pollId);
-  }, [fetchAgents]);
+  }, [fetchAgents, fetchGbrain]);
 
   useEffect(() => {
     const handleFocus = () => {
       void fetchAgents();
+      void fetchGbrain();
     };
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") void fetchAgents();
+      if (document.visibilityState === "visible") {
+        void fetchAgents();
+        void fetchGbrain();
+      }
     };
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibility);
@@ -4565,7 +4875,7 @@ export function AgentsView() {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [fetchAgents]);
+  }, [fetchAgents, fetchGbrain]);
 
   const selectedAgent = useMemo(
     () => data?.agents.find((a) => a.id === selectedId) || null,
@@ -4693,7 +5003,14 @@ export function AgentsView() {
               </button>
             )}
 
-            <button type="button" onClick={fetchAgents} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground">
+            <button
+              type="button"
+              onClick={() => {
+                void fetchAgents();
+                void fetchGbrain();
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
+            >
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
             </button>
@@ -4718,6 +5035,8 @@ export function AgentsView() {
           onSelect={handleAgentClick}
           selectedWorkspacePath={selectedWorkspacePath}
           onSelectWorkspace={handleWorkspaceClick}
+          gbrain={gbrain}
+          onOpenGbrain={handleOpenGbrain}
         />
       )}
 

@@ -9,13 +9,20 @@ import {
   Settings2, Package, Cpu,
   FileText, Terminal, Globe, Wrench, ArrowLeft,
   Info, CircleStop, Play, Copy, Star,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, ShieldCheck, ShieldAlert,
+  GitBranch, Layers3, ExternalLink, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
 import { ContentLoadingState } from "@/components/ui/loading-state";
 import { Switch } from "@/components/ui/switch";
 import { ApiWarningBadge } from "@/components/ui/api-warning-badge";
+import type {
+  InstalledSkillCatalogItem,
+  SkillCatalogCapabilities,
+  SkillCatalogItem,
+  SkillCatalogSource,
+} from "@/lib/skills-catalog";
 
 /* ── Types ──────────────────────────────────────── */
 
@@ -23,31 +30,17 @@ type Missing = { bins: string[]; anyBins: string[]; env: string[]; config: strin
 type InstallOption = { id: string; kind: string; label: string; bins?: string[] };
 
 type Skill = {
-  name: string; description: string; emoji: string; eligible: boolean;
+  name: string; skillKey?: string; filePath?: string; description: string; emoji: string; eligible: boolean;
   disabled: boolean; blockedByAllowlist: boolean; source: string;
   bundled: boolean; homepage?: string; missing: Missing;
   always?: boolean;
 };
 
+/** Legacy card shape retained while the old catalog renderer remains below. */
 type ClawHubItem = {
-  slug: string;
-  /**
-   * Owner-qualified `@owner/slug`. Slugs are not unique across owners — a
-   * search for "weather" returns several — so this is what identifies a skill
-   * for install. Absent for catalog rows with no owner attached.
-   */
-  ref?: string;
-  displayName?: string;
-  summary?: string;
-  version?: string;
-  /** Catalog latest version (for "installed" view); in "all" view, version is the catalog latest */
-  latestVersion?: string;
-  score?: number;
-  developer?: string;
-  downloads?: number;
-  installsCurrent?: number;
-  stars?: number;
-  updatedAt?: number;
+  slug: string; ref?: string; displayName?: string; summary?: string;
+  version?: string; latestVersion?: string; score?: number; developer?: string;
+  downloads?: number; installsCurrent?: number; stars?: number; updatedAt?: number;
 };
 
 type SkillDetail = Skill & {
@@ -62,6 +55,7 @@ type Toast = { msg: string; type: "success" | "error" };
 type AvailabilityState = "ready" | "needs-setup" | "blocked" | "unavailable";
 type SkillOrigin = "bundled" | "workspace" | "shared" | "other";
 type SkillsFilter = "all" | "eligible" | "unavailable" | "bundled" | "workspace";
+type SkillsPageTab = "discover" | "installed" | "built-in" | "import";
 type AgentOption = { id: string; name: string };
 type SkillTestResult = {
   ok: boolean;
@@ -659,72 +653,82 @@ function SkillPlayground({ skillName }: { skillName: string }) {
 
 /* ── Skill Card (list view) ─────────────────────── */
 
-function skillStatus(skill: Skill): { label: string; color: string; toggleColor: "green" | "amber" | "default" } {
-  if (skill.disabled) return { label: "Off", color: "text-fg-subtle", toggleColor: "default" };
-  return { label: "On", color: "text-success-fg", toggleColor: "green" };
+function skillStatus(skill: Skill, availability: ReturnType<typeof getAvailability>): { label: string; dot: string } {
+  if (skill.disabled) return { label: "Off", dot: "bg-muted-foreground/60" };
+  if (availability.state === "ready") return { label: "Ready", dot: "bg-success" };
+  if (availability.state === "blocked") return { label: "Blocked", dot: "bg-danger" };
+  return { label: "Setup needed", dot: "bg-warning" };
 }
 
-function SkillCard({ skill, onClick, onToggle, toggling }: { skill: Skill; onClick: () => void; onToggle: (enabled: boolean) => void; toggling?: boolean }) {
+function SkillCard({ skill, onClick, onToggle, onUninstall, toggling, uninstalling }: { skill: Skill; onClick: () => void; onToggle: (enabled: boolean) => void; onUninstall?: () => void; toggling?: boolean; uninstalling?: boolean }) {
   const missing = hasMissing(skill.missing);
   const missingTotal = missingCount(skill.missing);
   const availability = getAvailability(skill);
-  const status = skillStatus(skill);
+  const status = skillStatus(skill, availability);
   return (
-    <div
-      className={cn("glass w-full rounded-lg p-3.5 text-left transition-colors", skill.disabled && "opacity-60 hover:opacity-90")}
-    >
-      <div className="flex items-start gap-3">
-        <span className="text-sm leading-none mt-0.5">{skill.emoji || "\u26A1"}</span>
+    <article className="group flex min-w-0 items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 text-sm" aria-hidden="true">
+        {skill.emoji || "\u26A1"}
+      </div>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
         <button
           type="button"
           onClick={onClick}
-          className="min-w-0 flex-1 text-left cursor-pointer group"
+          className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <div className="flex items-center gap-2">
-            <p className={cn("text-xs font-semibold group-hover:text-foreground", skill.disabled ? "text-fg-secondary line-through" : "text-foreground")}>{skill.name}</p>
-            {skill.disabled ? (
-              <span className="rounded bg-danger-bg px-1.5 py-0.5 text-xs font-medium text-danger-fg">DISABLED</span>
-            ) : availability.state === "ready" ? (
-              <CheckCircle className="h-3 w-3 shrink-0 text-success-fg" />
-            ) : availability.state === "blocked" ? (
-              <XCircle className="h-3 w-3 shrink-0 text-danger-fg" />
-            ) : (
-              <AlertTriangle className="h-3 w-3 shrink-0 text-warning-fg" />
-            )}
-            {skill.always && <span className="rounded bg-warning-bg px-1.5 py-0.5 text-xs text-warning-fg">ALWAYS</span>}
-          </div>
-          <p className="mt-0.5 text-xs leading-snug text-muted-foreground break-words">{skill.description}</p>
-          <div className="mt-2 flex flex-nowrap items-center gap-1.5 overflow-hidden">
-            <span className={cn("shrink-0 rounded border px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide whitespace-nowrap", sourceColor(skill.source))} title={sourceLabel(skill.source, skill.bundled)}>{sourceLabelShort(skill.source, skill.bundled)}</span>
-            <span className={cn("shrink-0 rounded border px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide whitespace-nowrap", availability.badgeClass)} title={availability.label}>{availability.labelShort ?? availability.label}</span>
-            {!skill.disabled && missing && <span className="shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">{missingTotal} missing</span>}
-          </div>
-          <span className="mt-1.5 inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground group-hover:text-foreground">
-            View details <ChevronRight className="h-3 w-3" />
-          </span>
-        </button>
-        <div className="flex flex-col items-center gap-1 mt-0.5 shrink-0" onClick={(e) => e.stopPropagation()} role="group" aria-label="Use this skill">
-          {toggling ? (
-            <span className="inline-flex items-center gap-0.5">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
+          <div className="flex min-w-0 items-center gap-2">
+            <h4 className="truncate text-sm font-medium text-foreground">{skill.name}</h4>
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <span className={cn("h-1.5 w-1.5 rounded-full", status.dot)} />
+              {status.label}
             </span>
-          ) : (
-            <Switch
-              checked={!skill.disabled}
-              onCheckedChange={(checked) => onToggle(checked)}
-              size="sm"
-              disabled={toggling}
-            />
+            {skill.always && <span className="shrink-0 text-xs text-muted-foreground">Always on</span>}
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
+          <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+            <span title={sourceLabel(skill.source, skill.bundled)}>{sourceLabelShort(skill.source, skill.bundled)}</span>
+            {!skill.disabled && missing && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{missingTotal} {missingTotal === 1 ? "requirement" : "requirements"} missing</span>
+              </>
+            )}
+            <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          </div>
+        </button>
+        <div className="flex shrink-0 items-start gap-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
+          {onUninstall && (
+            <button
+              type="button"
+              onClick={onUninstall}
+              disabled={uninstalling}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs text-danger-fg transition-colors hover:bg-danger-bg disabled:opacity-50"
+              aria-label={`Uninstall ${skill.name}`}
+            >
+              {uninstalling ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Uninstall
+            </button>
           )}
-          <span className={cn("text-xs font-medium", status.color)} title="Turn this skill on or off for your agents">
-            {status.label}
-          </span>
-          <span className="text-xs text-fg-subtle">Use</span>
+          <div className="flex flex-col items-center gap-1" role="group" aria-label={`Turn ${skill.name} on or off`}>
+            {toggling ? (
+              <span className="inline-flex items-center gap-0.5">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
+              </span>
+            ) : (
+              <Switch
+                checked={!skill.disabled}
+                onCheckedChange={(checked) => onToggle(checked)}
+                size="sm"
+                disabled={toggling || uninstalling}
+              />
+            )}
+            <span className="text-[11px] text-muted-foreground">{skill.disabled ? "Off" : "On"}</span>
+          </div>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -1062,7 +1066,8 @@ function SkillDetailPanel({ name, onBack, onAction }: { name: string; onBack: ()
   );
 }
 
-function ClawHubPanel({
+/** @deprecated The app renders CatalogPanel; exported for compatibility. */
+export function ClawHubPanel({
   onAction,
   onInstalled,
 }: {
@@ -1541,6 +1546,429 @@ function ClawHubPanel({
   );
 }
 
+/* ── Universal catalog ──────────────────────────── */
+
+type CatalogMode = "discover" | "import";
+
+const SOURCE_LABEL: Record<SkillCatalogSource, string> = {
+  clawhub: "ClawHub",
+  "skills-sh": "Skills.sh",
+  git: "Git",
+  local: "Local",
+  bundled: "Built-in",
+  plugin: "Plugin",
+};
+
+function sourceBadgeClass(source: SkillCatalogSource): string {
+  if (source === "clawhub") return "border-success-border bg-success-bg text-success-fg";
+  if (source === "skills-sh") return "border-info-border bg-info-bg text-info-fg";
+  return "border-border bg-muted text-muted-foreground";
+}
+
+function normalizeImportReference(source: "skills-sh" | "git", rawValue: string): string | null {
+  const raw = rawValue.trim();
+  if (!raw) return null;
+  if (source === "skills-sh") {
+    if (raw.startsWith("skills-sh:")) return raw;
+    if (/^[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*\/[a-z0-9][\w./-]*$/i.test(raw)) return `skills-sh:${raw}`;
+    const url = raw.match(/^https?:\/\/skills\.sh\/([^/]+)\/([^/]+)\/([^?#]+)\/?$/i);
+    return url ? `skills-sh:${url[1]}/${url[2]}/${url[3]}` : null;
+  }
+  if (raw.startsWith("git:")) return raw;
+  const github = raw.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#?]+?)(?:\.git)?(?:\/tree\/([^?#]+))?\/?$/i);
+  if (github) return `git:${github[1]}/${github[2]}${github[3] ? `@${github[3]}` : ""}`;
+  if (/^[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*(?:@[a-z0-9][\w./-]*)?$/i.test(raw)) return `git:${raw}`;
+  return null;
+}
+
+function CatalogPanel({
+  mode,
+  onAction,
+  onInstalled,
+}: {
+  mode: CatalogMode;
+  onAction: (msg: string) => void;
+  onInstalled: (slug: string) => Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [items, setItems] = useState<SkillCatalogItem[]>([]);
+  const [installed, setInstalled] = useState<InstalledSkillCatalogItem[]>([]);
+  const [capabilities, setCapabilities] = useState<SkillCatalogCapabilities | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<"all" | "clawhub" | "skills-sh">("all");
+  const [sort, setSort] = useState<"trending" | "downloads" | "stars" | "name">("trending");
+  const [loading, setLoading] = useState(mode === "discover");
+  const [error, setError] = useState<string | null>(null);
+  const [pendingInstall, setPendingInstall] = useState<SkillCatalogItem | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<InstalledSkillCatalogItem | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [target, setTarget] = useState("workspace");
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [importSource, setImportSource] = useState<"skills-sh" | "git">("skills-sh");
+  const [importValue, setImportValue] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const installedBySlug = useMemo(() => new Map(installed.map((item) => [item.slug, item])), [installed]);
+
+  const refreshInstalled = useCallback(async () => {
+    const response = await fetch("/api/skills/clawhub?action=list", { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(String(payload?.error || "Could not load installed skills."));
+    setInstalled(Array.isArray(payload.items) ? payload.items : []);
+  }, []);
+
+  const loadCatalog = useCallback(async (searchQuery?: string) => {
+    const q = (searchQuery ?? query).trim();
+    setLoading(true);
+    setError(null);
+    try {
+      const endpoint = q
+        ? `/api/skills/clawhub?action=search&q=${encodeURIComponent(q)}&limit=40`
+        : `/api/skills/clawhub?action=explore&sort=trending&limit=40`;
+      const response = await fetch(endpoint, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(String(payload?.error || "Could not load the skills catalog."));
+      setItems(Array.isArray(payload.items) ? payload.items : []);
+    } catch (err) {
+      setItems([]);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [query]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetch("/api/skills/clawhub?action=capabilities", { cache: "no-store" }).then((response) => response.json()),
+      fetch("/api/agents", { cache: "no-store" }).then((response) => response.json()).catch(() => ({ agents: [] })),
+    ]).then(([caps, agentPayload]) => {
+      if (!active) return;
+      setCapabilities(caps as SkillCatalogCapabilities);
+      const options = (Array.isArray(agentPayload?.agents) ? agentPayload.agents : [])
+        .map((agent: { id?: string; name?: string }) => ({ id: String(agent.id || ""), name: String(agent.name || agent.id || "") }))
+        .filter((agent: AgentOption) => agent.id);
+      setAgents(options);
+    }).catch(() => {});
+    void refreshInstalled().catch((err) => setError(String(err)));
+    if (mode === "discover") void loadCatalog("");
+    return () => { active = false; };
+  }, [loadCatalog, mode, refreshInstalled]);
+
+  useEffect(() => {
+    if (mode !== "discover") return;
+    const timer = window.setTimeout(() => void loadCatalog(query), query.trim() ? 350 : 0);
+    return () => window.clearTimeout(timer);
+  }, [loadCatalog, mode, query]);
+
+  const filteredItems = useMemo(() => {
+    const filtered = sourceFilter === "all" ? items : items.filter((item) => item.source === sourceFilter);
+    if (sort === "trending") return filtered;
+    return [...filtered].sort((left, right) => {
+      if (sort === "downloads") return (right.downloads || 0) - (left.downloads || 0);
+      if (sort === "stars") return (right.stars || 0) - (left.stars || 0);
+      return left.displayName.localeCompare(right.displayName, undefined, { sensitivity: "base" });
+    });
+  }, [items, sort, sourceFilter]);
+
+  const sourceSupported = useCallback((source: SkillCatalogSource): boolean => {
+    if (!capabilities) return true;
+    if (source === "skills-sh") return capabilities.skillsShInstall;
+    if (source === "git") return capabilities.gitInstall;
+    return source === "clawhub";
+  }, [capabilities]);
+
+  const openReview = useCallback((item: SkillCatalogItem) => {
+    setAcknowledged(item.trust.status === "trusted");
+    setTarget("workspace");
+    setPendingInstall(item);
+  }, []);
+
+  const performInstall = useCallback(async () => {
+    const item = pendingInstall;
+    if (!item || item.trust.status === "blocked") return;
+    setBusyId(item.id);
+    try {
+      const response = await fetch("/api/skills/clawhub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "install",
+          slug: item.slug,
+          source: item.source,
+          installReference: item.installReference,
+          version: item.version,
+          acknowledgeRisk: acknowledged,
+          scope: target === "global" ? "global" : "workspace",
+          agentId: target.startsWith("agent:") ? target.slice(6) : undefined,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) throw new Error(String(payload?.error || "Installation failed."));
+      setPendingInstall(null);
+      onAction(`Installed ${item.displayName}. It is off until you review its requirements and enable it.`);
+      await refreshInstalled();
+      await onInstalled(String(payload.slug || item.slug));
+    } catch (err) {
+      onAction(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusyId(null);
+    }
+  }, [acknowledged, onAction, onInstalled, pendingInstall, refreshInstalled, target]);
+
+  const performDelete = useCallback(async () => {
+    const item = pendingDelete;
+    if (!item) return;
+    setBusyId(item.id);
+    try {
+      const response = await fetch("/api/skills/clawhub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "uninstall", slug: item.slug, source: item.source }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) throw new Error(String(payload?.error || "Could not uninstall this skill."));
+      setPendingDelete(null);
+      onAction(`Uninstalled ${item.name}`);
+      await refreshInstalled();
+      await onInstalled(item.slug);
+    } catch (err) {
+      onAction(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusyId(null);
+    }
+  }, [onAction, onInstalled, pendingDelete, refreshInstalled]);
+
+  const performToggle = useCallback(async (item: SkillCatalogItem, local: InstalledSkillCatalogItem) => {
+    setBusyId(item.id);
+    const enabled = !local.enabled;
+    try {
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: enabled ? "enable-skill" : "disable-skill",
+          name: local.skillKey || local.slug,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) throw new Error(String(payload?.error || "Could not update this skill."));
+      setInstalled((current) => current.map((installedItem) => installedItem.id === local.id ? { ...installedItem, enabled } : installedItem));
+      onAction(`${enabled ? "Enabled" : "Disabled"} ${local.name}`);
+      await refreshInstalled();
+      await onInstalled(local.slug);
+    } catch (err) {
+      onAction(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusyId(null);
+    }
+  }, [onAction, onInstalled, refreshInstalled]);
+
+  const performUpdate = useCallback(async (item: SkillCatalogItem) => {
+    setBusyId(item.id);
+    try {
+      const response = await fetch("/api/skills/clawhub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          slug: item.slug,
+          source: item.source,
+          installReference: item.installReference,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) throw new Error(String(payload?.error || "Update failed."));
+      onAction(`Updated ${item.displayName}`);
+      await refreshInstalled();
+      await onInstalled(item.slug);
+    } catch (err) {
+      onAction(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusyId(null);
+    }
+  }, [onAction, onInstalled, refreshInstalled]);
+
+  const reviewImport = useCallback(() => {
+    const reference = normalizeImportReference(importSource, importValue);
+    if (!reference) {
+      setImportError(importSource === "skills-sh"
+        ? "Enter a Skills.sh URL or owner/repository/skill reference."
+        : "Enter a GitHub URL or owner/repository reference.");
+      return;
+    }
+    if (!sourceSupported(importSource)) {
+      setImportError(capabilities?.reasons[importSource] || "This source is unavailable with the current OpenClaw connection.");
+      return;
+    }
+    setImportError(null);
+    const slug = reference.split("/").pop()?.split("@")[0] || "imported-skill";
+    openReview({
+      id: `${importSource}:${reference}`,
+      slug,
+      displayName: slug,
+      summary: importSource === "skills-sh" ? "Import this Agent Skill from Skills.sh." : "Import Agent Skills from this Git repository.",
+      source: importSource,
+      installKind: importSource,
+      installReference: reference,
+      trust: {
+        status: "unscanned",
+        installability: "unknown",
+        sourceFreshness: "user-supplied",
+        verdict: null,
+        signals: [],
+      },
+    });
+  }, [capabilities?.reasons, importSource, importValue, openReview, sourceSupported]);
+
+  if (mode === "import") {
+    return (
+      <div className="mx-auto max-w-2xl space-y-5">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">Import a compatible skill</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Add a Skills.sh skill or a Git repository without using the terminal. You will review its source and security state before anything is installed.</p>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <div className="grid grid-cols-2 gap-px bg-border">
+            {(["skills-sh", "git"] as const).map((source) => (
+              <button key={source} type="button" onClick={() => { setImportSource(source); setImportError(null); }} className={cn("flex items-center justify-center gap-2 bg-card px-4 py-3 text-sm transition-colors", importSource === source ? "text-foreground" : "text-muted-foreground hover:bg-muted/40")}>
+                {source === "skills-sh" ? <Layers3 className="h-4 w-4" /> : <GitBranch className="h-4 w-4" />}
+                {source === "skills-sh" ? "Skills.sh" : "GitHub / Git"}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-4 p-5">
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-foreground">{importSource === "skills-sh" ? "Skills.sh URL or reference" : "GitHub URL or repository"}</span>
+              <input value={importValue} onChange={(event) => setImportValue(event.target.value)} placeholder={importSource === "skills-sh" ? "https://skills.sh/owner/repository/skill" : "https://github.com/owner/repository"} className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring" />
+            </label>
+            {!sourceSupported(importSource) && capabilities && (
+              <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning-fg">{capabilities.reasons[importSource]}</div>
+            )}
+            {importError && <p className="text-xs text-danger-fg">{importError}</p>}
+            <div className="flex justify-end">
+              <button type="button" onClick={reviewImport} className="inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-4 text-sm font-medium text-background hover:opacity-90"><ShieldCheck className="h-4 w-4" />Review import</button>
+            </div>
+          </div>
+        </div>
+        {pendingInstall && <InstallReviewDialog item={pendingInstall} acknowledged={acknowledged} setAcknowledged={setAcknowledged} target={target} setTarget={setTarget} agents={agents} busy={busyId === pendingInstall.id} onCancel={() => setPendingInstall(null)} onConfirm={() => void performInstall()} />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-card px-3">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ClawHub and Skills.sh" className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+          {query && <button type="button" onClick={() => setQuery("")} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>}
+        </label>
+        <button type="button" onClick={() => void loadCatalog(query)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm text-foreground hover:bg-muted"><RefreshCw className="h-4 w-4" />Refresh</button>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
+          {(["all", "clawhub", "skills-sh"] as const).map((source) => (
+            <button key={source} type="button" onClick={() => setSourceFilter(source)} className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition-colors", sourceFilter === source ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>{source === "all" ? "All sources" : SOURCE_LABEL[source]}</button>
+          ))}
+        </div>
+        <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} className="h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground outline-none">
+          <option value="trending">Recommended</option><option value="downloads">Downloads</option><option value="stars">Stars</option><option value="name">Name</option>
+        </select>
+      </div>
+      {capabilities?.openClawVersion && <p className="text-xs text-muted-foreground">Connected to OpenClaw {capabilities.openClawVersion}. Registry installs and updates happen through this UI.</p>}
+      {error && <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-sm text-warning-fg">{error}</div>}
+      {loading ? <ContentLoadingState size="lg" /> : filteredItems.length === 0 ? (
+        <div className="rounded-lg border border-border bg-card px-6 py-12 text-center"><Search className="mx-auto h-6 w-6 text-muted-foreground" /><p className="mt-3 text-sm text-foreground">No skills found</p><p className="mt-1 text-xs text-muted-foreground">Try another phrase or source.</p></div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card divide-y divide-border">
+          {filteredItems.map((item) => {
+            const local = installedBySlug.get(item.slug);
+            const supported = sourceSupported(item.source);
+            const updateAvailable = Boolean(local?.version && item.version && local.version !== item.version);
+            return (
+              <article key={item.id} className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-start">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40"><Package className="h-4 w-4 text-muted-foreground" /></div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-medium text-foreground">{item.displayName}</h3>
+                    <span className={cn("rounded-md border px-1.5 py-0.5 text-[11px] font-medium", sourceBadgeClass(item.source))}>{SOURCE_LABEL[item.source]}</span>
+                    {item.official && <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><ShieldCheck className="h-3 w-3" />Official</span>}
+                    <span className={cn("inline-flex items-center gap-1 text-[11px]", item.trust.status === "blocked" ? "text-danger-fg" : item.trust.status === "warning" ? "text-warning-fg" : "text-muted-foreground")}>
+                      {item.trust.status === "trusted" ? <ShieldCheck className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}{item.trust.status === "trusted" ? "Scanned" : item.trust.status === "blocked" ? "Blocked" : item.trust.status === "warning" ? "Review warning" : "Review required"}
+                    </span>
+                  </div>
+                  {(item.publisher || item.owner) && <p className="mt-0.5 text-xs text-muted-foreground">by {item.publisher || item.owner}</p>}
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.summary || "No description provided."}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                    {typeof item.downloads === "number" && <span>{item.downloads.toLocaleString()} downloads</span>}
+                    {typeof item.stars === "number" && <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" />{item.stars.toLocaleString()}</span>}
+                    {item.canonicalUrl && <a href={item.canonicalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">Details <ExternalLink className="h-3 w-3" /></a>}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 sm:pt-0.5">
+                  {local ? (
+                    <>
+                      <span className={cn("text-xs", local.bundled ? "text-muted-foreground" : "text-success-fg")} title={local.bundled ? "Built-in skills ship with OpenClaw and can be disabled, but not uninstalled." : undefined}>
+                        {local.bundled ? "Built-in" : "Installed"}{local.enabled ? "" : " · Off"}
+                      </span>
+                      {local.bundled ? (
+                        <button type="button" disabled={busyId === item.id} onClick={() => void performToggle(item, local)} className="inline-flex h-8 items-center rounded-lg border border-border px-2.5 text-xs text-foreground hover:bg-muted disabled:opacity-50">
+                          {busyId === item.id ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}{local.enabled ? "Turn off" : "Turn on"}
+                        </button>
+                      ) : (
+                        <>
+                          {updateAvailable && <button type="button" disabled={busyId === item.id} onClick={() => void performUpdate(item)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs text-foreground hover:bg-muted disabled:opacity-50"><RefreshCw className={cn("h-3.5 w-3.5", busyId === item.id && "animate-spin")} />Update</button>}
+                          <button type="button" disabled={busyId === item.id} onClick={() => setPendingDelete(local)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs text-danger-fg hover:bg-danger-bg disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Uninstall</button>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <button type="button" disabled={!supported || item.trust.status === "blocked" || busyId === item.id} onClick={() => openReview(item)} title={!supported ? capabilities?.reasons[item.source as "skills-sh" | "git"] : undefined} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-foreground px-3 text-xs font-medium text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"><Download className="h-3.5 w-3.5" />Install</button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      {pendingInstall && <InstallReviewDialog item={pendingInstall} acknowledged={acknowledged} setAcknowledged={setAcknowledged} target={target} setTarget={setTarget} agents={agents} busy={busyId === pendingInstall.id} onCancel={() => setPendingInstall(null)} onConfirm={() => void performInstall()} />}
+      {pendingDelete && <DeleteSkillDialog item={pendingDelete} busy={busyId === pendingDelete.id} onCancel={() => setPendingDelete(null)} onConfirm={() => void performDelete()} />}
+    </div>
+  );
+}
+
+function InstallReviewDialog({ item, acknowledged, setAcknowledged, target, setTarget, agents, busy, onCancel, onConfirm }: {
+  item: SkillCatalogItem; acknowledged: boolean; setAcknowledged: (value: boolean) => void;
+  target: string; setTarget: (value: string) => void; agents: AgentOption[]; busy: boolean;
+  onCancel: () => void; onConfirm: () => void;
+}) {
+  const needsAcknowledgement = item.trust.status !== "trusted";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="skill-review-title">
+      <div className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4"><div><p className="text-xs font-medium text-muted-foreground">Security review</p><h2 id="skill-review-title" className="mt-0.5 text-base font-semibold text-foreground">Install {item.displayName}</h2></div><button type="button" onClick={onCancel} disabled={busy} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button></div>
+        <div className="space-y-4 p-5">
+          <div className="grid grid-cols-2 gap-3 text-xs"><div><p className="text-muted-foreground">Source</p><p className="mt-0.5 font-medium text-foreground">{SOURCE_LABEL[item.source]}</p></div><div><p className="text-muted-foreground">Publisher</p><p className="mt-0.5 font-medium text-foreground">{item.publisher || item.owner || "Not verified"}</p></div><div className="col-span-2"><p className="text-muted-foreground">Pinned reference</p><p className="mt-0.5 break-all font-mono text-foreground">{item.installReference || "Unavailable"}</p></div></div>
+          <div className={cn("rounded-lg border px-3 py-3", item.trust.status === "blocked" ? "border-danger-border bg-danger-bg" : item.trust.status === "trusted" ? "border-success-border bg-success-bg" : "border-warning-border bg-warning-bg")}>
+            <p className={cn("flex items-center gap-2 text-sm font-medium", item.trust.status === "blocked" ? "text-danger-fg" : item.trust.status === "trusted" ? "text-success-fg" : "text-warning-fg")}>{item.trust.status === "trusted" ? <ShieldCheck className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}{item.trust.status === "trusted" ? "Registry checks passed" : item.trust.status === "blocked" ? "Installation blocked" : "This skill needs your review"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{item.trust.status === "trusted" ? "The registry reports this version as installable." : item.trust.status === "blocked" ? "A registry or upstream scanner marked this skill unsafe." : "This source has no complete ClawHub scan. Agent Skills can contain executable scripts and instructions."}</p>
+            {item.trust.signals.length > 0 && <div className="mt-2 space-y-1">{item.trust.signals.map((signal) => <p key={`${signal.provider}-${signal.status}`} className="text-xs text-muted-foreground">{signal.provider}: {signal.status}{signal.message ? ` — ${signal.message}` : ""}</p>)}</div>}
+          </div>
+          <label className="block space-y-1.5"><span className="text-xs font-medium text-foreground">Install for</span><select value={target} onChange={(event) => setTarget(event.target.value)} className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none"><option value="workspace">This workspace</option>{agents.map((agent) => <option key={agent.id} value={`agent:${agent.id}`}>Agent: {agent.name}</option>)}<option value="global">All workspaces on this OpenClaw host</option></select></label>
+          <p className="text-xs text-muted-foreground">The skill will be installed off. Review its requirements and configuration in Installed, then enable it when ready.</p>
+          {needsAcknowledgement && item.trust.status !== "blocked" && <label className="flex items-start gap-2 rounded-lg border border-border p-3 text-xs text-foreground"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-0.5" /><span>I understand this third-party skill is not fully scanned and may contain executable instructions or scripts.</span></label>}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4"><button type="button" onClick={onCancel} disabled={busy} className="h-9 rounded-lg border border-border px-4 text-sm text-foreground hover:bg-muted">Cancel</button><button type="button" onClick={onConfirm} disabled={busy || item.trust.status === "blocked" || (needsAcknowledgement && !acknowledged)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-4 text-sm font-medium text-background hover:opacity-90 disabled:opacity-40">{busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Install off</button></div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteSkillDialog({ item, busy, onCancel, onConfirm }: { item: InstalledSkillCatalogItem; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="skill-uninstall-title"><div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl"><h2 id="skill-uninstall-title" className="text-base font-semibold text-foreground">Uninstall {item.name}?</h2><p className="mt-2 text-sm text-muted-foreground">This deletes the workspace copy and removes its tracked ClawHub entry. It does not delete the skill from the registry. Built-in, shared, and global skills are protected.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onCancel} disabled={busy} className="h-9 rounded-lg border border-border px-4 text-sm text-foreground hover:bg-muted">Cancel</button><button type="button" onClick={onConfirm} disabled={busy} className="inline-flex h-9 items-center gap-2 rounded-lg bg-danger px-4 text-sm font-medium text-danger-foreground disabled:opacity-50">{busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Uninstall</button></div></div></div>;
+}
+
 /* ── Main SkillsView ────────────────────────────── */
 
 export function SkillsView({ initialSkillName = null }: { initialSkillName?: string | null } = {}) {
@@ -1555,10 +1983,14 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
   const [selectedSkill, setSelectedSkill] = useState<string | null>(initialSkillName);
   const [toast, setToast] = useState<Toast | null>(null);
   const [togglingSkill, setTogglingSkill] = useState<string | null>(null);
+  const [pendingUninstall, setPendingUninstall] = useState<InstalledSkillCatalogItem | null>(null);
+  const [uninstallingSkill, setUninstallingSkill] = useState<string | null>(null);
   const [apiWarning, setApiWarning] = useState<string | null>(null);
   const [apiDegraded, setApiDegraded] = useState(false);
-  const tab: "skills" | "clawhub" =
-    (searchParams.get("tab") || "").toLowerCase() === "clawhub" ? "clawhub" : "skills";
+  const requestedTab = (searchParams.get("tab") || "").toLowerCase();
+  const tab: SkillsPageTab = requestedTab === "discover" || requestedTab === "clawhub"
+    ? "discover"
+    : requestedTab === "built-in" ? "built-in" : requestedTab === "import" ? "import" : "installed";
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -1601,7 +2033,7 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
       setLoading(false);
       return;
     }
-    if (tab === "clawhub") {
+    if (tab === "discover" || tab === "import") {
       setLoading(false);
       return;
     }
@@ -1611,6 +2043,9 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
   }, [fetchAll, selectedSkill, tab]);
 
   const filtered = useMemo(() => skills.filter((s) => {
+    const origin = getSkillOrigin(s);
+    if (tab === "built-in" && origin !== "bundled") return false;
+    if (tab === "installed" && origin === "bundled") return false;
     if (search) {
       const q = search.toLowerCase();
       if (!s.name.toLowerCase().includes(q) && !s.description.toLowerCase().includes(q)) return false;
@@ -1620,7 +2055,7 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
     if (filter === "workspace") return getSkillOrigin(s) === "workspace";
     if (filter === "bundled") return getSkillOrigin(s) === "bundled";
     return true;
-  }), [skills, search, filter]);
+  }), [skills, search, filter, tab]);
 
   const grouped = useMemo(() => {
     const buckets: Record<SkillOrigin, Skill[]> = {
@@ -1639,8 +2074,8 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
         title: SKILL_ORIGIN_META[origin].title,
         description: SKILL_ORIGIN_META[origin].description,
         skills: sectionSkills,
-        ready: sectionSkills.filter((skill) => getAvailability(skill).state === "ready").length,
-        needsSetup: sectionSkills.filter((skill) => getAvailability(skill).state === "needs-setup").length,
+        ready: sectionSkills.filter((skill) => !skill.disabled && getAvailability(skill).state === "ready").length,
+        needsSetup: sectionSkills.filter((skill) => !skill.disabled && getAvailability(skill).state === "needs-setup").length,
         disabled: sectionSkills.filter((skill) => skill.disabled).length,
       };
     }).filter((section) => section.skills.length > 0);
@@ -1678,19 +2113,50 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
     setTogglingSkill(null);
   }, [fetchAll]);
 
-  const handleClawHubInstalled = useCallback(async (slug: string) => {
+  const openWorkspaceUninstall = useCallback((skill: Skill) => {
+    const slug = skill.skillKey || skill.name;
+    setPendingUninstall({
+      id: `workspace:${slug}`,
+      slug,
+      name: skill.name,
+      version: "",
+      source: "local",
+      enabled: !skill.disabled,
+      bundled: false,
+      skillKey: slug,
+      filePath: skill.filePath,
+    });
+  }, []);
+
+  const confirmWorkspaceUninstall = useCallback(async () => {
+    const item = pendingUninstall;
+    if (!item) return;
+    setUninstallingSkill(item.name);
+    try {
+      const response = await fetch("/api/skills/clawhub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "uninstall", slug: item.slug, source: item.source }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) throw new Error(String(payload?.error || "Could not uninstall this skill."));
+      setPendingUninstall(null);
+      setSkills((current) => current.filter((skill) => skill.name !== item.name));
+      setToast({ msg: `Uninstalled ${item.name}`, type: "success" });
+      requestRestart("A workspace skill was uninstalled.");
+      await fetchAll();
+    } catch (err) {
+      setToast({ msg: `Error: ${err instanceof Error ? err.message : String(err)}`, type: "error" });
+    } finally {
+      setUninstallingSkill(null);
+    }
+  }, [fetchAll, pendingUninstall]);
+
+  const handleClawHubInstalled = useCallback(async () => {
     try {
       const listRes = await fetch("/api/skills").then((r) => r.json());
       const latest = (listRes.skills || []) as Skill[];
       setSkills(latest);
-      const match = latest.find((s) => s.name === slug);
-      if (match?.disabled) {
-        await fetch("/api/skills", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "enable-skill", name: slug }),
-        });
-      }
       await fetchAll();
       requestRestart("Skill catalog was updated.");
     } catch {
@@ -1698,11 +2164,11 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
     }
   }, [fetchAll]);
 
-  const switchTab = useCallback((next: "skills" | "clawhub") => {
+  const switchTab = useCallback((next: SkillsPageTab) => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("section");
-    if (next === "clawhub") params.set("tab", "clawhub");
-    else params.delete("tab");
+    if (next === "installed") params.delete("tab");
+    else params.set("tab", next);
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
@@ -1742,47 +2208,38 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
       <SectionHeader
         className="py-2 md:py-3"
         title={
-          <span className="flex items-center gap-2 text-xs">
-            <Wrench className="h-5 w-5 text-muted-foreground" />
+          <span className="flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
             Skills
           </span>
         }
-        description="Skills are tools your agents can use (e.g. search, calendar). Turn them on or off; click a skill for more."
+        description="Discover, install, configure, and manage Agent Skills without using the terminal."
         descriptionClassName="text-sm text-muted-foreground"
         meta={null}
         actions={
           <div className="flex items-center gap-2">
             <ApiWarningBadge warning={apiWarning} degraded={apiDegraded} />
-            <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
-              <button
-                type="button"
-                onClick={() => switchTab("skills")}
-                className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition-colors", tab === "skills" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-              >
-                Local Skills
-              </button>
-              <button
-                type="button"
-                onClick={() => switchTab("clawhub")}
-                className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition-colors", tab === "clawhub" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-              >
-                ClawHub
-              </button>
+            <div className="inline-flex flex-wrap rounded-lg border border-border bg-muted p-0.5">
+              {(["discover", "installed", "built-in", "import"] as const).map((item) => (
+                <button key={item} type="button" onClick={() => switchTab(item)} className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition-colors", tab === item ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+                  {item === "discover" ? "Discover" : item === "installed" ? "Installed" : item === "built-in" ? "Built-in" : "Import"}
+                </button>
+              ))}
             </div>
-            <button type="button" onClick={fetchAll} className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted"><RefreshCw className="h-3 w-3" />Refresh</button>
+            {(tab === "installed" || tab === "built-in") && <button type="button" onClick={fetchAll} className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted"><RefreshCw className="h-3 w-3" />Refresh</button>}
           </div>
         }
       />
 
-      {tab === "skills" && (
+      {(tab === "installed" || tab === "built-in") && (
         <SectionBody width="wide" padding="compact" innerClassName="space-y-4">
           {/* Summary + search in one scrollable area with the list */}
           {summary && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <SumCard value={summary.total} label="Total" color="text-foreground" />
-              <SumCard value={summary.eligible} label="Ready" color="text-success-fg" border="border-success-border" bg="bg-success-bg" title="On and ready for agents to use" />
-              <SumCard value={workspaceCount} label="Installed" color="text-muted-foreground dark:text-fg-secondary" border="border-border-strong" bg="bg-muted-foreground/5" title="Installed in this project (e.g. from ClawHub)" />
-              <SumCard value={summary.disabled} label="Off" color="text-muted-foreground" border="border-border" bg="bg-muted/30" title="Turned off" />
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
+              <SumCard value={summary.total} label="Total" />
+              <SumCard value={summary.eligible} label="Ready" title="On and ready for agents to use" />
+              <SumCard value={workspaceCount} label="Installed" title="Installed in this project (e.g. from ClawHub)" />
+              <SumCard value={summary.disabled} label="Off" title="Turned off" />
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
@@ -1792,29 +2249,40 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
               {search && <button onClick={() => setSearch("")} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
             </div>
             <div className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted p-0.5">
-              {(["all", "eligible", "unavailable", "bundled", "workspace"] as const).map((f) => (
+              {(["all", "eligible", "unavailable"] as const).map((f) => (
                 <button key={f} type="button" onClick={() => setFilter(f)} className={cn("rounded-md px-2 py-1 text-xs font-medium transition-colors", filter === f ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-                  {f === "all" ? "All" : f === "eligible" ? "Ready" : f === "unavailable" ? "Unavailable" : f === "bundled" ? "Bundled" : "Workspace"}
+                  {f === "all" ? "All" : f === "eligible" ? "Ready" : "Needs attention"}
                 </button>
               ))}
             </div>
           </div>
           <div className="space-y-4">
           {grouped.map((section) => (
-            <section key={section.origin} className="glass-subtle rounded-lg p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border pb-2">
-                {section.title} <span className="font-normal">({section.skills.length})</span>
-              </h3>
-              <div className="mt-3 columns-1 gap-x-4 sm:columns-2 lg:columns-3">
+            <section key={section.origin} className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">
+                    {section.title} <span className="font-normal text-muted-foreground">{section.skills.length}</span>
+                  </h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{section.description}</p>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-label={`${section.ready} ready, ${section.disabled} off`}>
+                  <span>{section.ready} ready</span>
+                  {section.needsSetup > 0 && <span>{section.needsSetup} setup</span>}
+                  {section.disabled > 0 && <span>{section.disabled} off</span>}
+                </div>
+              </div>
+              <div className="divide-y divide-border">
                 {section.skills.map((s) => (
-                  <div key={s.name} className="break-inside-avoid mb-2">
-                    <SkillCard
-                      skill={s}
-                      onClick={() => router.push(`/skills/${encodeURIComponent(s.name)}`)}
-                      onToggle={(enabled) => handleToggleSkill(s.name, enabled)}
-                      toggling={togglingSkill === s.name}
-                    />
-                  </div>
+                  <SkillCard
+                    key={s.name}
+                    skill={s}
+                    onClick={() => router.push(`/skills/${encodeURIComponent(s.name)}`)}
+                    onToggle={(enabled) => handleToggleSkill(s.name, enabled)}
+                    onUninstall={getSkillOrigin(s) === "workspace" ? () => openWorkspaceUninstall(s) : undefined}
+                    toggling={togglingSkill === s.name}
+                    uninstalling={uninstallingSkill === s.name}
+                  />
                 ))}
               </div>
             </section>
@@ -1830,14 +2298,16 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
         </SectionBody>
       )}
 
-      {tab === "clawhub" && (
+      {(tab === "discover" || tab === "import") && (
         <SectionBody width="wide" padding="compact" innerClassName="pb-6">
-          <ClawHubPanel
+          <CatalogPanel
+            mode={tab}
             onAction={handleAction}
             onInstalled={handleClawHubInstalled}
           />
         </SectionBody>
       )}
+      {pendingUninstall && <DeleteSkillDialog item={pendingUninstall} busy={uninstallingSkill === pendingUninstall.name} onCancel={() => setPendingUninstall(null)} onConfirm={() => void confirmWorkspaceUninstall()} />}
       {toast && <ToastBar toast={toast} onDone={() => setToast(null)} />}
     </SectionLayout>
   );
@@ -1845,11 +2315,11 @@ export function SkillsView({ initialSkillName = null }: { initialSkillName?: str
 
 /* ── Summary Card ───────────────────────────────── */
 
-function SumCard({ value, label, color, border, bg, title }: { value: number; label: string; color: string; border?: string; bg?: string; title?: string }) {
+function SumCard({ value, label, title }: { value: number; label: string; title?: string }) {
   return (
-    <div className={cn("rounded-lg border px-3 py-2", border || "border-border", bg || "bg-muted/30")} title={title}>
-      <p className={cn("text-sm font-semibold tabular-nums leading-tight", color)}>{value}</p>
-      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+    <div className="bg-card px-3 py-2.5" title={title}>
+      <p className="text-base font-semibold tabular-nums leading-tight text-foreground">{value}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
     </div>
   );
 }

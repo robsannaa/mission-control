@@ -9,6 +9,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  ArrowDown,
+  ArrowUp,
+  GripVertical,
   Key,
   Loader2,
   Pencil,
@@ -22,8 +25,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
+import { ProviderLogo } from "@/components/ui/provider-logo";
 
 import { getFriendlyModelName, getProviderDisplayName } from "@/lib/model-metadata";
+import { moveModelPriority, normalizeModelPriority } from "@/lib/model-priority";
 
 /* ── Provider metadata ──────────────────────────── */
 
@@ -134,14 +139,6 @@ function StatusDot({ active, className }: { active: boolean; className?: string 
         )}
       />
     </span>
-  );
-}
-
-function ProviderAvatar({ name }: { name: string }) {
-  return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-sm font-bold text-muted-foreground">
-      {name.charAt(0).toUpperCase()}
-    </div>
   );
 }
 
@@ -579,7 +576,7 @@ function AddProviderWizard({
                   onClick={() => pickProvider(p.id)}
                   className="group flex w-full items-center gap-4 rounded-xl border border-border bg-muted p-4 text-left transition-all hover:border-border-strong hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/30"
                 >
-                  <ProviderAvatar name={p.name} />
+                  <ProviderLogo provider={p.id} name={p.name} />
                   <div className="min-w-0 flex-1">
                     <span className="text-sm font-semibold text-foreground">{p.name}</span>
                     <p className="mt-0.5 text-xs text-fg-subtle">{p.hint}</p>
@@ -1287,59 +1284,100 @@ function DefaultModelCard({
   fallbacks: string[];
   groupedModels: GroupedModel[];
   loadingModels: boolean;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   onAddProvider: () => void;
   hasProviders: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [showFallbackPicker, setShowFallbackPicker] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const configuredChain = useMemo(
+    () => normalizeModelPriority([primaryModel, ...fallbacks]),
+    [primaryModel, fallbacks]
+  );
+  const [orderedChain, setOrderedChain] = useState<string[]>(configuredChain);
+  const pendingSavedChainRef = useRef<string | null>(null);
 
-  async function handleSetPrimary(modelId: string) {
+  useEffect(() => {
+    if (saving) return;
+    const configuredKey = configuredChain.join("\n");
+    if (pendingSavedChainRef.current && pendingSavedChainRef.current !== configuredKey) {
+      // The save succeeded but a stale/offline summary has not caught up yet.
+      return;
+    }
+    if (pendingSavedChainRef.current === configuredKey) {
+      pendingSavedChainRef.current = null;
+    }
+    setOrderedChain(configuredChain);
+  }, [configuredChain, saving]);
+
+  async function saveModelChain(nextModels: string[]) {
+    const normalized = normalizeModelPriority(nextModels);
+    if (normalized.length === 0) return;
+    const previous = orderedChain;
+    setOrderedChain(normalized);
     setSaving(true);
+    setSaveError(null);
     try {
-      await fetch("/api/models", {
+      const response = await fetch("/api/models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "set-primary", model: modelId }),
-        signal: AbortSignal.timeout(10000),
+        body: JSON.stringify({ action: "set-model-chain", models: normalized }),
+        signal: AbortSignal.timeout(15_000),
       });
-      onRefresh();
-    } catch {
-      // Silently fail — user can retry
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+      }
+      pendingSavedChainRef.current = normalized.join("\n");
+      await onRefresh();
+    } catch (error) {
+      pendingSavedChainRef.current = null;
+      setOrderedChain(previous);
+      setSaveError(error instanceof Error ? error.message : "Could not save model priority");
     } finally {
       setSaving(false);
+      setDraggedIndex(null);
+      setDropIndex(null);
     }
   }
 
+  async function handleSetPrimary(modelId: string) {
+    const next = [modelId, ...orderedChain.filter((model) => model !== modelId)];
+    await saveModelChain(next);
+  }
+
   async function handleRemoveFallback(index: number) {
-    const next = fallbacks.filter((_, i) => i !== index);
-    try {
-      await fetch("/api/models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "set-fallbacks", fallbacks: next }),
-        signal: AbortSignal.timeout(10000),
-      });
-      onRefresh();
-    } catch {
-      // Silently fail
-    }
+    const next = orderedChain.filter((_, i) => i !== index + 1);
+    await saveModelChain(next);
   }
 
   async function handleAddFallback(modelId: string | null) {
     if (!modelId) return;
-    if (fallbacks.includes(modelId)) return;
-    const next = [...fallbacks, modelId];
-    await fetch("/api/models", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "set-fallbacks", fallbacks: next }),
-      signal: AbortSignal.timeout(10000),
-    });
-    onRefresh();
+    if (orderedChain.includes(modelId)) return;
+    await saveModelChain([...orderedChain, modelId]);
   }
 
-  const friendlyPrimary = primaryModel ? getFriendlyModelName(primaryModel) : null;
+  async function handleMove(fromIndex: number, toIndex: number) {
+    if (saving || fromIndex === toIndex) return;
+    await saveModelChain(moveModelPriority(orderedChain, fromIndex, toIndex));
+  }
+
+  function handleDragStart(event: React.DragEvent<HTMLDivElement>, index: number) {
+    if (saving) return;
+    setDraggedIndex(index);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>, index: number) {
+    event.preventDefault();
+    const fromData = Number(event.dataTransfer.getData("text/plain"));
+    const fromIndex = draggedIndex ?? (Number.isInteger(fromData) ? fromData : null);
+    if (fromIndex !== null) void handleMove(fromIndex, index);
+  }
 
   return (
     <Card>
@@ -1379,14 +1417,6 @@ function DefaultModelCard({
             </div>
           )}
 
-          {primaryModel && (
-            <div className="flex items-center gap-2 rounded-lg border border-success-border/20 bg-success/5 px-3 py-2">
-              <StatusDot active />
-              <span className="text-xs font-medium text-success-fg">{friendlyPrimary}</span>
-              <span className="ml-1 font-mono text-[10px] text-fg-subtle">{primaryModel}</span>
-            </div>
-          )}
-
           {!primaryModel && hasProviders && (
             <div className="flex items-center gap-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning-fg" />
@@ -1395,10 +1425,10 @@ function DefaultModelCard({
           )}
         </div>
 
-        {/* Fallback chain */}
+        {/* Primary + fallback chain */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="block text-xs font-medium text-fg-secondary">Fallback chain</label>
+            <label className="block text-xs font-medium text-fg-secondary">Model priority</label>
             {hasProviders && (
               <button
                 type="button"
@@ -1411,48 +1441,117 @@ function DefaultModelCard({
             )}
           </div>
           <p className="text-[11px] text-fg-subtle">
-            Fallback models are tried in order if the primary is unavailable
+            Drag to reorder. The first model is primary; the rest are tried in order if it is unavailable.
           </p>
 
-          {fallbacks.length === 0 ? (
+          {orderedChain.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border px-3 py-3 text-center">
-              <p className="text-xs text-fg-placeholder">No fallbacks configured</p>
+              <p className="text-xs text-fg-placeholder">No model configured</p>
             </div>
           ) : (
-            <div className="space-y-1.5">
-              {fallbacks.map((fb, i) => (
+            <div className="space-y-1.5" aria-label="Model priority chain">
+              {orderedChain.map((model, i) => (
                 <div
-                  key={fb}
-                  className="flex items-center gap-2.5 rounded-lg border border-border bg-muted px-3 py-2"
+                  key={model}
+                  draggable={!saving}
+                  onDragStart={(event) => handleDragStart(event, i)}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDropIndex(i);
+                  }}
+                  onDragLeave={() => setDropIndex((current) => current === i ? null : current)}
+                  onDrop={(event) => handleDrop(event, i)}
+                  onDragEnd={() => {
+                    setDraggedIndex(null);
+                    setDropIndex(null);
+                  }}
+                  aria-label={`${i === 0 ? "Primary" : `Fallback ${i}`}: ${model}`}
+                  className={cn(
+                    "group flex items-center gap-2 rounded-lg border bg-muted px-2 py-2 transition-all",
+                    i === 0 ? "border-success-border/30 bg-success/5" : "border-border",
+                    dropIndex === i && draggedIndex !== i && "border-[var(--accent-brand-border)] ring-2 ring-[var(--accent-brand-ring)]",
+                    draggedIndex === i && "opacity-45",
+                    saving ? "cursor-wait" : "cursor-grab active:cursor-grabbing"
+                  )}
                 >
+                  <GripVertical className="h-4 w-4 shrink-0 text-fg-placeholder transition-colors group-hover:text-muted-foreground" />
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold text-fg-subtle">
                     {i + 1}
                   </span>
-                  <span className="flex-1 truncate text-xs text-foreground">
-                    {getFriendlyModelName(fb)}
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={cn("truncate text-xs font-medium", i === 0 ? "text-success-fg" : "text-foreground")}>
+                        {getFriendlyModelName(model)}
+                      </span>
+                      <span className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
+                        i === 0 ? "bg-success/10 text-success-fg" : "bg-secondary text-fg-subtle"
+                      )}>
+                        {i === 0 ? "Primary" : `Fallback ${i}`}
+                      </span>
+                    </div>
+                    <span className="block truncate font-mono text-[10px] text-fg-subtle sm:hidden">
+                      {model}
+                    </span>
+                  </div>
                   <span className="hidden truncate font-mono text-[10px] text-fg-subtle sm:block">
-                    {fb}
+                    {model}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => void handleRemoveFallback(i)}
-                    aria-label="Remove fallback"
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-fg-placeholder transition-colors hover:text-danger-fg"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => void handleMove(i, i - 1)}
+                      disabled={saving || i === 0}
+                      aria-label={`Move ${getFriendlyModelName(model)} up`}
+                      className="flex h-6 w-6 items-center justify-center rounded text-fg-placeholder transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-20"
+                    >
+                      <ArrowUp className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleMove(i, i + 1)}
+                      disabled={saving || i === orderedChain.length - 1}
+                      aria-label={`Move ${getFriendlyModelName(model)} down`}
+                      className="flex h-6 w-6 items-center justify-center rounded text-fg-placeholder transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-20"
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </button>
+                    {i > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void handleRemoveFallback(i - 1)}
+                        disabled={saving}
+                        aria-label={`Remove ${getFriendlyModelName(model)} from fallbacks`}
+                        className="flex h-6 w-6 items-center justify-center rounded text-fg-placeholder transition-colors hover:bg-danger-bg hover:text-danger-fg disabled:opacity-30"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
+
+          <div className="min-h-4" aria-live="polite">
+            {saving && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-fg-subtle">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Saving model priority…
+              </span>
+            )}
+            {saveError && !saving && (
+              <span className="text-[11px] text-danger-fg">{saveError}</span>
+            )}
+          </div>
         </div>
       </div>
 
       {showFallbackPicker && (
         <ModelPickerModal
           title="Add fallback model"
-          subtitle="Added to the end of the fallback chain"
+          subtitle="Added to the end of the model priority chain"
           currentModel={null}
           groupedModels={groupedModels}
           loadingModels={loadingModels}
@@ -1865,7 +1964,7 @@ function ProvidersCard({
 
             return (
               <div key={pid} className="flex items-center gap-4 px-5 py-4">
-                <ProviderAvatar name={displayName} />
+                <ProviderLogo provider={pid} name={displayName} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <StatusDot active />
@@ -1924,9 +2023,12 @@ function ProvidersCard({
                     onClick={() => onAddProvider(p.id)}
                     className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-3 text-left transition-all hover:border-border-strong hover:bg-secondary"
                   >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-secondary text-xs font-bold text-muted-foreground">
-                      {p.name.charAt(0)}
-                    </div>
+                    <ProviderLogo
+                      provider={p.id}
+                      name={p.name}
+                      className="h-8 w-8 rounded-lg"
+                      iconClassName="h-4 w-4"
+                    />
                     <div>
                       <p className="text-xs font-semibold text-fg-secondary">{p.name}</p>
                       <p className="text-[10px] text-fg-subtle">{p.hint}</p>
@@ -2124,9 +2226,8 @@ export function ModelsView() {
     void fetchAgents();
   }
 
-  function handleRefreshAll() {
-    void fetchSummary();
-    void fetchAgents();
+  async function handleRefreshAll() {
+    await Promise.all([fetchSummary(), fetchAgents()]);
   }
 
   const providerList = useMemo(

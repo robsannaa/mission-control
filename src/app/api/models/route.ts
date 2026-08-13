@@ -20,9 +20,11 @@ import {
   getCurrentPrimaryModel,
   extractPrimaryModel,
   mergeModelPrimary,
+  mergeModelPriority,
+  normalizeModelPriority,
   shouldSetPrimary,
 } from "@/lib/gateway-config";
-import { gatewayCall } from "@/lib/openclaw";
+import { CONFIG_WRITE_TIMEOUT_MS, gatewayCall, runCliCaptureBoth } from "@/lib/openclaw";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,30 @@ function json(body: unknown, status = 200) {
     status,
     headers: { "Cache-Control": "no-store" },
   });
+}
+
+async function setModelPriorityWithCli(models: string[]): Promise<void> {
+  const current = await runCliCaptureBoth(
+    ["config", "get", "agents.defaults.model", "--json"],
+    CONFIG_WRITE_TIMEOUT_MS,
+  );
+  if (current.code !== 0) {
+    throw new Error(String(current.stderr || current.stdout || "Could not read current model config").trim());
+  }
+  let existingModel: unknown;
+  try {
+    existingModel = JSON.parse(current.stdout);
+  } catch {
+    throw new Error("OpenClaw returned an unreadable model configuration");
+  }
+  const modelConfig = mergeModelPriority(existingModel, models);
+  const saved = await runCliCaptureBoth(
+    ["config", "set", "--strict-json", "agents.defaults.model", JSON.stringify(modelConfig)],
+    CONFIG_WRITE_TIMEOUT_MS,
+  );
+  if (saved.code !== 0) {
+    throw new Error(String(saved.stderr || saved.stdout || "OpenClaw rejected the model priority").trim());
+  }
 }
 
 // ── GET /api/models ─────────────────────────────
@@ -132,7 +158,7 @@ export async function GET() {
 }
 
 // ── POST /api/models ────────────────────────────
-// Actions: auth-provider, remove-provider, set-primary, set-fallbacks,
+// Actions: auth-provider, remove-provider, set-primary, set-model-chain, set-fallbacks,
 // list-models, test-key, probe-local, connect-local
 
 export async function POST(request: NextRequest) {
@@ -437,6 +463,39 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // ── Atomically replace the ordered model priority chain ──
+      // The first model is primary; every subsequent model is a fallback in
+      // failover order. One write prevents drag-and-drop from briefly leaving
+      // primary and fallbacks inconsistent with each other.
+      case "set-model-chain": {
+        const models = normalizeModelPriority(
+          Array.isArray(body.models) ? (body.models as unknown[]) : []
+        );
+        if (models.length === 0) {
+          return json({ error: "At least one model is required" }, 400);
+        }
+        const primary = models[0];
+        const fallbacks = models.slice(1);
+
+        try {
+          await patchConfig(
+            { agents: { defaults: { model: { primary, fallbacks } } } },
+            { replacePaths: ["agents.defaults.model.fallbacks"] }
+          );
+          return json({ ok: true, primary, fallbacks });
+        } catch (patchErr) {
+          console.error("[set-model-chain] patchConfig failed, trying OpenClaw CLI fallback:", patchErr);
+          try {
+            // Use OpenClaw's own config command so unknown refs are rejected
+            // and schema validation still runs while the Gateway is offline.
+            await setModelPriorityWithCli(models);
+            return json({ ok: true, primary, fallbacks });
+          } catch (err) {
+            return json({ error: `Failed to set model priority: ${err}` }, 500);
+          }
+        }
+      }
+
       // ── Set fallback models ──
       case "set-fallbacks": {
         const fallbacks = Array.isArray(body.fallbacks)
@@ -444,7 +503,10 @@ export async function POST(request: NextRequest) {
           : [];
 
         try {
-          await patchConfig({ agents: { defaults: { model: { fallbacks } } } });
+          await patchConfig(
+            { agents: { defaults: { model: { fallbacks } } } },
+            { replacePaths: ["agents.defaults.model.fallbacks"] }
+          );
           return json({ ok: true, fallbacks });
         } catch (patchErr) {
           console.error("[set-fallbacks] patchConfig failed, trying disk fallback:", patchErr);

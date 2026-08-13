@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { pairingRequiredResponse } from "@/lib/gateway-errors";
+import { injectCronPayloadAwareness } from "@/lib/awareness/protocol";
+import {
+  cronRunFailed,
+  cronRunOutput,
+  selectTriggeredCronRun,
+} from "@/lib/cron-run-status";
+import { readCronLiveLog } from "@/lib/cron-live-log";
+import { buildCronDeliveryConfig } from "@/lib/cron-delivery";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +40,9 @@ type CronJob = {
     lastDurationMs?: number;
     consecutiveErrors?: number;
     lastError?: string;
+    isRunning?: boolean;
+    runningStartedAtMs?: number;
+    runningAtMs?: number;
   };
   sessionTarget?: string;
   sessionKey?: string | null;
@@ -52,6 +63,14 @@ type CronRunEntry = {
   sessionKey?: string;
   runAtMs?: number;
   nextRunAtMs?: number;
+  runId?: string;
+};
+
+type CronGatewaySession = {
+  key?: string;
+  hasActiveRun?: boolean;
+  startedAt?: number | string;
+  updatedAt?: number | string;
 };
 
 type GatewayMessage = {
@@ -69,8 +88,6 @@ type CronRunResult = {
   ran?: boolean;
   alreadyRunning?: boolean;
 };
-
-type DeliveryMode = "announce" | "webhook" | "none";
 
 function formatChatHistoryAsText(messages: GatewayMessage[]): string {
   const lines: string[] = [];
@@ -91,74 +108,46 @@ function formatChatHistoryAsText(messages: GatewayMessage[]): string {
   return lines.join("\n").trim();
 }
 
+function epochMs(value: unknown): number {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return number < 1_000_000_000_000 ? Math.trunc(number * 1000) : Math.trunc(number);
+}
+
+function sessionBelongsToCron(session: CronGatewaySession, jobId: string): boolean {
+  const key = String(session.key || "");
+  return key.includes(`:cron:${jobId}`);
+}
+
+async function listCronSessions(): Promise<CronGatewaySession[]> {
+  try {
+    const data = await gatewayCall<{ sessions?: CronGatewaySession[] }>(
+      "sessions.list",
+      undefined,
+      10000,
+    );
+    return Array.isArray(data.sessions) ? data.sessions : [];
+  } catch {
+    return [];
+  }
+}
+
+async function readCronTranscript(sessionKey: string | undefined): Promise<string> {
+  if (!sessionKey) return "";
+  try {
+    const history = await gatewayCall<{ messages?: GatewayMessage[] }>(
+      "chat.history",
+      { sessionKey, limit: 200 },
+      15000,
+    );
+    return formatChatHistoryAsText(history.messages ?? []);
+  } catch {
+    return "";
+  }
+}
+
 function hasOwn(obj: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
-}
-
-function normalizeDeliveryMode(value: unknown): DeliveryMode | null {
-  const mode = String(value || "").trim().toLowerCase();
-  if (mode === "announce" || mode === "webhook" || mode === "none") {
-    return mode;
-  }
-  return null;
-}
-
-function isValidWebhookUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function buildDeliveryConfig(
-  params: Record<string, unknown>,
-  current?: CronJob["delivery"],
-): CronJob["delivery"] {
-  const deliveryMode =
-    normalizeDeliveryMode(params.deliveryMode) ??
-    (params.announce === true
-      ? "announce"
-      : params.announce === false
-        ? "none"
-        : normalizeDeliveryMode(current?.mode) ?? "none");
-
-  if (deliveryMode === "none") {
-    return { mode: "none" };
-  }
-
-  const rawTo = hasOwn(params, "to")
-    ? String(params.to || "").trim()
-    : String(current?.to || "").trim();
-  const bestEffort = hasOwn(params, "bestEffort")
-    ? Boolean(params.bestEffort)
-    : Boolean(current?.bestEffort);
-
-  if (deliveryMode === "webhook") {
-    if (!rawTo) {
-      throw new Error('Webhook delivery requires a target URL in "to".');
-    }
-    if (!isValidWebhookUrl(rawTo)) {
-      throw new Error("Webhook delivery URL must start with http:// or https://");
-    }
-    return {
-      mode: "webhook",
-      to: rawTo,
-      ...(bestEffort ? { bestEffort: true } : {}),
-    };
-  }
-
-  const rawChannel = hasOwn(params, "channel")
-    ? String(params.channel || "").trim()
-    : String(current?.channel || "").trim();
-
-  return {
-    mode: "announce",
-    ...(rawChannel ? { channel: rawChannel } : {}),
-    ...(rawTo ? { to: rawTo } : {}),
-    ...(bestEffort ? { bestEffort: true } : {}),
-  };
 }
 
 /**
@@ -336,6 +325,59 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ entries: Array.isArray(data.entries) ? data.entries : [] });
     }
 
+    if (action === "runStatus" && jobId) {
+      const requestedAtMs = Number(searchParams.get("requestedAt") || 0);
+      const baselineRunAtMs = Number(searchParams.get("baselineRunAt") || 0);
+      if (!Number.isFinite(requestedAtMs) || requestedAtMs <= 0) {
+        return NextResponse.json({ error: "requestedAt required" }, { status: 400 });
+      }
+
+      const [runData, sessions, job] = await Promise.all([
+        gatewayCall<CronRunsResult>(
+          "cron.runs",
+          { scope: "job", id: jobId, limit: 20 },
+          10000,
+        ),
+        listCronSessions(),
+        getCronJobById(jobId),
+      ]);
+      const entries = Array.isArray(runData.entries) ? runData.entries : [];
+      const completedRun = selectTriggeredCronRun(entries, requestedAtMs, baselineRunAtMs);
+      const cronSessions = sessions.filter((session) => sessionBelongsToCron(session, jobId));
+      const activeSession = cronSessions.find((session) => session.hasActiveRun);
+      const cronReportsRunning = Boolean(
+        job?.state.runningAtMs || job?.state.lastStatus === "running",
+      );
+      const transcriptKey = activeSession?.key || completedRun?.sessionKey;
+
+      if (completedRun) {
+        const failed = cronRunFailed(completedRun);
+        const recordedOutput = cronRunOutput(completedRun);
+        const transcript = recordedOutput ? "" : await readCronTranscript(transcriptKey);
+        return NextResponse.json({
+          status: failed ? "error" : "done",
+          phase: failed ? "Run failed" : "Run completed",
+          output: cronRunOutput(completedRun, transcript),
+          sessionKey: completedRun.sessionKey || transcriptKey || null,
+          run: completedRun,
+        });
+      }
+
+      const transcript = await readCronTranscript(activeSession?.key);
+      const diagnostics = transcript ? "" : await readCronLiveLog(jobId, requestedAtMs);
+      return NextResponse.json({
+        status: "running",
+        phase: activeSession
+          ? "Agent is working"
+          : cronReportsRunning
+            ? "Job is running"
+            : "Waiting for final run update",
+        output: transcript || diagnostics,
+        sessionKey: transcriptKey || null,
+        active: Boolean(activeSession),
+      });
+    }
+
     // Get the actual session output (agent transcript) for the latest run of a job
     if (action === "runOutput" && jobId) {
       const limit = searchParams.get("limit") || "5";
@@ -374,8 +416,23 @@ export async function GET(request: NextRequest) {
     }
 
     // Default: list all jobs
-    const data = await listCronJobs();
-    return NextResponse.json(filterUserVisibleCronJobs(data));
+    const [data, sessions] = await Promise.all([listCronJobs(), listCronSessions()]);
+    const activeSessions = sessions.filter((session) => session.hasActiveRun);
+    const withLiveState: CronList = {
+      jobs: (data.jobs || []).map((job) => {
+        const active = activeSessions.find((session) => sessionBelongsToCron(session, job.id));
+        if (!active) return job;
+        return {
+          ...job,
+          state: {
+            ...job.state,
+            isRunning: true,
+            runningStartedAtMs: epochMs(active.startedAt) || epochMs(active.updatedAt),
+          },
+        };
+      }),
+    };
+    return NextResponse.json(filterUserVisibleCronJobs(withLiveState));
   } catch (err) {
     const pairing = pairingRequiredResponse(err);
     if (pairing) return pairing;
@@ -426,6 +483,8 @@ export async function POST(request: NextRequest) {
           action: ok ? "triggered" : "failed",
           id,
           output,
+          requestedAtMs: Date.now(),
+          alreadyRunning: Boolean(result.alreadyRunning),
           ...(ok ? {} : { error: output }),
         });
       }
@@ -459,6 +518,10 @@ export async function POST(request: NextRequest) {
         }
         if (nextPayload) patch.payload = nextPayload;
 
+        if (nextPayload?.kind === "agentTurn") {
+          patch.payload = injectCronPayloadAwareness(nextPayload);
+        }
+
         if (params.cron !== undefined) {
           patch.schedule = {
             kind: "cron",
@@ -489,7 +552,7 @@ export async function POST(request: NextRequest) {
           hasOwn(params, "to") ||
           hasOwn(params, "bestEffort")
         ) {
-          patch.delivery = buildDeliveryConfig(params, current.delivery);
+          patch.delivery = buildCronDeliveryConfig(params, current.delivery);
         }
 
         await gatewayCall("cron.update", { id, patch }, 10000);
@@ -536,15 +599,15 @@ export async function POST(request: NextRequest) {
             text: String(params.message || ""),
           };
         } else {
-          payload = {
+          payload = injectCronPayloadAwareness({
             kind: "agentTurn",
             message: String(params.message || ""),
             ...(params.model ? { model: String(params.model) } : {}),
             ...(params.thinking ? { thinking: String(params.thinking) } : {}),
-          };
+          });
         }
 
-        const delivery = buildDeliveryConfig(params);
+        const delivery = buildCronDeliveryConfig(params);
 
         const created = await gatewayCall<Record<string, unknown>>(
           "cron.add",

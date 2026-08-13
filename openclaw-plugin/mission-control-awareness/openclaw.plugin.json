@@ -1,0 +1,13 @@
+{
+  "id": "mission-control-awareness",
+  "name": "Mission Control Awareness",
+  "description": "Adds durable clarification behavior to OpenClaw background work.",
+  "version": "0.1.0",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

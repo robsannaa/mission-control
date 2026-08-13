@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo, useSyncExternalStore } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import {
   Search,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/time-format-preference";
 
 type LogEntry = {
+  anchor: string;
   line: number;
   time: string;
   timeMs: number;
@@ -116,6 +118,12 @@ function formatLogDate(time: string): string {
 }
 
 export function LogsView() {
+  const searchParams = useSearchParams();
+  const targetAnchor = searchParams.get("anchor") || "";
+  const targetTime = Number(searchParams.get("time") || 0);
+  const targetSource = searchParams.get("source") || "";
+  const targetSignature = `${targetAnchor}|${targetTime}|${targetSource}`;
+  const hasLogTarget = Boolean(targetAnchor || targetTime);
   const timeFormat = useSyncExternalStore(
     subscribeTimeFormatPreference,
     getTimeFormatSnapshot,
@@ -131,9 +139,11 @@ export function LogsView() {
   const [sourceFilter, setSourceFilter] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [limit, setLimit] = useState(200);
+  const [autoScroll, setAutoScroll] = useState(!hasLogTarget);
+  const [limit, setLimit] = useState(hasLogTarget ? 1000 : 200);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const scrolledTargetRef = useRef("");
 
   // Debounce search: only update debouncedSearch 300ms after the user stops typing
   useEffect(() => {
@@ -143,7 +153,8 @@ export function LogsView() {
 
   const fetchLogs = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ limit: String(limit) });
+      const requestedLimit = hasLogTarget ? Math.max(limit, 1000) : limit;
+      const params = new URLSearchParams({ limit: String(requestedLimit) });
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (sourceFilter) params.set("source", sourceFilter);
       if (levelFilter) params.set("level", levelFilter);
@@ -156,17 +167,17 @@ export function LogsView() {
     } catch {
       setLoading(false);
     }
-  }, [limit, debouncedSearch, sourceFilter, levelFilter]);
+  }, [limit, hasLogTarget, debouncedSearch, sourceFilter, levelFilter]);
 
   // Initial fetch + auto-refresh every 10s (paused when autoRefresh is off)
   useSmartPoll(fetchLogs, { intervalMs: 10000, enabled: autoRefresh });
 
   // Auto-scroll to bottom when new entries arrive
   useEffect(() => {
-    if (autoScroll && scrollRef.current) {
+    if (autoScroll && !hasLogTarget && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [entries, autoScroll]);
+  }, [entries, autoScroll, hasLogTarget]);
 
   // Detect manual scroll to disable auto-scroll
   const handleScroll = useCallback(() => {
@@ -190,6 +201,33 @@ export function LogsView() {
     () => [...entries].reverse(),
     [entries]
   );
+
+  const targetEntry = useMemo(() => {
+    if (!hasLogTarget) return null;
+    if (targetAnchor) {
+      const exact = displayEntries.find((entry) => entry.anchor === targetAnchor);
+      if (exact) return exact;
+    }
+    if (!targetTime) return null;
+    const matchingSource = targetSource.toLocaleLowerCase();
+    return displayEntries
+      .filter((entry) => !matchingSource || entry.source.toLocaleLowerCase() === matchingSource)
+      .map((entry) => ({ entry, distance: Math.abs(entry.timeMs - targetTime) }))
+      .filter(({ distance }) => distance <= 2_000)
+      .sort((left, right) => left.distance - right.distance)[0]?.entry || null;
+  }, [displayEntries, hasLogTarget, targetAnchor, targetSource, targetTime]);
+
+  useEffect(() => {
+    if (!targetEntry || scrolledTargetRef.current === targetSignature) return;
+    const row = rowRefs.current.get(targetEntry.anchor);
+    if (!row) return;
+    scrolledTargetRef.current = targetSignature;
+    const frame = window.requestAnimationFrame(() => {
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+      row.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [targetEntry, targetSignature]);
 
   const downloadLogs = useCallback(() => {
     const blob = new Blob([JSON.stringify(displayEntries, null, 2)], { type: "application/json" });
@@ -411,6 +449,7 @@ export function LogsView() {
             {displayEntries.map((entry, i) => {
               const style = LEVEL_STYLES[entry.level] || LEVEL_STYLES.info;
               const LevelIcon = style.icon;
+              const isTargeted = targetEntry?.anchor === entry.anchor;
               // Show date separator
               const prevEntry = i > 0 ? displayEntries[i - 1] : null;
               const showDate =
@@ -431,9 +470,17 @@ export function LogsView() {
                     </div>
                   )}
                     <div
+                      ref={(node) => {
+                        if (node) rowRefs.current.set(entry.anchor, node);
+                        else rowRefs.current.delete(entry.anchor);
+                      }}
+                      tabIndex={isTargeted ? -1 : undefined}
+                      aria-current={isTargeted ? "true" : undefined}
+                      data-log-anchor={entry.anchor}
                       className={cn(
-                        "group flex items-start gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-accent",
-                        style.rowClass
+                        "group flex scroll-m-8 items-start gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-accent focus:outline-none",
+                        style.rowClass,
+                        isTargeted && "relative z-[1] bg-accent ring-2 ring-inset ring-ring shadow-sm"
                       )}
                     >
                     <span className="w-16 shrink-0 text-fg-subtle dark:text-muted-foreground">

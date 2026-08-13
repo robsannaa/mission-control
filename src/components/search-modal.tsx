@@ -97,7 +97,7 @@ const ALL_QUICK_ACTIONS: QuickAction[] = [
   { id: "models", label: "Models", group: "Agents", href: "/agents?tab=models", icon: Cpu, keywords: ["llm", "ai", "gpt", "claude"] },
   { id: "skills", label: "Skills", group: "Agents", href: "/skills", icon: Wrench, keywords: ["tools", "capabilities"] },
   { id: "clawhub", label: "Marketplace", group: "Agents", href: "/skills?tab=clawhub", icon: Package, keywords: ["marketplace", "store", "plugins", "clawhub"] },
-  { id: "cron", label: "Scheduled Tasks", group: "Agents", href: "/cron", icon: Clock, keywords: ["schedule", "timer", "recurring", "cron", "cron jobs"] },
+  { id: "cron", label: "Cron Jobs", group: "Agents", href: "/cron", icon: Clock, keywords: ["schedule", "scheduled tasks", "timer", "recurring", "cron", "cron jobs"] },
   { id: "heartbeat", label: "Heartbeat", group: "Agents", href: "/heartbeat", icon: Heart, keywords: ["pulse", "keep-alive", "recurring"] },
 
   { id: "memory", label: "Memory", group: "Knowledge", href: "/memory", icon: Brain, keywords: ["knowledge", "notes", "journal"] },
@@ -439,15 +439,7 @@ export function SearchModal({ open, onClose }: Props) {
         <div className="overflow-hidden rounded-2xl border border-foreground/10 bg-card shadow-2xl shadow-black/50">
           {/* Search input */}
           <div className="flex min-w-0 items-center gap-3 border-b border-foreground/10 px-4 py-3 sm:px-6">
-            {loading ? (
-              <span className="inline-flex shrink-0 items-center gap-0.5">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
-              </span>
-            ) : (
-              <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
-            )}
+            <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
             <input
               ref={inputRef}
               value={query}

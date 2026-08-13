@@ -594,7 +594,7 @@ function GatewayStatusBadge({
 
       {/* Popover */}
       {showPopover && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl backdrop-blur-sm animate-enter">
+        <div className="absolute left-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-popover shadow-2xl animate-enter">
           {/* Header */}
           <div className={cn("flex items-center gap-2.5 px-3.5 py-3 border-b border-border", cfg.bg)}>
             <Icon className={cn("h-3.5 w-3.5", cfg.text, status === "loading" && "animate-pulse")} />
@@ -695,7 +695,7 @@ export function Header() {
 
   return (
     <>
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-surface-header px-4 py-3 text-xs backdrop-blur-md md:px-8">
+      <header className="relative z-40 flex shrink-0 items-center justify-between border-b border-border bg-surface-header px-4 py-3 text-xs backdrop-blur-md md:px-8">
         <div className="flex items-center gap-2 ml-11 md:ml-0">
           <GatewayStatusBadge status={gwStatus} health={gwHealth} latencyMs={gwLatencyMs} />
         </div>

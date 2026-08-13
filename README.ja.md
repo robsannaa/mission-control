@@ -1,121 +1,128 @@
-![Mission Control — OpenClaw GUI と AI エージェントダッシュボード](cover.png)
+![Mission Control — AI エージェント Harness とダッシュボード](cover.png)
 
 # Mission Control（ミッションコントロール）
 
 [English](README.md) | [中文](README.zh-CN.md) | **日本語**
 
-**[OpenClaw](https://github.com/openclaw) の司令塔。すべてを見て、すべてを操る、ひとつの画面から。**
+**AI エージェントの艦隊を、ひとつの画面から動かすための harness。すべてを見て、すべてを差配する。全部あなたのマシン上で。**
 
-AI エージェントをリアルタイムで監視。チャットで対話。ジョブをスケジュール。コストを追跡。メモリを管理。すべてブラウザで、すべてあなたのマシン上で。
+私はエージェントを大量に、同時に走らせています。1体はコードを書き、1体はリサーチを掘り、1体は受信箱を見張り、あとの数体は朝に投げた仕事をこなしている。2〜3体を超えると、ターミナルはもう使える UI ではなくなります。だから自分用の harness を作りました。それがこれです。
 
-## ⚡ AI エージェントにインストールさせる —— コピー、ペースト、完了
+Mission Control はその艦隊の上に立つコントロールプレーンです。エージェントが働く様子をリアルタイムで眺め、タスクを渡して自分で拾わせ、サブエージェントを立ち上げて展開し、かかったコストを見て、全体を健全に保つ。ローカルで動き、下では [OpenClaw](https://github.com/openclaw) をエンジンとして駆動します。
 
-Claude Code・Codex・OpenClaw 本体を使っていますか？以下を貼り付ければ、あとはエージェントがやってくれます：
+## ⚡ エージェントに渡してインストールさせる
+
+今どき手作業でインストールなんてしません。Claude Code、Codex、あるいは普段使っている何かを下のテキストに向ければ、あとは全部やってくれます：
 
 ```text
-このマシンに Mission Control（OpenClaw のダッシュボード）をインストールして。
+Install Mission Control, the dashboard for OpenClaw, on this machine.
 
-1. 前提確認：`node --version` は 20 以上、`openclaw --version` が動くこと。
-   OpenClaw が未インストールなら、まず https://docs.openclaw.ai/install に
-   従ってインストールと初期設定を完了させる。
-2. インストール：
+1. Check prerequisites: `node --version` must be >= 20, and `openclaw --version`
+   must work. If OpenClaw is missing, install it first per
+   https://docs.openclaw.ai/install and complete its onboarding.
+2. Install:
      cd ~/.openclaw
      git clone https://github.com/robsannaa/openclaw-mission-control.git
      cd openclaw-mission-control
      ./setup.sh
-   （setup.sh は失敗しても安全に再実行できる。）
-3. ポート 3333 が使用中なら：PORT=3344 ./setup.sh
-4. 検証：`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3333`
-   が 200 を出力すること（選んだポートで確認）。
-5. このチェックが通るまで終了しないこと。完了したら、開くべき URL と
-   バックグラウンドサービスの登録方式（launchd/systemd/nohup）を報告して。
+   (setup.sh is safe to re-run if anything fails.)
+3. If port 3333 is already taken, re-run as: PORT=3344 ./setup.sh
+4. Verify it works: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3333`
+   must print 200 (use the port you chose).
+5. Do not finish until that check passes, then tell me the exact URL to open
+   and how the background service was registered (launchd/systemd/nohup).
 ```
 
-## 気に入ったら、コーヒー（または Claude Code サブスク）をおごってください！
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
+この多くは、これが動かしているエージェント自身が書いたものです。それこそが狙いです。
+
+## よければ支援してください。Claude Code のサブスクを奢ってくれると嬉しいです！
+[![Buy Me a Claude Code Subscription!](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
+
+[![AI Agent Harness](https://img.shields.io/badge/AI_Agent-Harness-7c3aed?style=flat-square)](https://github.com/robsannaa/openclaw-mission-control) ![Self-Hosted](https://img.shields.io/badge/Self--Hosted-Local_AI-f59e0b?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
 ---
 
-## なぜ Mission Control？
+## なぜ作ったのか
 
-**ターミナルの窓を行き来するのはもう終わり。** OpenClaw を使っているなら、その力はご存知のはず。Mission Control は全体像を映します —— エージェントが何をしているか、いくら使っているか、システムは健全か。すべてを一箇所で。
+エージェントが2〜3体を超えると、ボトルネックはモデルではなくあなた自身になります。ターミナルを行き来し、何が走っているか見失い、いくらかかったか分からなくなる。harness があればそれが解けます。エージェントを問題に向け、ボードに置き、あとは走らせたまま次に取りかかる。
 
-**データはあなたのマシンから出ません。** Mission Control は 100% ローカルで動作。クラウドなし、テレメトリなし、アカウント登録なし。すでにあなたのマシンで動いている OpenClaw を覗く「窓」にすぎません。
-
-**すぐに使えます。** インストールしてブラウザを開くだけ。Mission Control は OpenClaw 環境を自動検出 —— 設定ファイルもデータベース構築も不要です。
+harness が一番面白い部分になってはいけません。主役はエージェントです。Mission Control は彼らの背後に控えて邪魔をしないように作ってあります。世話するものもなく、同期するものもなく、壊れにくい。存在を忘れて、ただ出荷し続けられるべきです。
 
 ---
 
-## 「薄いレイヤー」の哲学
+## あえて薄く
 
-Mission Control は独立したプラットフォームでは**ありません**。あなたのデータを保存せず、「真実の情報源」になろうともしません。
+Mission Control はあなたのデータを保存せず、データベースも持たず、「真実の源」になろうともしません。下のエンジンへ直接、リアルタイムに読み書きします。ここで何かを変えれば即座に反映され、同期のステップも、古くなるキャッシュもありません。自前で持つ状態は、使用履歴とタスクボードという2つの小さなローカルファイルだけです。
 
-OpenClaw への**透明な窓**です。画面上のすべての数字とステータスは、稼働中の OpenClaw からリアルタイムで届きます。Mission Control で行った変更は、そのまま OpenClaw に反映されます —— 同期遅延も古いキャッシュもありません。（Mission Control 自身が持つのは、使用量履歴とカンバンボードというごく小さなローカルファイルのみ。OpenClaw データのコピーは一切持ちません。）
+だからこうなります：
 
-**あなたにとっての意味：**
-- **常に正確** —— 見えているものが、いま起きていること
-- **メンテナンス不要** —— DB マイグレーションもバックアップスクリプトも無し
-- **壊れようがない** —— Mission Control が落ちても、エージェントは動き続ける
+- **常に正確。** 見えているものが、まさに今走っているもの。
+- **メンテが退屈。** マイグレーションもバックアップもクリーンアップも無し。狙い通り。
+- **壊れにくい。** ダッシュボードが落ちても、エージェントは走り続ける。
+- **即座。** プロビジョニング不要、バージョン間のアップグレードも不要。
 
-車のダッシュボードと同じです。速度・燃料・エンジン状態を表示しますが、外しても車は走ります。
+ダッシュボードを外しても、艦隊は動き続けます。これはエンジンの上のガラスであって、エンジンそのものではありません。
 
 ---
 
 ## できること
 
-### ひと目で全体を把握
-**ダッシュボード**を開いた瞬間、ライブの全体像が見えます —— 稼働中のエージェント、ゲートウェイの健全性、実行中のクーロンジョブ、システムリソース（CPU・メモリ・ディスク）。
+### 艦隊の全体を見る
+**ダッシュボード**は開いた瞬間にライブの全体像を出します。どのエージェントが稼働中か、ゲートウェイの健全性、走っている cron ジョブ、システム負荷（CPU・メモリ・ディスク）。あちこちクリックせずとも、正常かどうか分かります。
 
-### エージェントと話す
-**チャット**でブラウザから直接エージェントと会話。ファイル添付、モデル選択、ストリーミング応答。エージェントを切り替えてもコンテキストは失われません。
+### どのエージェントとも話す
+**チャット**はブラウザ内で任意のエージェントとの本物の会話です。ファイルを添付し、モデルを選び、返答をストリームし、コンテキストを失わずに切り替える。`/` でコマンド、`@` でファイルを引き込む。
 
-### 仕事を視覚的に整理
-**タスク**は内蔵カンバンボード（Backlog / In Progress / Review / Done）。カードをドラッグして進捗を管理。
+### エージェントを仕事に向け、進むのを見る
+**タスク**はボード（バックログ／進行中／レビュー／完了）ですが、カードは付箋ではなく、エージェントが実際に走らせる仕事です。放り込めばエージェントが拾い、「完了」まで横断していくのを眺める。「エージェントを数体、問題に向けて放つ」が、目に見える形になります。
 
-### 何でもスケジュール
-**クーロンジョブ**で「毎朝受信箱を要約」のような定期タスクを設定。作成・編集・一時停止・テスト、実行履歴も完備。
+### いない間もエージェントを働かせる
+**Cron ジョブ**はエージェントをスケジュールで動かします。毎朝、受信箱を要約。1時間ごとに更新を確認。作成・編集・一時停止・テストができ、完全な実行履歴で昨夜何が起きたか正確に分かります。
 
-### コストを把握
-**使用量**がすべてのモデル・エージェントのトークンを追跡。グラフでコストの内訳を表示、予算を溶かしているエージェントがすぐ分かります。
+### チームを指揮する
+**エージェント**は階層全体をライブな組織図として見せます。各エージェントとサブエージェント、誰が稼働中か、どのチャンネルにいるか、どのワークスペースか。新しいサブエージェントをその場で立ち上げ、展開できます。
 
-### エージェントチームの管理
-**エージェント**は組織図として全エージェントを表示 —— 誰がアクティブか、どのチャネルに接続しているか。サブエージェントの起動・停止もその場で。
+### コストをトークン単位で知る
+**使用量**はモデルごと・エージェントごとの全トークンを追跡します。コスト内訳、予算を食っているエージェント、お金の行き先。スプレッドシートではなくチャートで。
 
-### メモリを鋭く保つ
-**メモリ**で長期記憶と日誌を表示・編集。**ベクトル検索**でセマンティックメモリを瞬時に検索。
+### 記憶を鋭く保つ
+**メモリ**で長期記憶と日次ジャーナルを閲覧・編集。**ベクター検索**でセマンティック記憶の中身を即座に見つけます。
 
-### モデルとキーの管理
-**モデル**で利用可能な AI モデル、プロバイダー認証、フォールバックチェーン、エージェントごとのモデル切り替えを一元管理。設定ファイルの手編集は不要。
+### モデルとキーを掌握する
+**モデル**は一箇所で、利用可能な全モデルの確認、プロバイダー認証情報の設定、フォールバックチェーンの構成、エージェントごとの切り替えを行います。設定ファイルの手編集は不要。
 
-### 健全性の監視
-**ドクター**が診断を実行し、問題箇所をワンクリック修正付きで表示。**ゲートウェイ**の状態は常に見えます。
+### 艦隊を健全に保つ
+**Doctor** が診断を走らせ、何が健全で何に注意が必要かを示し、よくある問題はワンクリックで修正。**ゲートウェイ**のステータスは常時表示され、接続状態が一目で分かります。
 
-### 内蔵ターミナル
-**ターミナル**はダッシュボード内のフル機能コマンドライン —— 複数タブ、カラー対応。
+### シェルに入る
+**ターミナル**はダッシュボード内のフル機能コマンドライン。複数タブ、カラー対応、ウィンドウ切り替え不要。
 
-### メッセージングとつながる
-**チャネル**で Telegram・Discord・WhatsApp・Signal・Slack との接続を設定。QR コードペアリング対応。
+### すでにいる場所でエージェントに届く
+**チャンネル**でエージェントを Telegram・Discord・WhatsApp・Signal・Slack に接続。対応する場所では QR ペアリングで。
 
-### ファイルを閲覧
-**ドキュメント**でワークスペースの全ファイルを閲覧。**検索**（`Cmd+K`）で即座にセマンティック検索。
+### 触れたものすべてを閲覧
+**ドキュメント**で各エージェントのワークスペースファイルを探索。**検索**（`Cmd+K`）で全体をまたぐ即時セマンティック検索。
 
-### セキュリティ
-**セキュリティ**が設定を監査して問題を指摘。**権限**でエージェントの実行可能な操作を制御。**アカウントとキー**で認証情報を一元管理。
+### 常に主導権を
+**セキュリティ**が設定を監査し問題を洗い出す。**権限**でエージェントが実行してよいことを制御。**アカウントとキー**で全認証情報を一箇所に、適切なマスキングつきで管理。
 
-### リモートから
-**Tailscale** 統合で、どこからでも安全にダッシュボードとエージェントへアクセス。
+### どこからでも動かす
+**Tailscale** 連携で、どのマシンからでもダッシュボードとエージェントに安全にアクセス。トンネル制御も内蔵。
 
-### クラッシュに強い
-すべてのセクションが**エラーバウンダリ**で保護 —— ひとつのビューに問題が起きても、他は動き続けます。
+### 一部が落ちても、全部は落ちない
+各セクションは**エラーバウンダリ**で包まれています。1つのビューが壊れても、残りは走り続けます。再試行を押せば戻り、ページ全体の再読み込みは不要です。
 
 ---
 
 ## クイックスタート
 
-### 1. OpenClaw のインストールを確認
+### 1. エンジンが入っているか確認
 
 ```bash
+# Install OpenClaw if you haven't already
 curl -fsSL https://openclaw.ai/install.sh | bash
+
+# Verify it's running
 openclaw --version
 ```
 
@@ -128,85 +135,94 @@ cd openclaw-mission-control
 ./setup.sh
 ```
 
-以上です。ブラウザで `http://localhost:3333` を開いてください。
+これだけ。`http://localhost:3333` を開きます。
 
 **その他の起動方法：**
 
 ```bash
-# ポートを変更
+# Change the port
 PORT=8080 ./setup.sh
 
-# 開発モード（バックグラウンドサービスなし）
+# Development mode (no background service)
 ./setup.sh --dev --no-service
 
-# 手動モード
+# Manual mode
 npm install && npm run dev
 ```
 
-> **設定ゼロ。** Mission Control は `~/.openclaw` ディレクトリと `openclaw` コマンドを自動検出します。
+> **設定ゼロ。** `~/.openclaw` ディレクトリと `openclaw` バイナリを自分で見つけます。セットアップ不要。
 
-### エージェントにインストールさせる
+### あるいは、エージェントに任せる
 
-すでに OpenClaw エージェントと話していますか？こう頼むだけ：
+すでにエージェントと話している？そのまま渡してください：
 
 ```
-Mission Control をインストールして。リポジトリはここ：
+Hey, install Mission Control for me — here's the repo:
 https://github.com/robsannaa/openclaw-mission-control
 ```
+
+クローンして、依存関係を入れて、起動までやってくれます。
 
 ---
 
 ## リモートアクセス
 
-OpenClaw をサーバーで動かしている場合、SSH トンネルでアクセス：
+サーバーで動かしている？SSH トンネルでノートPCから届きます：
 
 ```bash
 ssh -N -L 3333:127.0.0.1:3333 user@your-server
 ```
 
-ローカルで `http://localhost:3333` を開きます。
+そのうえでローカルで `http://localhost:3333` を開きます。
 
 ---
 
 ## 環境変数（任意）
 
-すべて自動検出されますが、必要なら上書きできます：
+すべて自動検出されます。必要なら上書きしてください：
 
-| 変数 | デフォルト | 説明 |
+| 変数 | デフォルト | 役割 |
 |---|---|---|
-| `OPENCLAW_HOME` | `~/.openclaw` | OpenClaw データの場所 |
+| `OPENCLAW_HOME` | `~/.openclaw` | エージェントデータの場所 |
 | `OPENCLAW_BIN` | 自動検出 | `openclaw` コマンドのパス |
-| `OPENCLAW_WORKSPACE` | 自動検出 | デフォルトワークスペース |
-| `OPENCLAW_TRANSPORT` | `auto` | ゲートウェイ接続方式：`auto`・`http`・`cli` |
-| `OPENCLAW_GATEWAY_URL` | `http://127.0.0.1:18789` | ゲートウェイアドレス（リモート構成用） |
-| `OPENCLAW_GATEWAY_TOKEN` | _（空）_ | ゲートウェイ HTTP 認証トークン |
+| `OPENCLAW_WORKSPACE` | 自動検出 | デフォルトのワークスペースフォルダ |
+| `OPENCLAW_TRANSPORT` | `auto` | ゲートウェイへの接続方法：`auto`、`http`、`cli` |
+| `OPENCLAW_GATEWAY_URL` | `http://127.0.0.1:18789` | ゲートウェイのアドレス（リモート構成用） |
+| `OPENCLAW_GATEWAY_TOKEN` | _（空）_ | 認証付き HTTP アクセス用の Bearer トークン |
+| `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS` | _（未設定）_ | `1` にすると CLI がプライベート／自己署名の WebSocket エンドポイント（例：ローカルゲートウェイの `ws://`）へ接続できます。Mission Control は CLI 呼び出し時にこれを設定します。挙動を変えたい場合のみ上書きしてください。 |
 
 ---
 
 ## FAQ
 
 <details>
-<summary><strong>「OpenClaw not found」と表示されたら？</strong></summary>
+<summary><strong>「OpenClaw not found」と出たら？</strong></summary>
 
-まずターミナルで `openclaw --version` が動くことを確認。動くのにダッシュボードがエラーを出す場合は、パスを直接指定：
+まずターミナルで `openclaw` コマンドが動くか確認：
+
+```bash
+openclaw --version
+```
+
+動くのにダッシュボードが文句を言うなら、直接パスを指定：
 
 ```bash
 OPENCLAW_BIN=$(which openclaw) npm run dev
 ```
 
-OpenClaw 未インストールなら[こちらから](https://docs.openclaw.ai/install)。
+未インストールなら、[こちらから](https://docs.openclaw.ai/install)。
 </details>
 
 <details>
-<summary><strong>データはどこかに送信されますか？</strong></summary>
+<summary><strong>データはどこかに送られますか？</strong></summary>
 
-Mission Control 自身は何も送信しません —— 統計もトラッキングもなし。ネットワーク通信は、あなたが設定したものだけ：OpenClaw ゲートウェイと、あなたが選んだ AI モデルプロバイダー（完全ローカルモデルも選択可）。
+いいえ。Mission Control は何も送りません。解析なし、トラッキングなし、ホームへの通信なし。ネットワーク通信はあなたが構成したものだけ：あなたのゲートウェイと、あなたが設定したモデルプロバイダー（完全ローカルのモデルを含め、あなたが選びます）。
 </details>
 
 <details>
-<summary><strong>複数の OpenClaw 環境で使えますか？</strong></summary>
+<summary><strong>複数のセットアップを扱えますか？</strong></summary>
 
-はい、別のインストールを指定するだけ：
+はい。別のインストールを指すだけ：
 
 ```bash
 OPENCLAW_HOME=/path/to/other/.openclaw npm run dev -- --port 3001
@@ -215,6 +231,8 @@ OPENCLAW_HOME=/path/to/other/.openclaw npm run dev -- --port 3001
 
 <details>
 <summary><strong>ポートが使用中？</strong></summary>
+
+別のポートを選んでください：
 
 ```bash
 npm run dev -- --port 8080
@@ -225,7 +243,7 @@ npm run dev -- --port 8080
 
 ## コントリビュート
 
-Pull Request 歓迎。バグや提案は [issue へ](https://github.com/robsannaa/openclaw-mission-control/issues)。
+プルリクエスト歓迎。バグやアイデアがあれば、[Issue を立ててください](https://github.com/robsannaa/openclaw-mission-control/issues)。
 
 ---
 

@@ -125,6 +125,10 @@ const GBrainView = dynamic(
   () => import("@/components/gbrain-view").then((m) => m.GBrainView),
   { loading: () => <SectionLoading /> }
 );
+const QuestionsView = dynamic(
+  () => import("@/components/questions-view").then((m) => m.QuestionsView),
+  { loading: () => <SectionLoading /> }
+);
 
 const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
 
@@ -160,7 +164,8 @@ export type DashboardSection =
   | "activity"
   | "help"
   | "g-brain"
-  | "channels";
+  | "channels"
+  | "questions";
 
 function SectionContent({ section }: { section: DashboardSection }) {
   if (isAgentbayHosting && section === "tailscale") {
@@ -230,6 +235,8 @@ function SectionContent({ section }: { section: DashboardSection }) {
       return <ChannelsView />;
     case "g-brain":
       return <GBrainView />;
+    case "questions":
+      return <QuestionsView />;
     default:
       return <DashboardView />;
   }

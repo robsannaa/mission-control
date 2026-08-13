@@ -53,7 +53,7 @@ type CronJob = {
   schedule: { kind: string; expr?: string; everyMs?: number; tz?: string };
   sessionTarget?: string;
   wakeMode?: string;
-  payload: { kind: string; message?: string; model?: string };
+  payload: { kind: string; message?: string; model?: string; timeoutSeconds?: number };
   delivery: { mode: string; channel?: string; to?: string; bestEffort?: boolean };
   state: {
     nextRunAtMs?: number;
@@ -62,6 +62,9 @@ type CronJob = {
     lastDurationMs?: number;
     consecutiveErrors?: number;
     lastError?: string;
+    isRunning?: boolean;
+    runningStartedAtMs?: number;
+    runningAtMs?: number;
   };
 };
 
@@ -85,6 +88,10 @@ type RunOutputState = {
   status: "running" | "done" | "error";
   output: string;
   runStartedAtMs: number;
+  baselineRunAtMs: number;
+  phase: string;
+  sessionKey?: string;
+  timeoutAtMs: number;
 };
 
 type DeliveryMode = "announce" | "webhook" | "none";
@@ -232,42 +239,6 @@ function scheduleOptionLabel(opt: ScheduleOption, timeFormat: TimeFormatPreferen
   return opt.label;
 }
 
-const SESSION_OUTPUT_MARKER = "--- Session output ---";
-
-function splitSessionOutput(output: string): { prefix: string; session: string } {
-  const idx = output.indexOf(SESSION_OUTPUT_MARKER);
-  if (idx === -1) {
-    return { prefix: output.trimEnd(), session: "" };
-  }
-  return {
-    prefix: output.slice(0, idx).trimEnd(),
-    session: output.slice(idx + SESSION_OUTPUT_MARKER.length).trim(),
-  };
-}
-
-function mergeSessionOutput(existing: string, incoming: string): string {
-  const nextSession = incoming.trim();
-  if (!nextSession) return existing;
-
-  const { prefix, session: currentSession } = splitSessionOutput(existing);
-  const basePrefix = prefix ? `${prefix}\n\n` : "";
-
-  if (!currentSession) {
-    return `${basePrefix}${SESSION_OUTPUT_MARKER}\n\n${nextSession}`;
-  }
-  if (currentSession === nextSession || currentSession.includes(nextSession)) {
-    return existing;
-  }
-  if (nextSession.startsWith(currentSession)) {
-    const delta = nextSession.slice(currentSession.length);
-    if (!delta) return existing;
-    return `${existing}${delta}`;
-  }
-
-  // Session output changed shape; replace the session segment with latest text.
-  return `${basePrefix}${SESSION_OUTPUT_MARKER}\n\n${nextSession}`;
-}
-
 function normalizeDeliveryMode(value: string | null | undefined): DeliveryMode {
   const mode = String(value || "").trim().toLowerCase();
   if (mode === "announce" || mode === "webhook" || mode === "none") {
@@ -319,7 +290,7 @@ function getRecipientLabel(mode: DeliveryMode): string {
 
 function getRecipientPlaceholder(mode: DeliveryMode, channel: string): string {
   if (mode === "webhook") return "https://example.com/webhook";
-  if (!channel || channel === "last") return "Use the last active route or enter a target manually";
+  if (!channel || channel === "last") return "Enter a recipient ID, for example telegram:123456789";
   return CHANNEL_PLACEHOLDER[channel] || "channel:TARGET_ID";
 }
 
@@ -346,11 +317,8 @@ function getDeliveryNote(
   }
   if (!to.trim()) {
     return {
-      tone: "info",
-      message:
-        channel === "last" || !channel
-          ? "No explicit recipient set. OpenClaw will fall back to the last route when one is available."
-          : `No explicit recipient set. OpenClaw will use the ${channel} route context if one is available, or fall back to the last route.`,
+      tone: "warning",
+      message: "Choose a recipient. Telegram delivery requires the numeric chat ID.",
     };
   }
   return null;
@@ -886,7 +854,9 @@ function EditCronForm({
 
   const deliveryNote = getDeliveryNote(deliveryMode, channel, to);
   const saveDisabled =
-    saving || (deliveryMode === "webhook" && !isValidWebhookUrl(to.trim()));
+    saving ||
+    (deliveryMode === "announce" && !to.trim()) ||
+    (deliveryMode === "webhook" && !isValidWebhookUrl(to.trim()));
 
   return (
     <div className="border-t border-foreground/10 bg-card/70 px-4 py-4 space-y-4">
@@ -1128,6 +1098,8 @@ function EditCronForm({
                       } else {
                         setCustomTo(false);
                         setTo(v);
+                        const selected = knownTargets.find((target) => target.target === v);
+                        if (selected?.channel) setChannel(selected.channel);
                       }
                     }}
                     aria-label="Select recipient"
@@ -1531,6 +1503,7 @@ function CreateCronForm({
         return false;
       case 3: return message.trim().length > 0;
       case 4:
+        if (deliveryMode === "announce") return to.trim().length > 0;
         if (deliveryMode === "webhook") return isValidWebhookUrl(to.trim());
         return true;
       default: return true;
@@ -1628,12 +1601,17 @@ function CreateCronForm({
               <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Description <span className="font-normal normal-case">(optional)</span>
               </label>
-              <input
+              <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief description of what this job does..."
-                className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground outline-none focus:border-success-border"
+                rows={4}
+                aria-label="Job description"
+                placeholder="Explain the purpose, context, or expected outcome of this job..."
+                className="min-h-28 w-full resize-y rounded-lg border border-border bg-muted px-3 py-2.5 text-sm leading-5 text-foreground outline-none focus:border-success-border"
               />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                This helps you recognize the job. You will write the instructions the agent follows in Step 3.
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-muted-foreground">Agent</label>
@@ -1824,14 +1802,14 @@ function CreateCronForm({
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                rows={5}
+                rows={8}
                 aria-label={payloadKind === "agentTurn" ? "Agent Prompt" : "System Event Text"}
                 placeholder={
                   payloadKind === "agentTurn"
                     ? "e.g. Summarize the latest news and send me a brief update..."
                     : "e.g. Time to run the daily health check."
                 }
-                className="w-full resize-y rounded-lg border border-border bg-muted px-3 py-2.5 text-xs leading-5 text-foreground outline-none focus:border-success-border"
+                className="min-h-48 w-full resize-y rounded-lg border border-border bg-muted px-3 py-2.5 text-sm leading-6 text-foreground outline-none focus:border-success-border"
                 autoFocus
               />
             </div>
@@ -1972,7 +1950,12 @@ function CreateCronForm({
                       onChange={(e) => {
                         const v = e.target.value;
                         if (v === "__custom__") setCustomTo(true);
-                        else { setCustomTo(false); setTo(v); }
+                        else {
+                          setCustomTo(false);
+                          setTo(v);
+                          const selected = knownTargets.find((target) => target.target === v);
+                          if (selected?.channel) setChannel(selected.channel);
+                        }
                       }}
                       aria-label="Select recipient"
                       className="w-full rounded-lg border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-success-border"
@@ -2195,13 +2178,14 @@ export function CronView() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [runOutput, setRunOutput] = useState<Record<string, RunOutputState>>({});
   const [runOutputCollapsed, setRunOutputCollapsed] = useState<
     Record<string, boolean>
   >({});
   const runOutputRef = useRef<HTMLPreElement | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const runPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runOutputStateRef = useRef<Record<string, RunOutputState>>({});
   const didAutoExpand = useRef(false);
   const didAutoFocusJob = useRef<string | null>(null);
 
@@ -2263,7 +2247,14 @@ export function CronView() {
 
   useEffect(() => {
     queueMicrotask(() => fetchJobs());
+    const timer = setInterval(() => fetchJobs(), 4_000);
+    return () => clearInterval(timer);
   }, [fetchJobs]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchRuns = useCallback(async (jobId: string) => {
     setRunsLoading(jobId);
@@ -2327,12 +2318,25 @@ export function CronView() {
   const doAction = useCallback(
     async (action: string, id: string, extra?: Record<string, unknown>): Promise<boolean> => {
       setActionLoading(`${action}-${id}`);
+      const selectedJob = jobs.find((job) => job.id === id);
       if (action === "run") {
         const startedAt = Date.now();
         setExpanded(id);
         setRunOutput((prev) => ({
           ...prev,
-          [id]: { status: "running", output: "", runStartedAtMs: startedAt },
+          [id]: {
+            status: "running",
+            output: "",
+            runStartedAtMs: startedAt,
+            baselineRunAtMs: selectedJob?.state.lastRunAtMs || 0,
+            phase: "Sending run request",
+            timeoutAtMs:
+              startedAt +
+              Math.max(
+                15 * 60_000,
+                (selectedJob?.payload.timeoutSeconds || 0) * 1000 + 60_000,
+              ),
+          },
         }));
         setRunOutputCollapsed((prev) => ({ ...prev, [id]: false }));
       }
@@ -2355,6 +2359,9 @@ export function CronView() {
                 status: "error",
                 output: initialOutput,
                 runStartedAtMs: prev[id]?.runStartedAtMs || runStartedAtMs,
+                baselineRunAtMs: prev[id]?.baselineRunAtMs || 0,
+                phase: "Run request failed",
+                timeoutAtMs: prev[id]?.timeoutAtMs || Date.now(),
               },
             }));
           } else {
@@ -2362,95 +2369,17 @@ export function CronView() {
               ...prev,
               [id]: {
                 status: "running",
-                output: initialOutput,
-                runStartedAtMs: prev[id]?.runStartedAtMs || runStartedAtMs,
+                output: "",
+                runStartedAtMs: data.alreadyRunning
+                  ? (selectedJob?.state.lastRunAtMs || 0) + 1
+                  : prev[id]?.runStartedAtMs || runStartedAtMs,
+                baselineRunAtMs: prev[id]?.baselineRunAtMs || 0,
+                phase: data.alreadyRunning
+                  ? "Following the run already in progress"
+                  : "Waiting for OpenClaw worker",
+                timeoutAtMs: prev[id]?.timeoutAtMs || Date.now() + 15 * 60_000,
               },
             }));
-            // Poll for actual run result so we show error when the job fails, not just "launch" success
-            const pollStarted = Date.now();
-            const POLL_INTERVAL_MS = 2000;
-            const POLL_MAX_MS = 60000;
-            const poll = async () => {
-              try {
-                const r = await fetch("/api/cron");
-                const listData = await r.json();
-                const jobList = Array.isArray(listData.jobs) ? listData.jobs as CronJob[] : [];
-                const job = jobList.find((j) => j.id === id);
-                const lastRunAtMs = job?.state?.lastRunAtMs;
-                const lastStatus = job?.state?.lastStatus;
-                const lastError = job?.state?.lastError;
-                if (lastRunAtMs != null && lastRunAtMs >= runStartedAtMs - 2000) {
-                  const isError = lastStatus === "error";
-                  setRunOutput((prev) => {
-                    const cur = prev[id];
-                    if (!cur || cur.status !== "running") return prev;
-                    const errText = (lastError && String(lastError).trim()) || "Run failed.";
-                    return {
-                      ...prev,
-                      [id]: {
-                        ...cur,
-                        status: isError ? "error" : "done",
-                        output: isError ? (cur.output ? `${cur.output}\n\n${errText}` : errText) : cur.output,
-                      },
-                    };
-                  });
-                  if (runPollTimerRef.current) {
-                    clearTimeout(runPollTimerRef.current);
-                    runPollTimerRef.current = null;
-                  }
-                  return;
-                }
-              } catch {
-                /* ignore */
-              }
-              if (Date.now() - pollStarted < POLL_MAX_MS) {
-                runPollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-              } else {
-                setRunOutput((prev) => {
-                  const cur = prev[id];
-                  if (!cur || cur.status !== "running") return prev;
-                  return {
-                    ...prev,
-                    [id]: { ...cur, status: "done", output: (cur.output || "") + "\n\n(Status unknown — run may still be in progress.)" },
-                  };
-                });
-                runPollTimerRef.current = null;
-              }
-            };
-            runPollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-            // Poll for real session output (agent transcript)
-            // Jobs can take 15-30s+ to complete, so poll generously
-            const pollDelays = [3000, 6000, 10000, 15000, 20000, 30000, 45000, 60000];
-            pollDelays.forEach((delay) => {
-              setTimeout(async () => {
-                try {
-                  const r = await fetch(
-                    `/api/cron?action=runOutput&id=${encodeURIComponent(id)}`
-                  );
-                  const runData = await r.json();
-                  const sessionOutput =
-                    typeof runData.output === "string"
-                      ? runData.output.trim()
-                      : "";
-                  if (!sessionOutput) return;
-                  setRunOutput((prev) => {
-                    const cur = prev[id];
-                    if (!cur) return prev;
-                    const merged = mergeSessionOutput(cur.output, sessionOutput);
-                    if (merged === cur.output) return prev;
-                    return {
-                      ...prev,
-                      [id]: {
-                        ...cur,
-                        output: merged,
-                      },
-                    };
-                  });
-                } catch {
-                  /* ignore */
-                }
-              }, delay);
-            });
           }
         }
         if (data.ok) {
@@ -2479,6 +2408,9 @@ export function CronView() {
               status: "error",
               output: msg,
               runStartedAtMs: prev[id]?.runStartedAtMs || Date.now(),
+              baselineRunAtMs: prev[id]?.baselineRunAtMs || 0,
+              phase: "Run request failed",
+              timeoutAtMs: prev[id]?.timeoutAtMs || Date.now(),
             },
           }));
         }
@@ -2487,7 +2419,7 @@ export function CronView() {
       setActionLoading(null);
       return false;
     },
-    [fetchJobs, fetchRuns, flash]
+    [fetchJobs, fetchRuns, flash, jobs]
   );
 
   const clearRunOutput = useCallback((jobId: string) => {
@@ -2499,15 +2431,113 @@ export function CronView() {
     setRunOutputCollapsed((prev) => ({ ...prev, [jobId]: false }));
   }, []);
 
-  // Clear run-result poll timer on unmount
   useEffect(() => {
-    return () => {
-      if (runPollTimerRef.current) {
-        clearTimeout(runPollTimerRef.current);
-        runPollTimerRef.current = null;
-      }
+    runOutputStateRef.current = runOutput;
+  }, [runOutput]);
+
+  // Scheduled runs and runs started in another tab get the same live UI.
+  useEffect(() => {
+    queueMicrotask(() => {
+      setRunOutput((prev) => {
+        let next = prev;
+        for (const job of jobs) {
+          const gatewayRunning = Boolean(
+            job.state.isRunning || job.state.runningAtMs || job.state.lastStatus === "running",
+          );
+          if (!gatewayRunning || prev[job.id]) continue;
+          const startedAt =
+            job.state.runningStartedAtMs || job.state.runningAtMs || Date.now();
+          if (next === prev) next = { ...prev };
+          next[job.id] = {
+            status: "running",
+            output: "",
+            runStartedAtMs: startedAt,
+            baselineRunAtMs: job.state.lastRunAtMs || 0,
+            phase: "Agent is working",
+            timeoutAtMs: startedAt + 15 * 60_000,
+          };
+        }
+        return next;
+      });
+    });
+  }, [jobs]);
+
+  useEffect(() => {
+    let stopped = false;
+    let polling = false;
+    const pollRunningJobs = async () => {
+      if (polling) return;
+      polling = true;
+      const entries = Object.entries(runOutputStateRef.current).filter(
+        ([, run]) => run.status === "running",
+      );
+      await Promise.all(
+        entries.map(async ([id, run]) => {
+          if (Date.now() >= run.timeoutAtMs) {
+            setRunOutput((prev) => ({
+              ...prev,
+              [id]: {
+                ...prev[id],
+                status: "error",
+                phase: "Run status timed out",
+                output:
+                  prev[id]?.output ||
+                  "Mission Control could not confirm that this run finished. Check Run history or Logs for its final state.",
+              },
+            }));
+            return;
+          }
+          try {
+            const query = new URLSearchParams({
+              action: "runStatus",
+              id,
+              requestedAt: String(run.runStartedAtMs),
+              baselineRunAt: String(run.baselineRunAtMs),
+            });
+            const response = await fetch(`/api/cron?${query.toString()}`, {
+              cache: "no-store",
+            });
+            const snapshot = await response.json();
+            if (!response.ok || stopped) return;
+            const status = snapshot.status as RunOutputState["status"];
+            setRunOutput((prev) => {
+              const current = prev[id];
+              if (!current || current.status !== "running") return prev;
+              return {
+                ...prev,
+                [id]: {
+                  ...current,
+                  status,
+                  phase: String(snapshot.phase || "Agent is working"),
+                  output:
+                    typeof snapshot.output === "string" && snapshot.output.trim()
+                      ? snapshot.output.trim()
+                      : current.output,
+                  sessionKey:
+                    typeof snapshot.sessionKey === "string"
+                      ? snapshot.sessionKey
+                      : current.sessionKey,
+                },
+              };
+            });
+            if (status === "done" || status === "error") {
+              void fetchJobs();
+              void fetchRuns(id);
+            }
+          } catch {
+            // A transient gateway miss must not falsely mark a real run done.
+          }
+        }),
+      );
+      polling = false;
     };
-  }, []);
+    void pollRunningJobs();
+    const timer = setInterval(pollRunningJobs, 1_500);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [fetchJobs, fetchRuns]);
 
   // Auto-scroll run output to bottom when output updates
   useEffect(() => {
@@ -2680,11 +2710,16 @@ export function CronView() {
           const isFocusedFromLink = targetJobId === job.id;
           const st = job.state;
           const localRun = runOutput[job.id];
+          const isRunning =
+            localRun?.status === "running" ||
+            Boolean(st.isRunning || st.runningAtMs || st.lastStatus === "running");
           const localRunIsNewer =
             Boolean(localRun) &&
             (!st.lastRunAtMs || (localRun?.runStartedAtMs || 0) > st.lastRunAtMs);
           const effectiveStatus =
-            localRunIsNewer && localRun?.status === "done"
+            isRunning
+              ? "running"
+              : localRunIsNewer && localRun?.status === "done"
               ? "ok"
               : localRunIsNewer && localRun?.status === "error"
                 ? "error"
@@ -2745,6 +2780,11 @@ export function CronView() {
                         DISABLED
                       </span>
                     )}
+                    {isRunning && (
+                      <span className="inline-flex items-center rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success-fg">
+                        Running
+                      </span>
+                    )}
                     {delivery.hasIssue && (
                       <span className="flex items-center gap-0.5 rounded bg-warning-bg px-1.5 py-0.5 text-xs font-medium text-warning-fg">
                         <AlertTriangle className="h-2.5 w-2.5" />
@@ -2798,16 +2838,12 @@ export function CronView() {
                   <button
                     type="button"
                     onClick={() => doAction("run", job.id)}
-                    disabled={actionLoading === `run-${job.id}`}
+                    disabled={actionLoading === `run-${job.id}` || isRunning}
                     className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 dark:hover:bg-secondary"
                     title="Run now"
                   >
-                    {actionLoading === `run-${job.id}` ? (
-                      <span className="inline-flex items-center gap-0.5">
-                        <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                        <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                        <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                      </span>
+                    {actionLoading === `run-${job.id}` || isRunning ? (
+                      <InlineSpinner className="h-3.5 w-3.5" />
                     ) : (
                       <Play className="h-3.5 w-3.5" />
                     )}
@@ -2919,15 +2955,11 @@ export function CronView() {
                       >
                         <span className="flex items-center gap-1.5">
                           <Terminal className="h-3.5 w-3.5 text-success-fg" />
-                          Run output
+                          {runOutput[job.id].status === "running" ? "Live run log" : "Run output"}
                           {runOutput[job.id].status === "running" && (
                             <span className="flex items-center gap-1 text-success-fg">
-                              <span className="inline-flex items-center gap-0.5">
-                              <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                              <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                              <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                            </span>
-                              Running…
+                              <InlineSpinner className="h-3 w-3" />
+                              {runOutput[job.id].phase}
                             </span>
                           )}
                           {runOutput[job.id].status === "done" && (
@@ -2959,10 +2991,12 @@ export function CronView() {
                       {!runOutputCollapsed[job.id] && (
                         <pre
                           ref={job.id === expanded ? runOutputRef : undefined}
+                          aria-live="polite"
+                          aria-label="Live cron job output"
                           className="max-h-64 overflow-auto border-t border-border bg-card px-3 py-2.5 text-xs font-mono leading-relaxed text-foreground whitespace-pre-wrap break-words dark:bg-surface-inset"
                         >
                           {runOutput[job.id].status === "running" && !runOutput[job.id].output
-                            ? "Waiting for output…"
+                            ? `${runOutput[job.id].phase}…\n\nThe agent transcript will appear here as OpenClaw publishes it.`
                             : runOutput[job.id].output || "(no output)"}
                         </pre>
                       )}
@@ -3131,8 +3165,17 @@ export function CronView() {
                       </div>
                       <div className="rounded-lg border border-foreground/5 bg-muted/40 px-3 py-2 text-center">
                         <p className="text-xs text-muted-foreground">Duration</p>
-                        <p className="mt-0.5 text-xs font-medium text-foreground">
-                          {fmtDuration(st.lastDurationMs)}
+                        <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                          {isRunning && <InlineSpinner className="h-3 w-3 text-success-fg" />}
+                          {isRunning
+                            ? fmtDuration(
+                                clockNow -
+                                  (localRun?.runStartedAtMs ||
+                                    st.runningStartedAtMs ||
+                                    st.runningAtMs ||
+                                    clockNow),
+                              )
+                            : fmtDuration(st.lastDurationMs)}
                         </p>
                       </div>
                       <div
@@ -3149,12 +3192,20 @@ export function CronView() {
                             "mt-0.5 text-xs font-medium",
                             hasError
                               ? "text-danger-fg"
+                              : effectiveStatus === "running"
+                                ? "text-success-fg"
                               : effectiveStatus === "ok"
                                 ? "text-success-fg"
                                 : "text-muted-foreground"
                           )}
                         >
-                          {effectiveStatus || "—"}
+                          {effectiveStatus === "running" ? (
+                            <span className="inline-flex items-center gap-1">
+                              <InlineSpinner className="h-3 w-3" /> Running
+                            </span>
+                          ) : (
+                            effectiveStatus || "—"
+                          )}
                         </p>
                         {hasError && st.consecutiveErrors ? (
                           <p className="text-xs text-danger-fg">

@@ -17,6 +17,13 @@ export type GatewaySession = {
   thinkingLevel?: string | null;
   systemSent?: boolean | null;
   abortedLastRun?: boolean | null;
+  status?: string | null;
+  hasActiveRun?: boolean | null;
+  startedAt?: number | string | null;
+  endedAt?: number | string | null;
+  runtimeMs?: number | string | null;
+  estimatedCostUsd?: number | string | null;
+  lastActivityAt?: number | string | null;
   origin?: { label?: string | null } | null;
   [key: string]: unknown;
 };
@@ -46,6 +53,13 @@ export type NormalizedGatewaySession = {
   thinkingLevel?: string;
   systemSent: boolean;
   abortedLastRun: boolean;
+  status?: string;
+  hasActiveRun: boolean;
+  startedAt: number;
+  endedAt: number;
+  runtimeMs: number;
+  estimatedCostUsd: number | null;
+  lastActivityAt: number;
   originLabel?: string;
 };
 
@@ -128,6 +142,16 @@ function normalizeGatewaySession(
     thinkingLevel: session.thinkingLevel ? String(session.thinkingLevel) : undefined,
     systemSent: Boolean(session.systemSent),
     abortedLastRun: Boolean(session.abortedLastRun),
+    status: session.status ? String(session.status) : undefined,
+    hasActiveRun: Boolean(session.hasActiveRun),
+    startedAt: toEpochMs(session.startedAt),
+    endedAt: toEpochMs(session.endedAt),
+    runtimeMs: toNonNegativeNumber(session.runtimeMs),
+    estimatedCostUsd:
+      session.estimatedCostUsd === null || session.estimatedCostUsd === undefined
+        ? null
+        : toNonNegativeNumber(session.estimatedCostUsd),
+    lastActivityAt: toEpochMs(session.lastActivityAt),
     originLabel: session.origin?.label ? String(session.origin.label) : undefined,
   };
 }

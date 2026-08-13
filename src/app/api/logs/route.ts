@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { open, readdir, readFile, stat } from "fs/promises";
 import { join } from "path";
 import { getOpenClawHome } from "@/lib/paths";
+import { createLogAnchor } from "@/lib/log-anchor";
 
 const OPENCLAW_HOME = getOpenClawHome();
 const LOGS_DIR = join(OPENCLAW_HOME, "logs");
@@ -14,6 +15,7 @@ const TMP_LOG_CANDIDATES = [
 ];
 
 type LogEntry = {
+  anchor: string;
   line: number;
   time: string;
   timeMs: number; // UTC millis for correct sorting
@@ -115,6 +117,7 @@ function parseTslogLine(
     const message = parts.join(" ").trim() || levelName || "log entry";
 
     return {
+      anchor: createLogAnchor(raw),
       line: lineNum,
       time,
       timeMs: tsToMs(time),
@@ -161,6 +164,7 @@ function parseLines(
       const message = structMatch[3];
       const level = detectLevel(message, fileLevel);
       entries.push({
+        anchor: createLogAnchor(raw),
         line: i,
         time,
         timeMs: tsToMs(time),
@@ -180,6 +184,7 @@ function parseLines(
       const level = detectLevel(message, fileLevel);
       const source = fileLevel === "error" ? "system" : "agent";
       entries.push({
+        anchor: createLogAnchor(raw),
         line: i,
         time,
         timeMs: tsToMs(time),

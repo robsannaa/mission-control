@@ -65,6 +65,8 @@ import type {
   TaskRunResult,
   TaskRunSnapshot,
 } from "./task-engine-types";
+import { requestClarification } from "./awareness/engine";
+import { answerInteraction, listInteractions } from "./awareness/store";
 
 /* ── tuning ───────────────────────────────────────── */
 
@@ -899,6 +901,26 @@ async function finishCompleted(state: RunState): Promise<void> {
       askedFromColumn: askedFrom,
       askedAt: Date.now(),
     };
+    await requestClarification({
+      tenantId: "local",
+      userId: "owner",
+      agentId: state.agentId,
+      kind: "clarification",
+      title: `Task needs your input`,
+      question: verdict.question,
+      context: state.finalText,
+      reason: "The agent paused this task instead of guessing.",
+      source: {
+        kind: "task",
+        id: String(state.taskId),
+        label: `Task ${state.taskId}`,
+        runId: state.runId || undefined,
+        sessionKey: state.sessionKey,
+        agentId: state.agentId,
+        href: `/tasks?task=${state.taskId}`,
+      },
+      idempotencyKey: `task:${state.taskId}:${state.runId || state.sessionKey}:${state.turns}`,
+    }).catch(() => undefined);
     return;
   }
 
@@ -1436,6 +1458,17 @@ export async function answerTask(input: {
       },
     });
     if (!sent.ok) return { ok: false, status: 502, error: sent.error };
+
+    const pending = await listInteractions({ status: "active", sourceKind: "task", limit: 200 })
+      .catch(() => []);
+    const interaction = pending.find((item) => item.source.id === String(task.id));
+    if (interaction) {
+      await answerInteraction({
+        id: interaction.id,
+        answer: input.answer,
+        channel: "mission-control-task",
+      }).catch(() => undefined);
+    }
 
     return {
       ok: true,

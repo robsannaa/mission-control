@@ -19,6 +19,8 @@ export const dynamic = "force-dynamic";
 
 type Skill = {
   name: string;
+  skillKey?: string;
+  filePath?: string;
   description: string;
   emoji: string;
   eligible: boolean;
@@ -107,6 +109,8 @@ async function readSkillsFromFilesystem(): Promise<SkillsList> {
 
       skills.push({
         name: fm.name || entry.name,
+        skillKey: fm.name || entry.name,
+        filePath: skillPath,
         description: fm.description || "",
         emoji: fm.emoji || "",
         eligible: false, // Can't determine without CLI
@@ -140,6 +144,8 @@ async function readSkillsFromFilesystem(): Promise<SkillsList> {
 function toListSkill(row: SkillStatusRow): Skill {
   return {
     name: row.name,
+    skillKey: row.skillKey || row.name,
+    filePath: row.filePath,
     description: row.description,
     emoji: row.emoji || "",
     eligible: row.eligible,

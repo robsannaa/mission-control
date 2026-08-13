@@ -64,8 +64,20 @@ const KIND_LABELS: Record<string, string> = {
  */
 export function sessionKindOf(session: { kind?: string; key?: string }): string {
   const parts = (session.key ?? "").split(":");
-  // agent:<agentId>:<origin>:<id>
-  return parts[0] === "agent" && parts.length >= 4 ? parts[2] : "";
+  if (parts[0] !== "agent") return "";
+
+  // Most keys are agent:<agentId>:<origin>:<id>.
+  if (parts.length >= 4) return parts[2];
+
+  // OpenClaw's dashboard main session and Mission Control's main-agent task
+  // sessions are intentionally shorter. Keep these exact so an arbitrary
+  // three-segment channel key still fails closed.
+  if (parts.length === 3 && parts[2] === "main") return "main";
+  if (parts.length === 3 && /^task-\d+$/.test(parts[2])) {
+    return "mission-control";
+  }
+
+  return "";
 }
 
 export function classifySessionKind(kind: string): SessionKindInfo {

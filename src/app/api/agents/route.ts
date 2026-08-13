@@ -10,6 +10,11 @@ import {
   fetchConfig,
   extractBindings,
 } from "@/lib/gateway-config";
+import {
+  routeBindingLabel,
+  type AgentRouteBinding,
+  type ConfiguredTopologyChannel,
+} from "@/lib/agent-topology";
 
 const OPENCLAW_HOME = getOpenClawHome();
 export const dynamic = "force-dynamic";
@@ -59,10 +64,8 @@ type AgentsGetPayload = {
   owner: string | null;
   defaultModel: string;
   defaultFallbacks: string[];
-  configuredChannels: Array<{
-    channel: string;
-    enabled: boolean;
-  }>;
+  configuredChannels: ConfiguredTopologyChannel[];
+  routeBindings: AgentRouteBinding[];
 };
 
 let agentsCache: { payload: AgentsGetPayload; expiresAt: number; fetchedAt: number } | null = null;
@@ -83,15 +86,21 @@ function shortSubagentId(key: string, sessionId: string): string {
   return sessionId.slice(0, 8);
 }
 
-function connectedChannelsFromStatus(raw: unknown): Set<string> {
-  const out = new Set<string>();
+function connectedChannelAccountsFromStatus(raw: unknown): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  const markConnected = (channel: string, accountId: string) => {
+    if (!channel) return;
+    const accounts = out.get(channel) || new Set<string>();
+    accounts.add(accountId || "default");
+    out.set(channel, accounts);
+  };
   const obj = asRecord(raw);
   const channels = asRecord(obj.channels);
   for (const [channel, rowRaw] of Object.entries(channels)) {
     const row = asRecord(rowRaw);
     const probe = asRecord(row.probe);
     if (row.running === true || probe.ok === true) {
-      out.add(channel);
+      markConnected(channel, "default");
     }
   }
 
@@ -105,13 +114,71 @@ function connectedChannelsFromStatus(raw: unknown): Set<string> {
         entry.running === true ||
         probe.ok === true
       ) {
-        out.add(channel);
-        break;
+        const accountId = String(
+          entry.accountId || entry.id || entry.name || "default",
+        ).trim();
+        markConnected(channel, accountId);
       }
     }
   }
 
   return out;
+}
+
+function configuredChannelInventory(
+  rawChannels: Record<string, unknown>,
+  connected: Map<string, Set<string>>,
+  routeBindings: AgentRouteBinding[],
+): ConfiguredTopologyChannel[] {
+  const channelNames = new Set<string>([
+    ...Object.keys(rawChannels),
+    ...connected.keys(),
+    ...routeBindings.map((binding) => binding.channel),
+  ]);
+
+  return Array.from(channelNames)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .map((channel) => {
+      const channelCfg = asRecord(rawChannels[channel]);
+      const accountsCfg = asRecord(channelCfg.accounts);
+      const configuredAccountIds = Object.keys(accountsCfg);
+      const connectedAccountIds = Array.from(connected.get(channel) || []);
+      const bindingAccountIds = routeBindings
+        .filter((binding) => binding.channel === channel && binding.accountId !== "*")
+        .map((binding) => binding.accountId || "default");
+      const accountIds = Array.from(
+        new Set([
+          ...configuredAccountIds,
+          ...connectedAccountIds,
+          ...bindingAccountIds,
+          ...(configuredAccountIds.length === 0 ? ["default"] : []),
+        ]),
+      ).filter(Boolean);
+      const defaultAccount =
+        (typeof channelCfg.defaultAccount === "string" && channelCfg.defaultAccount.trim()) ||
+        (accountIds.includes("default") ? "default" : accountIds[0] || "default");
+      const channelEnabled = channelCfg.enabled !== false;
+      const connectedAccounts = connected.get(channel) || new Set<string>();
+
+      return {
+        channel,
+        enabled: channelEnabled,
+        connected: connectedAccounts.size > 0,
+        defaultAccount,
+        accounts: accountIds.map((id) => {
+          const accountCfg = asRecord(accountsCfg[id]);
+          return {
+            id,
+            name: typeof accountCfg.name === "string" ? accountCfg.name : undefined,
+            enabled: channelEnabled && accountCfg.enabled !== false,
+            connected:
+              connectedAccounts.has(id) ||
+              (id === defaultAccount && connectedAccounts.has("default")),
+          };
+        }),
+      };
+    });
 }
 
 async function readJsonSafe<T>(path: string, fallback: T): Promise<T> {
@@ -379,38 +446,49 @@ export async function GET() {
     const configBindings = configData
       ? extractBindings(configData)
       : ((config.bindings || []) as Record<string, unknown>[]).map((b) => {
-          const match = (b.match || {}) as Record<string, unknown>;
+          const match = asRecord(b.match);
+          const peer = asRecord(match.peer);
           return {
+            ...b,
             agentId: String(b.agentId || ""),
             match: {
               channel: String(match.channel || ""),
               accountId: typeof match.accountId === "string" ? match.accountId : undefined,
+              peer:
+                typeof peer.kind === "string" && typeof peer.id === "string"
+                  ? { kind: peer.kind, id: peer.id }
+                  : undefined,
+              guildId: typeof match.guildId === "string" ? match.guildId : undefined,
+              teamId: typeof match.teamId === "string" ? match.teamId : undefined,
+              roles: Array.isArray(match.roles)
+                ? match.roles.map((role) => String(role || "").trim()).filter(Boolean)
+                : undefined,
             },
           };
         });
-    for (const binding of configBindings) {
+    const routeBindings: AgentRouteBinding[] = [];
+    configBindings.forEach((binding, order) => {
       const agentId = (binding.agentId || discoveredDefaultAgentId).trim();
       const channel = binding.match.channel.trim();
-      const accountId = (binding.match.accountId || "").trim();
-      if (!channel) continue;
-      const label = accountId ? `${channel} accountId=${accountId}` : channel;
+      const accountId = (binding.match.accountId || "").trim() || null;
+      if (!channel) return;
+      const routeBinding: AgentRouteBinding = {
+        order,
+        type: typeof binding.type === "string" ? binding.type : "route",
+        agentId,
+        channel,
+        accountId,
+        peer: binding.match.peer,
+        guildId: binding.match.guildId,
+        teamId: binding.match.teamId,
+        roles: binding.match.roles,
+        comment: typeof binding.comment === "string" ? binding.comment : undefined,
+      };
+      routeBindings.push(routeBinding);
+      const label = routeBindingLabel(routeBinding);
       const existing = configBindingsByAgent.get(agentId) || [];
       if (!existing.includes(label)) existing.push(label);
       configBindingsByAgent.set(agentId, existing);
-    }
-
-    // Channels configured at instance level (whether bound or not).
-    const configuredChannels = Object.entries(
-      (config.channels || {}) as Record<string, unknown>
-    ).map(([channel, rawCfg]) => {
-      const channelCfg =
-        rawCfg && typeof rawCfg === "object"
-          ? (rawCfg as Record<string, unknown>)
-          : {};
-      return {
-        channel,
-        enabled: Boolean(channelCfg.enabled),
-      };
     });
 
     // Use gateway RPC for channel status (replaces CLI "channels status --probe")
@@ -419,7 +497,13 @@ export async function GET() {
       {},
       12000,
     ).catch(() => ({}));
-    const connectedChannels = connectedChannelsFromStatus(channelStatusRaw);
+    const connectedChannelAccounts = connectedChannelAccountsFromStatus(channelStatusRaw);
+    const configuredChannels = configuredChannelInventory(
+      (config.channels || {}) as Record<string, unknown>,
+      connectedChannelAccounts,
+      routeBindings,
+    );
+    const connectedChannels = new Set(connectedChannelAccounts.keys());
 
     // Build a lookup from merged config list.
     // Start with parsed entries, then layer resolved data on top for richer
@@ -663,6 +747,7 @@ export async function GET() {
       defaultModel: defaultPrimary,
       defaultFallbacks,
       configuredChannels,
+      routeBindings,
     };
     const writtenAt = Date.now();
     agentsCache = {
@@ -690,6 +775,7 @@ export async function GET() {
       defaultModel: "unknown",
       defaultFallbacks: [],
       configuredChannels: [],
+      routeBindings: [],
       stale: true,
     });
   }

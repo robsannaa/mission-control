@@ -6,8 +6,9 @@
  * to the `gbrain` binary (there is no gateway RPC for it — see
  * src/lib/gbrain.ts for the safety model: argv-only, first-token allowlist).
  *
- * Six surfaces, reached through one pill tab bar:
+ * Seven surfaces, reached through one pill tab bar:
  *  - Overview: health, category scores, brain stats, coverage.
+ *  - Graph: interactive typed relationships, with source-aware inspection.
  *  - Dreaming: the things the brain does on its own — the overnight Dream
  *    cycle (with a safe dry-run preview), Autopilot, and the Minions job queue.
  *  - Search: hybrid ask + keyword search, rendered as real result cards.
@@ -20,22 +21,24 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Cable, Compass, Moon, RefreshCw, Search as SearchIcon, Sparkles, SlidersHorizontal } from "lucide-react";
+import { Cable, Compass, Moon, Network, RefreshCw, Search as SearchIcon, Sparkles, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
 import { SegmentedControl } from "@/components/gbrain/primitives";
 import { OverviewTab } from "@/components/gbrain/overview-tab";
 import { DreamingTab } from "@/components/gbrain/dreaming-tab";
+import { GraphTab } from "@/components/gbrain/graph-tab";
 import { SearchTab } from "@/components/gbrain/search-tab";
 import { BrowseTab } from "@/components/gbrain/browse-tab";
 import { IntegrationTab } from "@/components/gbrain/integration-tab";
 import { ExploreTab } from "@/components/gbrain/explore-tab";
 import type { GbrainCommand, Overview } from "@/components/gbrain/types";
 
-type Tab = "overview" | "dreaming" | "search" | "browse" | "integration" | "explore";
+type Tab = "overview" | "graph" | "dreaming" | "search" | "browse" | "integration" | "explore";
 
 const TABS: Array<{ value: Tab; label: string; icon: React.ReactNode }> = [
   { value: "overview", label: "Overview", icon: <Sparkles className="h-3.5 w-3.5" /> },
+  { value: "graph", label: "Graph", icon: <Network className="h-3.5 w-3.5" /> },
   { value: "dreaming", label: "Dreaming", icon: <Moon className="h-3.5 w-3.5" /> },
   { value: "search", label: "Search", icon: <SearchIcon className="h-3.5 w-3.5" /> },
   { value: "browse", label: "Browse", icon: <Compass className="h-3.5 w-3.5" /> },
@@ -120,6 +123,7 @@ export function GBrainView() {
               onGoToDreaming={() => setTab("dreaming")}
             />
           )}
+          {tab === "graph" && <GraphTab overview={overview} onOpenPage={openPage} />}
           {tab === "dreaming" && <DreamingTab overview={overview} />}
           {tab === "search" && <SearchTab onOpenPage={openPage} />}
           {tab === "browse" && <BrowseTab selectedSlug={selectedSlug} onSelectSlug={setSelectedSlug} />}

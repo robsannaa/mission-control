@@ -34,6 +34,17 @@ function isFullyExempt(pathname: string): boolean {
   return pathname.startsWith("/api/usage/internal");
 }
 
+/**
+ * Machine-to-machine intake for the OpenClaw awareness plugin. It authenticates
+ * with its own MISSION_CONTROL_AWARENESS_TOKEN (or loopback in off mode), so it
+ * skips the session/trusted-proxy gates — but it MUST still pass the Host/Origin
+ * allowlist. Fully exempting it (the previous behavior) let any web page CSRF it
+ * into pausing cron jobs or forging interactions. (B1)
+ */
+function isMachineIntake(pathname: string): boolean {
+  return pathname === "/api/interactions/intake";
+}
+
 /** Public static assets (never under /api/ — a dynamic API segment could end
  *  in ".svg" and must not slip past the gate). */
 const STATIC_ASSET = /\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|txt|woff2?)$/i;
@@ -58,6 +69,25 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isFullyExempt(pathname) || isStaticAsset(pathname)) return NextResponse.next();
+
+  // Machine intake: enforce the Host/Origin allowlist (anti-CSRF / anti-DNS-rebind),
+  // then hand off to the route's own token auth — skipping the session and
+  // trusted-proxy gates that a server-to-server caller cannot satisfy. (B1)
+  if (isMachineIntake(pathname)) {
+    if (!isAllowedHost(request.headers.get("host"))) {
+      return forbidden(
+        "forbidden_host",
+        "Host is not allowlisted. Add it to MISSION_CONTROL_ALLOWED_HOSTS (comma-separated) to allow it.",
+      );
+    }
+    if (!isAllowedOrigin(request.headers.get("origin"))) {
+      return forbidden(
+        "forbidden_origin",
+        "Origin is not allowlisted. Add it to MISSION_CONTROL_ALLOWED_HOSTS (comma-separated) to allow it.",
+      );
+    }
+    return NextResponse.next();
+  }
 
   const mode = getAuthMode();
 

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
+import "@xyflow/react/dist/style.css";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { Header, AgentChatPanel } from "@/components/header";

@@ -16,7 +16,6 @@ import {
   Clock,
   FileText,
   Paperclip,
-  Slash,
   Sparkles,
   Square,
   Wrench,
@@ -106,6 +105,7 @@ export function Composer({
   contextLabel,
   disabled,
   disabledPlaceholder,
+  placeholder: enabledPlaceholder,
   isStreaming,
   showStarters,
   onSubmit,
@@ -120,6 +120,7 @@ export function Composer({
   contextLabel: string | null;
   disabled: boolean;
   disabledPlaceholder?: string;
+  placeholder?: string;
   isStreaming: boolean;
   showStarters: boolean;
   onSubmit: (submission: ComposerSubmission) => void;
@@ -481,7 +482,7 @@ export function Composer({
 
   const placeholder = disabled
     ? disabledPlaceholder ?? "Chat is unavailable right now"
-    : `Message ${agentName} — press / for commands, @ to reference a file`;
+    : enabledPlaceholder ?? `Message ${agentName} — press / for commands, @ to reference a file`;
 
   return (
     <div className="relative mx-auto w-full max-w-3xl">
@@ -626,7 +627,6 @@ export function Composer({
           disabled={disabled}
           placeholder={placeholder}
           aria-autocomplete="list"
-          aria-expanded={slashOpen || mentionOpen}
           className={cn(
             "max-h-[220px] w-full resize-none bg-transparent px-1 pb-1 pt-0.5 text-[15px] leading-7 text-foreground outline-none",
             "placeholder:text-fg-placeholder disabled:cursor-not-allowed disabled:opacity-60",

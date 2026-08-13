@@ -26,9 +26,14 @@ import {
 } from "../src/lib/provider-auth";
 import {
   mergeModelPrimary,
+  mergeModelPriority,
   shouldSetPrimary,
   extractPrimaryModel,
 } from "../src/lib/gateway-config";
+import {
+  moveModelPriority,
+  normalizeModelPriority,
+} from "../src/lib/model-priority";
 
 /* ── 1. Local-provider config-patch shape ───────────────────────────────── */
 
@@ -183,6 +188,46 @@ test.describe("gateway-config: mergeModelPrimary (the merge-not-replace fix)", (
     const snapshot = JSON.stringify(existing);
     mergeModelPrimary(existing, "e/f");
     expect(JSON.stringify(existing)).toBe(snapshot);
+  });
+});
+
+test.describe("model priority chain", () => {
+  test("promoting a fallback preserves the complete order", () => {
+    const chain = [
+      "anthropic/claude-sonnet-5",
+      "openai/gpt-5.5",
+      "openrouter/moonshotai/kimi-k2.6",
+    ];
+    expect(moveModelPriority(chain, 2, 0)).toEqual([
+      "openrouter/moonshotai/kimi-k2.6",
+      "anthropic/claude-sonnet-5",
+      "openai/gpt-5.5",
+    ]);
+    expect(chain[0]).toBe("anthropic/claude-sonnet-5");
+  });
+
+  test("normalization removes blanks and duplicate model refs", () => {
+    expect(normalizeModelPriority([" a/model ", "", "a/model", null, "b/model"])).toEqual([
+      "a/model",
+      "b/model",
+    ]);
+  });
+
+  test("atomic config shape sets the first model as primary and the rest as fallbacks", () => {
+    expect(
+      mergeModelPriority(
+        { primary: "old/model", fallbacks: [], someFutureKey: 42 },
+        ["openrouter/kimi", "anthropic/claude", "openai/gpt"],
+      ),
+    ).toEqual({
+      primary: "openrouter/kimi",
+      fallbacks: ["anthropic/claude", "openai/gpt"],
+      someFutureKey: 42,
+    });
+  });
+
+  test("atomic config shape refuses an empty chain", () => {
+    expect(() => mergeModelPriority({}, ["", null])).toThrow("At least one model is required");
   });
 });
 

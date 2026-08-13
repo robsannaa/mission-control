@@ -31,8 +31,11 @@ import {
   HelpCircle,
   Puzzle,
   Radio,
+  CircleHelp,
 } from "lucide-react";
 import { getChatUnreadCount, subscribeChatStore } from "@/lib/chat-store";
+import { useSmartPoll } from "@/hooks/use-smart-poll";
+import { INTERACTIONS_CHANGED_EVENT } from "@/lib/interaction-events";
 
 function TickingClockIcon({ className }: { className?: string }) {
   const [now, setNow] = useState<Date | null>(null);
@@ -147,6 +150,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { section: "tasks", label: "Tasks", icon: ListChecks, href: "/tasks" },
   { section: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { section: "activity", label: "Activity", icon: Activity, href: "/activity" },
+  { section: "questions", label: "Questions", icon: CircleHelp, href: "/questions" },
   { section: "usage", label: "Usage", icon: BarChart3, href: "/usage" },
   { section: "sessions", label: "Sessions", icon: MessageSquare, href: "/sessions" },
   // Self-hosted only for now — hosted lacks a Google-connect flow. Product
@@ -159,7 +163,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { section: "agents", label: "Models", icon: Cpu, href: "/agents?tab=models", tab: "models", isSubItem: true },
   { section: "skills", label: "Skills", icon: Wrench, href: "/skills" },
   { section: "skills", label: "Marketplace", icon: Package, href: "/skills?tab=clawhub", tab: "clawhub", isSubItem: true },
-  { section: "cron", label: "Scheduled Tasks", icon: TickingClockIcon, href: "/cron" },
+  { section: "cron", label: "Cron Jobs", icon: TickingClockIcon, href: "/cron" },
   { section: "cron", label: "Heartbeat", icon: Heart, href: "/heartbeat", tab: "heartbeat", isSubItem: true },
 
   // ── Knowledge ──
@@ -261,6 +265,7 @@ function deriveSectionFromPath(pathname: string): string | null {
     "config",
     "settings",
     "activity",
+    "questions",
     "help",
   ]);
   return known.has(first) ? first : null;
@@ -318,6 +323,31 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
     () => 0 // SSR fallback
   );
 
+  // Clarifications are separate from ordinary unread chat messages. Keep a
+  // small attention dot visible until the user actually answers the question.
+  const [chatNeedsInput, setChatNeedsInput] = useState(false);
+  const refreshChatNeedsInput = useCallback(async () => {
+    try {
+      const response = await fetch("/api/interactions?status=open&limit=1", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) return;
+      const payload = await response.json() as { count?: number; interactions?: unknown[] };
+      setChatNeedsInput((payload.count ?? payload.interactions?.length ?? 0) > 0);
+    } catch {
+      // Preserve the last known state during a temporary connection failure.
+    }
+  }, []);
+
+  useSmartPoll(refreshChatNeedsInput, { intervalMs: 5_000 });
+
+  useEffect(() => {
+    const refresh = () => void refreshChatNeedsInput();
+    window.addEventListener(INTERACTIONS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(INTERACTIONS_CHANGED_EVENT, refresh);
+  }, [refreshChatNeedsInput]);
+
   return (
     <nav className={cn("flex flex-1 flex-col gap-0.5 overflow-y-auto pt-2", collapsed ? "px-2" : "px-3")}>
       {items.map((item, index) => {
@@ -360,7 +390,9 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
         if (item.isSubItem && item.section === "agents" && !showAgentsChildren) return null;
         if (item.isSubItem && item.section === "cron" && !showCronChildren) return null;
 
-        const showBadge = item.section === "chat" && chatUnread > 0;
+        const isChatItem = item.section === "chat" && !item.isSubItem;
+        const showBadge = isChatItem && chatUnread > 0;
+        const showInputDot = isChatItem && chatNeedsInput;
         const isDisabled = item.comingSoon;
         const linkClass = cn(
           // Navigation is an interactive control, so it uses the shared 6px
@@ -460,8 +492,15 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
                 >
                   <span className="relative inline-flex shrink-0">
                     <Icon className="h-3 w-3" />
-                    {collapsed && showBadge && (
-                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-sidebar" title={`${chatUnread} unread`} aria-hidden />
+                    {collapsed && (showInputDot || showBadge) && (
+                    <span
+                      className={cn(
+                        "absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-sidebar",
+                        showInputDot ? "bg-amber-500" : "bg-primary",
+                      )}
+                      title={showInputDot ? "Chat needs your input" : `${chatUnread} unread`}
+                      aria-hidden
+                    />
                   )}
                 </span>
                 {!collapsed && <span className="flex-1">{item.label}</span>}
@@ -474,6 +513,13 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
                     <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground shadow-sm">
                       {chatUnread > 9 ? "9+" : chatUnread}
                     </span>
+                  )}
+                {!collapsed && showInputDot && (
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full bg-amber-500 ring-2 ring-amber-500/15"
+                      title="Chat needs your input"
+                      aria-label="Chat needs your input"
+                    />
                   )}
                 </Link>
               )

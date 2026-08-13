@@ -1,16 +1,18 @@
-![Mission Control — OpenClaw GUI & AI Agent Dashboard](cover.png)
+![Mission Control — AI Agent Harness & Dashboard](cover.png)
 
 # Mission Control
 
 **English** | [中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-**Your command center for [OpenClaw](https://github.com/openclaw). See everything, control everything, from one screen.**
+**A harness for running a fleet of AI agents from one screen. See everything, dispatch anything, all on your own machine.**
 
-Monitor your AI agents in real time. Chat with them. Schedule jobs. Track costs. Manage memory. All from your browser, all running on your machine.
+I run a lot of agents at once. One writing code, one on research, one watching an inbox, a few more on whatever I pointed them at that morning. Past two or three, terminals stop working as an interface. So I built my own harness for it. This is it.
 
-## ⚡ Install it with your AI agent — copy, paste, done
+Mission Control is the control plane over the fleet. Watch agents work live, hand them tasks and let them pick them up, spin up subagents and fan them out, see what everything costs, keep the whole thing healthy. It runs locally and drives [OpenClaw](https://github.com/openclaw) as the engine underneath.
 
-Using Claude Code, Codex, OpenClaw itself, or any coding agent? Paste this and the agent does the rest:
+## ⚡ Hand it to your agent to install
+
+You don't install things by hand anymore. Point Claude Code, Codex, or whatever you drive at this and it does the rest:
 
 ```text
 Install Mission Control, the dashboard for OpenClaw, on this machine.
@@ -31,91 +33,90 @@ Install Mission Control, the dashboard for OpenClaw, on this machine.
    and how the background service was registered (launchd/systemd/nohup).
 ```
 
+A lot of this was written by the agents it runs. That is the point of it.
+
 ## Please, consider supporting me and buy me a Claude Code Subscription!
 [![Buy Me a Claude Code Subscription!](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/robsanna)
 
-[![OpenClaw GUI](https://img.shields.io/badge/OpenClaw-GUI-7c3aed?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCI+PHRleHQgeT0iMjAiIGZvbnQtc2l6ZT0iMjAiPjwvdGV4dD48L3N2Zz4=)](https://github.com/openclaw) ![AI Dashboard](https://img.shields.io/badge/AI_Agent-Dashboard-22c55e?style=flat-square) ![Self-Hosted](https://img.shields.io/badge/Self--Hosted-Local_AI-f59e0b?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
+[![AI Agent Harness](https://img.shields.io/badge/AI_Agent-Harness-7c3aed?style=flat-square)](https://github.com/robsannaa/openclaw-mission-control) ![Self-Hosted](https://img.shields.io/badge/Self--Hosted-Local_AI-f59e0b?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
 ---
 
-## Why Mission Control?
+## Why it exists
 
-**Stop juggling terminals.** If you're running OpenClaw, you already know the power. Mission Control gives you the picture — a single place to see what your agents are doing, how much they're costing, and whether things are healthy.
+Past a couple of agents, the bottleneck stops being the model and becomes you. You tab between terminals, lose track of what is running, and guess at what it cost. A harness fixes that. You point an agent at a problem, drop it on the board, and go start the next one while it runs.
 
-**Your data never leaves your machine.** Mission Control runs 100% locally. No cloud, no telemetry, no accounts. It's just a window into the OpenClaw system already running on your computer.
-
-**Works instantly.** Install it, open your browser, done. Mission Control automatically finds your OpenClaw setup — no configuration, no environment files to fill out, no database to set up.
+The harness should never be the interesting part. The agents are the work. Mission Control is built to sit behind them and stay out of the way: nothing to babysit, nothing to sync, hard to break. You should be able to forget it is there and keep shipping.
 
 ---
 
-## The Thin-Layer Philosophy
+## Thin by design
 
-Mission Control is **not** a separate platform. It doesn't store your data, doesn't run its own database, and doesn't try to be the source of truth.
+Mission Control does not store your data, run a database, or try to be the source of truth. It reads and writes straight through to the engine underneath, live. Change something here and it lands immediately, with no sync step and no cache to go stale. The only state it keeps is two small local files: usage history and the task board.
 
-Instead, it's a **transparent window** into OpenClaw. Screens, numbers, and statuses come directly from your running OpenClaw system in real time. When you make a change in Mission Control, it goes straight to OpenClaw — no sync delays, no stale caches, no "refresh to see updates." (Mission Control keeps only a few small local files of its own — usage history and the Kanban board — never a copy of your OpenClaw data.)
+That keeps it:
 
-**Why this matters to you:**
-- **Always accurate** — what you see is what's actually happening, right now
-- **Nothing to maintain** — no database migrations, no backup scripts, no cleanup jobs
-- **Impossible to break** — if Mission Control goes down, your agents keep running untouched
-- **Instant setup** — no provisioning, no storage allocation, no schema upgrades between versions
+- **Accurate.** What you see is what is running, right now.
+- **Boring to maintain.** No migrations, no backups, no cleanup jobs. On purpose.
+- **Hard to break.** If the dashboard goes down, the agents keep running.
+- **Instant.** Nothing to provision, nothing to upgrade between versions.
 
-Think of it like the dashboard on your car. It shows you speed, fuel, and engine status — but removing it doesn't stop the car from driving. That's Mission Control for OpenClaw.
+Pull the dashboard out and the fleet still runs. It is glass over the engine, not the engine.
 
 ---
 
-## What You Get
+## What it does
 
-### See Everything at a Glance
-**Dashboard** gives you a live overview the moment you open it — which agents are active, gateway health, running cron jobs, and system resources (CPU, memory, disk). No clicking around to find out if things are working.
+### See the whole fleet
+**Dashboard** opens on a live overview: which agents are active, gateway health, running cron jobs, and system load (CPU, memory, disk). No clicking around to find out if things are working.
 
-### Talk to Your Agents
-**Chat** lets you have a conversation with any of your agents directly in the browser. Attach files, pick which model to use, and get streaming responses. Switch between agents without losing context.
+### Talk to any of them
+**Chat** is a real conversation with any agent, in the browser. Attach files, pick the model, stream the response, switch agents without losing context. `/` for commands, `@` to pull in a file.
 
-### Organize Work Visually
-**Tasks** is a built-in Kanban board (Backlog, In Progress, Review, Done) that syncs with your workspace. Drag cards between columns, see what's in flight, keep your agents focused.
+### Point agents at work and watch it move
+**Tasks** is a board (Backlog, In Progress, Review, Done) where a card is not a note. It is a job an agent runs. Drop one in, an agent picks it up, and you watch it cross to Done. This is where "point a few agents at the problem and go" becomes something you can see.
 
-### Schedule Anything
-**Cron Jobs** lets you set up recurring tasks — "summarize my inbox every morning" or "check for updates every hour." Create, edit, pause, and test jobs with full run history so you can see exactly what happened.
+### Keep agents working while you don't
+**Cron Jobs** run agents on a schedule: summarize the inbox every morning, check for updates every hour. Create, edit, pause, and test, with full run history so you know what happened overnight.
 
-### Know What Things Cost
-**Usage** tracks every token across every model and agent. See cost breakdowns, spot which agent is burning through budget, and understand where your money goes — all with charts, not spreadsheets.
+### Command the team
+**Agents** shows the whole hierarchy as a live org chart: every agent and subagent, who is active, which channels they are on, which workspace. Spin up new subagents and fan them out on the spot.
 
-### Manage Your Agent Team
-**Agents** shows your entire agent hierarchy as an interactive org chart. See who's active, which channels they're connected to, what workspace they're using, and spin up or shut down subagents on the spot.
+### Know the cost to the token
+**Usage** tracks every token across every model and agent. Cost breakdowns, which agent is burning budget, where the money goes. Charts, not spreadsheets.
 
-### Keep Your Agents' Memory Sharp
-**Memory** lets you view and edit your agents' long-term memory and daily journals. **Vector Search** lets you find anything in your agents' semantic memory instantly.
+### Keep their memory sharp
+**Memory** views and edits long-term memory and daily journals. **Vector Search** finds anything in semantic memory instantly.
 
-### Manage Models and Keys
-**Models** gives you one place to see every AI model available, set up provider credentials, configure fallback chains, and switch models per agent. No more editing config files by hand.
+### Own the models and keys
+**Models** is one place to see every available model, set provider credentials, configure fallback chains, and switch models per agent. No hand-editing config files.
 
-### Monitor Health
-**Doctor** runs diagnostics and shows you exactly what's healthy and what needs attention, with one-click fixes for common issues. **Gateway** status is always visible so you know your system is connected.
+### Keep the fleet healthy
+**Doctor** runs diagnostics and shows what is healthy and what needs attention, with one-click fixes for common issues. **Gateway** status stays visible so you always know it is connected.
 
-### Built-In Terminal
-**Terminal** gives you a full command line right in the dashboard — multiple tabs, color support, no need to switch windows.
+### Drop into a shell
+**Terminal** is a full command line in the dashboard: multiple tabs, color support, no window-switching.
 
-### Connect to Messaging
-**Channels** configures your agents' connections to Telegram, Discord, WhatsApp, Signal, and Slack — with QR code pairing where supported.
+### Reach agents where you already are
+**Channels** connects your agents to Telegram, Discord, WhatsApp, Signal, and Slack, with QR pairing where supported.
 
-### Browse Your Files
-**Documents** lets you explore all workspace files across agents. **Search** (`Cmd+K`) gives you instant semantic search across everything.
+### Browse everything they touch
+**Documents** explores workspace files across agents. **Search** (`Cmd+K`) is instant semantic search across all of it.
 
-### Stay Secure
-**Security** runs audits on your setup and flags issues. **Permissions** controls what your agents are allowed to execute. **Accounts & Keys** manages all credentials in one place with proper masking.
+### Stay in control
+**Security** audits your setup and flags issues. **Permissions** controls what agents may execute. **Accounts & Keys** manages every credential in one place with proper masking.
 
-### Go Remote
-**Tailscale** integration lets you securely access your dashboard and agents from anywhere, with tunnel controls built right in.
+### Run it from anywhere
+**Tailscale** integration reaches the dashboard and your agents securely from any machine, with tunnel controls built in.
 
-### Crash-Proof Panels
-Every section is wrapped in an **error boundary** — if one view has a problem, the rest of the dashboard keeps working. Hit Retry and you're back without reloading the whole page.
+### One panel failing never takes the rest down
+Every section is wrapped in an **error boundary**. One view breaking leaves the others running. Hit Retry and you are back, no full reload.
 
 ---
 
 ## Quick Start
 
-### 1. Make sure OpenClaw is installed
+### 1. Make sure the engine is installed
 
 ```bash
 # Install OpenClaw if you haven't already
@@ -134,7 +135,7 @@ cd openclaw-mission-control
 ./setup.sh
 ```
 
-That's it. Open `http://localhost:3333` in your browser.
+That's it. Open `http://localhost:3333`.
 
 **Other ways to start:**
 
@@ -149,46 +150,46 @@ PORT=8080 ./setup.sh
 npm install && npm run dev
 ```
 
-> **Zero configuration.** Mission Control automatically finds your `~/.openclaw` directory and the `openclaw` binary. Nothing to set up.
+> **Zero configuration.** It finds your `~/.openclaw` directory and the `openclaw` binary on its own. Nothing to set up.
 
-### Let Your Agent Install It
+### Or just ask your agent
 
-Already talking to an OpenClaw agent? Just ask:
+Already talking to an agent? Hand it off:
 
 ```
 Hey, install Mission Control for me — here's the repo:
 https://github.com/robsannaa/openclaw-mission-control
 ```
 
-Your agent will clone it, install dependencies, and start it up.
+It clones the repo, installs dependencies, and starts it up.
 
 ---
 
 ## Remote Access
 
-Running OpenClaw on a server? Access it from your laptop with SSH tunneling:
+Running on a server? Reach it from your laptop with an SSH tunnel:
 
 ```bash
 ssh -N -L 3333:127.0.0.1:3333 user@your-server
 ```
 
-Then open `http://localhost:3333` on your local machine.
+Then open `http://localhost:3333` locally.
 
 ---
 
 ## Environment Variables (optional)
 
-Everything is auto-detected, but you can override if needed:
+Everything is auto-detected. Override if you need to:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OPENCLAW_HOME` | `~/.openclaw` | Where your OpenClaw data lives |
+| `OPENCLAW_HOME` | `~/.openclaw` | Where your agent data lives |
 | `OPENCLAW_BIN` | Auto-detected | Path to the `openclaw` command |
 | `OPENCLAW_WORKSPACE` | Auto-detected | Your default workspace folder |
 | `OPENCLAW_TRANSPORT` | `auto` | How to reach the gateway: `auto`, `http`, or `cli` |
 | `OPENCLAW_GATEWAY_URL` | `http://127.0.0.1:18789` | Gateway address (for remote setups) |
 | `OPENCLAW_GATEWAY_TOKEN` | _(empty)_ | Bearer token for authenticated gateway HTTP access |
-| `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS` | _(unset)_ | Set to `1` to allow the OpenClaw CLI to connect to private/self-signed WebSocket endpoints (e.g. local gateway over `ws://`). Mission Control sets this when invoking the CLI; override only if you need different behavior. |
+| `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS` | _(unset)_ | Set to `1` to allow the CLI to connect to private/self-signed WebSocket endpoints (e.g. a local gateway over `ws://`). Mission Control sets this when invoking the CLI; override only if you need different behavior. |
 
 ---
 
@@ -209,19 +210,19 @@ If that works but the dashboard still complains, point it directly:
 OPENCLAW_BIN=$(which openclaw) npm run dev
 ```
 
-If `openclaw` isn't installed, [get it here](https://docs.openclaw.ai/install).
+If it isn't installed, [get it here](https://docs.openclaw.ai/install).
 </details>
 
 <details>
 <summary><strong>Does this send my data anywhere?</strong></summary>
 
-Mission Control itself sends nothing anywhere — no analytics, no tracking, no phoning home. The only network calls are the ones you configure: your OpenClaw gateway, and whichever AI model providers you set up (which you pick, including fully local models).
+No. Mission Control sends nothing out: no analytics, no tracking, no phoning home. The only network calls are the ones you configure: your gateway, and whichever model providers you set up (your choice, including fully local models).
 </details>
 
 <details>
-<summary><strong>Can I use this with multiple OpenClaw setups?</strong></summary>
+<summary><strong>Can I run more than one setup?</strong></summary>
 
-Yes — point to a different installation:
+Yes. Point it at a different installation:
 
 ```bash
 OPENCLAW_HOME=/path/to/other/.openclaw npm run dev -- --port 3001

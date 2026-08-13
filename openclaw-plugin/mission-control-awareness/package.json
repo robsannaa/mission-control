@@ -1,0 +1,10 @@
+{
+  "name": "@mission-control/openclaw-awareness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist", "openclaw.plugin.json", "README.md"],
+  "peerDependencies": { "openclaw": ">=2026.7.0" },
+  "openclaw": { "extensions": ["./dist/index.js"] }
+}
+

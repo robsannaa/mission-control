@@ -19,6 +19,14 @@ import { cn } from "@/lib/utils";
 import { rank } from "@/components/chat/fuzzy";
 import type { ChatSessionRow, LoadFailure } from "@/components/chat/types";
 
+type ConversationAttention = {
+  id: string;
+  title: string;
+  question: string;
+  createdAt: number;
+  sessionKey?: string;
+};
+
 /**
  * Conversation list.
  *
@@ -174,6 +182,7 @@ function RowMenu({
 function SessionRow({
   row,
   isActive,
+  needsInput,
   onSelect,
   onRename,
   onTogglePin,
@@ -181,6 +190,7 @@ function SessionRow({
 }: {
   row: ChatSessionRow;
   isActive: boolean;
+  needsInput?: boolean;
   onSelect: () => void;
   onRename: (label: string) => void;
   onTogglePin: () => void;
@@ -255,6 +265,13 @@ function SessionRow({
           >
             {row.title}
           </span>
+          {needsInput && (
+            <span
+              className="ml-auto h-2 w-2 shrink-0 rounded-full bg-amber-500 ring-2 ring-amber-500/15"
+              title="Needs your input"
+              aria-label="Needs your input"
+            />
+          )}
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
           {row.hasActiveRun && (
@@ -276,6 +293,44 @@ function SessionRow({
   );
 }
 
+function AttentionRow({
+  attention,
+  active,
+  onSelect,
+}: {
+  attention: ConversationAttention;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      data-conversation-needs-input
+      aria-current={active ? "true" : undefined}
+      aria-label={`${attention.title}, needs your input`}
+      className={cn(
+        "mb-1 w-full rounded-xl px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active ? "bg-accent" : "hover:bg-accent/60",
+      )}
+    >
+      <span className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+          {attention.title}
+        </span>
+        <span
+          className="h-2 w-2 shrink-0 rounded-full bg-amber-500 ring-2 ring-amber-500/15"
+          title="Needs your input"
+          aria-hidden
+        />
+      </span>
+      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+        {attention.question}
+      </span>
+    </button>
+  );
+}
+
 export function SessionSidebar({
   sessions,
   activeKey,
@@ -287,6 +342,8 @@ export function SessionSidebar({
   onTogglePin,
   onDelete,
   onRetry,
+  attention,
+  onSelectAttention,
   onClose,
 }: {
   sessions: ChatSessionRow[];
@@ -299,6 +356,8 @@ export function SessionSidebar({
   onTogglePin: (key: string, pinned: boolean) => void;
   onDelete: (key: string) => void;
   onRetry: () => void;
+  attention?: ConversationAttention | null;
+  onSelectAttention?: (attention: ConversationAttention) => void;
   onClose?: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -310,6 +369,15 @@ export function SessionSidebar({
   );
   const pinned = filtered.filter((row) => row.pinned);
   const rest = filtered.filter((row) => !row.pinned);
+  const normalizedQuery = query.trim().toLowerCase();
+  const attentionMatchesSession = Boolean(
+    attention?.sessionKey && sessions.some((row) => row.key === attention.sessionKey),
+  );
+  const visibleAttention = attention && !attentionMatchesSession && (
+    !normalizedQuery ||
+    attention.title.toLowerCase().includes(normalizedQuery) ||
+    attention.question.toLowerCase().includes(normalizedQuery)
+  ) ? attention : null;
 
   const retryButton = (
     <button
@@ -373,6 +441,13 @@ export function SessionSidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+        {visibleAttention && (
+          <AttentionRow
+            attention={visibleAttention}
+            active
+            onSelect={() => onSelectAttention?.(visibleAttention)}
+          />
+        )}
         {failure.kind === "pairing" ? (
           <StateBlock
             icon={<ShieldQuestion className="h-4 w-4" aria-hidden />}
@@ -402,17 +477,21 @@ export function SessionSidebar({
           </div>
         ) : filtered.length === 0 ? (
           query ? (
-            <StateBlock
-              icon={<Search className="h-4 w-4" aria-hidden />}
-              title="No matches"
-              body={`Nothing here matches “${query}”.`}
-            />
+            visibleAttention ? null : (
+              <StateBlock
+                icon={<Search className="h-4 w-4" aria-hidden />}
+                title="No matches"
+                body={`Nothing here matches “${query}”.`}
+              />
+            )
           ) : (
-            <StateBlock
-              icon={<Plus className="h-4 w-4" aria-hidden />}
-              title="No conversations yet"
-              body="Send your first message and it will appear here, ready to resume."
-            />
+            visibleAttention ? null : (
+              <StateBlock
+                icon={<Plus className="h-4 w-4" aria-hidden />}
+                title="No conversations yet"
+                body="Send your first message and it will appear here, ready to resume."
+              />
+            )
           )
         ) : (
           <div className="space-y-0.5">
@@ -426,7 +505,10 @@ export function SessionSidebar({
                     key={row.key}
                     row={row}
                     isActive={row.key === activeKey}
-                    onSelect={() => onSelect(row)}
+                    needsInput={attention?.sessionKey === row.key}
+                    onSelect={() => attention?.sessionKey === row.key && onSelectAttention
+                      ? onSelectAttention(attention)
+                      : onSelect(row)}
                     onRename={(label) => onRename(row.key, label)}
                     onTogglePin={() => onTogglePin(row.key, !row.pinned)}
                     onDelete={() => setConfirmDelete(row.key)}
@@ -444,7 +526,10 @@ export function SessionSidebar({
                 key={row.key}
                 row={row}
                 isActive={row.key === activeKey}
-                onSelect={() => onSelect(row)}
+                needsInput={attention?.sessionKey === row.key}
+                onSelect={() => attention?.sessionKey === row.key && onSelectAttention
+                  ? onSelectAttention(attention)
+                  : onSelect(row)}
                 onRename={(label) => onRename(row.key, label)}
                 onTogglePin={() => onTogglePin(row.key, !row.pinned)}
                 onDelete={() => setConfirmDelete(row.key)}

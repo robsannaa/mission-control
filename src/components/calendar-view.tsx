@@ -7,16 +7,19 @@ import {
   CheckCircle2,
   Cloud,
   CloudOff,
+  Info,
   Link2,
+  MapPin,
   Plus,
   RefreshCw,
   Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { InlineSpinner } from "@/components/ui/loading-state";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
 import { cn } from "@/lib/utils";
 
@@ -99,6 +102,24 @@ type CalendarApiResponse = {
   connectors: CalendarConnectorStatus[];
 };
 
+/** A single event read live from the local macOS Calendar app. */
+type AppleCalendarEvent = {
+  id: string;
+  title: string;
+  date: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  allDay: boolean;
+  location?: string;
+};
+
+type AppleCalendarResponse = {
+  available: boolean;
+  reason?: string;
+  events: AppleCalendarEvent[];
+};
+
 const PROVIDER_OPTIONS: ExternalCalendarProvider[] = ["google", "apple", "zoho"];
 
 function formatAgo(ts: number | null): string {
@@ -127,6 +148,22 @@ function formatEventDayLabel(ts: number): string {
     month: "short",
     day: "numeric",
   }).format(new Date(ts));
+}
+
+/** "Fri · Aug 15" — parsed as a local calendar date, not a UTC instant, so
+ *  the day never shifts based on the viewer's timezone offset. */
+function formatAppleDayLabel(dateStr: string): string {
+  const date = new Date(`${dateStr}T00:00:00`);
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(date);
+  const monthDay = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+  return `${weekday} · ${monthDay}`;
+}
+
+function formatAppleEventTime(event: AppleCalendarEvent): string | null {
+  if (event.allDay) return null;
+  if (event.startTime && event.endTime) return `${event.startTime}–${event.endTime}`;
+  if (event.startTime) return event.startTime;
+  return null;
 }
 
 function providerTone(provider: CalendarProvider): string {
@@ -166,6 +203,10 @@ export function CalendarView() {
   const [formLabel, setFormLabel] = useState("");
   const [formAccountId, setFormAccountId] = useState("");
 
+  const [appleData, setAppleData] = useState<AppleCalendarResponse | null>(null);
+  const [appleLoading, setAppleLoading] = useState(true);
+  const [appleError, setAppleError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -183,9 +224,27 @@ export function CalendarView() {
     }
   }, []);
 
+  const loadApple = useCallback(async () => {
+    setAppleLoading(true);
+    setAppleError(null);
+    try {
+      const response = await fetch("/api/integrations/apple/events?days=30", { cache: "no-store" });
+      const json = (await response.json()) as AppleCalendarResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(json.error || `Apple Calendar request failed (${response.status})`);
+      }
+      setAppleData(json);
+    } catch (loadError) {
+      setAppleError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setAppleLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadApple();
+  }, [load, loadApple]);
 
   const accountMap = useMemo(() => {
     const map = new Map<string, CalendarAccountRecord>();
@@ -212,6 +271,28 @@ export function CalendarView() {
     }
     return [...groups.entries()].map(([key, value]) => ({ key, ...value }));
   }, [data]);
+
+  const groupedAppleEvents = useMemo(() => {
+    const groups = new Map<string, AppleCalendarEvent[]>();
+    for (const event of appleData?.events || []) {
+      const existing = groups.get(event.date);
+      if (existing) {
+        existing.push(event);
+      } else {
+        groups.set(event.date, [event]);
+      }
+    }
+    return [...groups.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([date, events]) => ({
+        date,
+        label: formatAppleDayLabel(date),
+        events: [...events].sort((a, b) => {
+          if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+          return (a.startTime || "").localeCompare(b.startTime || "");
+        }),
+      }));
+  }, [appleData]);
 
   const submitProviderSetting = useCallback(
     async (
@@ -348,7 +429,7 @@ export function CalendarView() {
           </div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             {
               label: "Upcoming events",
@@ -377,31 +458,115 @@ export function CalendarView() {
           ].map((metric) => {
             const Icon = metric.icon;
             return (
-              <Card key={metric.label} className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
-                <CardContent className="flex items-center justify-between px-5 py-4">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      {metric.label}
-                    </p>
-                    <p className="mt-2 text-3xl font-semibold text-foreground">
+              <div key={metric.label} className="rounded-xl border border-border-subtle bg-card p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="eyebrow">{metric.label}</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
                       {metric.value}
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {metric.hint}
-                    </p>
                   </div>
-                  <div className="rounded-2xl border border-border bg-muted p-3">
-                    <Icon className="h-5 w-5 text-fg-secondary" />
-                  </div>
-                </CardContent>
-              </Card>
+                  <Icon className="mt-0.5 h-4.5 w-4.5 shrink-0 stroke-[1.75] text-fg-subtle" />
+                </div>
+                <p className="mt-2 text-xs text-fg-subtle">
+                  {metric.hint}
+                </p>
+              </div>
             );
           })}
         </div>
 
+        {/* ── Apple Calendar — live agenda ─────────────── */}
+        <Card className="gap-0 border-border-subtle bg-card py-0 shadow-sm">
+          <CardHeader className="border-b border-border-subtle px-5 py-4">
+            <CardTitle className="text-base text-foreground">
+              Apple Calendar
+            </CardTitle>
+            <CardDescription>
+              Live agenda read directly from the local macOS Calendar app — next 30 days.
+            </CardDescription>
+            <CardAction>
+              <Button variant="outline" size="sm" onClick={() => void loadApple()} disabled={appleLoading}>
+                <RefreshCw className={cn("h-4 w-4", appleLoading && "animate-spin")} />
+                Refresh
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="px-5 py-5">
+            {appleLoading && !appleData ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                <InlineSpinner size="sm" />
+                Loading agenda…
+              </div>
+            ) : appleError ? (
+              <div className="flex items-start gap-2 rounded-lg border border-info-border bg-info-bg px-3 py-2.5 text-xs text-info-fg">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{appleError}</span>
+              </div>
+            ) : appleData && !appleData.available ? (
+              <div className="flex items-start gap-2 rounded-lg border border-info-border bg-info-bg px-3 py-2.5 text-xs text-info-fg">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{appleData.reason || "Apple Calendar isn't available on this host."}</span>
+              </div>
+            ) : groupedAppleEvents.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border-strong px-4 py-8 text-center text-sm text-muted-foreground">
+                No upcoming events.
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {groupedAppleEvents.map((group) => (
+                  <div key={group.date}>
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="h-px flex-1 bg-secondary" />
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {group.label}
+                      </p>
+                      <div className="h-px flex-1 bg-secondary" />
+                    </div>
+                    <div className="space-y-2">
+                      {group.events.map((event) => {
+                        const timeLabel = formatAppleEventTime(event);
+                        return (
+                          <div
+                            key={event.id}
+                            className="flex items-start gap-3 rounded-xl border border-border-subtle bg-muted/40 p-3.5 dark:bg-muted/20"
+                          >
+                            <div className="w-20 shrink-0 pt-0.5">
+                              {event.allDay ? (
+                                <Badge variant="outline" className="border-border-strong text-fg-secondary dark:text-muted-foreground">
+                                  All day
+                                </Badge>
+                              ) : (
+                                <p className="text-xs font-medium tabular-nums text-fg-secondary dark:text-muted-foreground">
+                                  {timeLabel}
+                                </p>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-foreground">
+                                {event.title}
+                              </p>
+                              {event.location ? (
+                                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                                  <MapPin className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{event.location}</span>
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <div className="grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
-          <Card className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
-            <CardHeader className="border-b border-border/80 px-5 py-4 dark:border-border">
+          <Card className="gap-0 border-border-subtle bg-card py-0 shadow-sm">
+            <CardHeader className="border-b border-border-subtle px-5 py-4">
               <CardTitle className="text-base text-foreground">
                 Provider control plane
               </CardTitle>
@@ -415,7 +580,7 @@ export function CalendarView() {
                 return (
                   <div
                     key={connector.provider}
-                    className="rounded-2xl border border-border/80 bg-muted/80 p-4 dark:border-border dark:bg-muted"
+                    className="rounded-xl border border-border-subtle bg-muted/40 p-4 dark:bg-muted/20"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -482,7 +647,7 @@ export function CalendarView() {
                           ].map((toggle) => (
                             <label
                               key={toggle.key}
-                              className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card px-3 py-2 dark:bg-background"
+                              className="flex items-center justify-between gap-4 rounded-lg border border-border-subtle bg-card px-3 py-2"
                             >
                               <span className="text-fg-secondary">{toggle.label}</span>
                               <Switch
@@ -505,8 +670,8 @@ export function CalendarView() {
             </CardContent>
           </Card>
 
-          <Card className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
-            <CardHeader className="border-b border-border/80 px-5 py-4 dark:border-border">
+          <Card className="gap-0 border-border-subtle bg-card py-0 shadow-sm">
+            <CardHeader className="border-b border-border-subtle px-5 py-4">
               <CardTitle className="text-base text-foreground">
                 Add account
               </CardTitle>
@@ -568,8 +733,8 @@ export function CalendarView() {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[1.1fr_1.2fr]">
-          <Card className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
-            <CardHeader className="border-b border-border/80 px-5 py-4 dark:border-border">
+          <Card className="gap-0 border-border-subtle bg-card py-0 shadow-sm">
+            <CardHeader className="border-b border-border-subtle px-5 py-4">
               <CardTitle className="text-base text-foreground">
                 Sync accounts
               </CardTitle>
@@ -579,14 +744,14 @@ export function CalendarView() {
             </CardHeader>
             <CardContent className="space-y-3 px-5 py-5">
               {(data?.store.accounts || []).length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border-strong px-4 py-8 text-center text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-border-strong px-4 py-8 text-center text-sm text-muted-foreground">
                   No calendar accounts configured yet.
                 </div>
               ) : (
                 data?.store.accounts.map((account) => (
                   <div
                     key={account.id}
-                    className="rounded-2xl border border-border/80 bg-muted/80 p-4 dark:border-border dark:bg-muted"
+                    className="rounded-xl border border-border-subtle bg-muted/40 p-4 dark:bg-muted/20"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -649,8 +814,8 @@ export function CalendarView() {
             </CardContent>
           </Card>
 
-          <Card className="gap-0 border-border/70 bg-white/90 py-0 dark:border-border dark:bg-muted">
-            <CardHeader className="border-b border-border/80 px-5 py-4 dark:border-border">
+          <Card className="gap-0 border-border-subtle bg-card py-0 shadow-sm">
+            <CardHeader className="border-b border-border-subtle px-5 py-4">
               <CardTitle className="text-base text-foreground">
                 Upcoming timeline
               </CardTitle>
@@ -659,17 +824,13 @@ export function CalendarView() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5 px-5 py-5">
-              {loading ? (
-                <div className="space-y-3">
-                  {Array.from({ length: 3 }).map((_, index) => (
-                    <div
-                      key={index}
-                      className="h-16 animate-pulse rounded-2xl bg-muted"
-                    />
-                  ))}
+              {loading && !data ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <InlineSpinner size="sm" />
+                  Loading timeline…
                 </div>
               ) : groupedEvents.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border-strong px-4 py-8 text-center text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-border-strong px-4 py-8 text-center text-sm text-muted-foreground">
                   No upcoming events in the local store yet. Add an account and sync it, or seed local events later.
                 </div>
               ) : (
@@ -688,7 +849,7 @@ export function CalendarView() {
                         return (
                           <div
                             key={event.id}
-                            className="rounded-2xl border border-border/80 bg-muted/80 p-4 dark:border-border dark:bg-muted"
+                            className="rounded-xl border border-border-subtle bg-muted/40 p-4 dark:bg-muted/20"
                           >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -722,7 +883,7 @@ export function CalendarView() {
                                   </p>
                                 ) : null}
                               </div>
-                              <div className="rounded-full border border-border bg-card px-2.5 py-1 text-xs text-fg-secondary dark:bg-background dark:text-muted-foreground">
+                              <div className="rounded-full border border-border bg-card px-2.5 py-1 text-xs text-fg-secondary dark:text-muted-foreground">
                                 {event.source === "imported" ? (
                                   <span className="inline-flex items-center gap-1">
                                     <Cloud className="h-3.5 w-3.5" />
