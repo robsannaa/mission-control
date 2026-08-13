@@ -53,7 +53,7 @@ function normalizeRequestedSessionKey(raw: unknown): string | undefined {
 }
 
 
-function extractContent(messages: Message[]): {
+function extractContent(messages: Message[], systemContext?: string): {
   plainText: string;
   openResponsesInput: unknown;
 } {
@@ -61,6 +61,10 @@ function extractContent(messages: Message[]): {
   const textParts: string[] = [];
   const fileParts: string[] = [];
   const orItems: unknown[] = [];
+  // Invisible context (e.g. the proactive check-in a nudge reply answers): it
+  // reaches the agent as a system turn, so the user's visible bubble stays a
+  // clean plain answer instead of an ugly "(Re your check-in: …)" prefix.
+  const sys = systemContext?.trim();
 
   if (lastUserMsg?.parts) {
     for (const p of lastUserMsg.parts) {
@@ -102,9 +106,11 @@ function extractContent(messages: Message[]): {
     orItems.push({ type: "message", role: "user", content: lastUserMsg.content });
   }
 
+  if (sys) orItems.unshift({ type: "message", role: "system", content: sys });
+
   const textBlock = textParts.join("").trim();
   const fileBlock = fileParts.length ? "\n\n" + fileParts.join("\n\n---\n\n") : "";
-  const plainText = (textBlock + fileBlock).trim();
+  const plainText = (sys ? `[context] ${sys}\n\n` : "") + (textBlock + fileBlock).trim();
 
   // Flatten simple text-only to a plain string
   const openResponsesInput =
@@ -401,7 +407,8 @@ export async function POST(req: Request) {
     const agentId: string = body.agentId || body.agent || "main";
     const sessionKey = normalizeRequestedSessionKey(body.sessionKey);
 
-    const { plainText, openResponsesInput } = extractContent(messages);
+    const nudgeContext = typeof body.nudgeContext === "string" ? body.nudgeContext : undefined;
+    const { plainText, openResponsesInput } = extractContent(messages, nudgeContext);
 
     if (!plainText) {
       return new Response("Please send a message or attach a file.", {

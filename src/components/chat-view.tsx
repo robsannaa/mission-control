@@ -594,9 +594,8 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
           if (!sessionKey) setSessionKey(key);
           clearError();
           setNotice(null);
-          const contextual = interaction.question?.trim()
-            ? `(Re your check-in: "${interaction.question.trim()}") ${answer}`
-            : answer;
+          const question = interaction.question?.trim() || interaction.title?.trim() || "";
+          // Record the answer to clear the badge — no resume, no canned line.
           void fetch("/api/interactions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -610,8 +609,33 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
             .then(() => announceInteractionsChanged())
             .catch(() => {});
           setInteraction(null);
-          registerDraftSession(key, contextual);
-          await sendMessage({ text: contextual }, { body: { agentId, sessionKey: key } });
+          // Show the agent's check-in as its own bubble so it reads as a real
+          // exchange, then send the user's PLAIN answer. The question reaches the
+          // model as invisible system context (chat route), never as a prefix.
+          if (question) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `nudge-q-${interaction.id}`,
+                role: "assistant",
+                parts: [{ type: "text", text: question }],
+                metadata: { timestamp: Date.now() },
+              } as (typeof prev)[number],
+            ]);
+          }
+          registerDraftSession(key, answer);
+          await sendMessage(
+            { text: answer },
+            {
+              body: {
+                agentId,
+                sessionKey: key,
+                nudgeContext: question
+                  ? `The user is replying to your proactive check-in: "${question}". Respond naturally and conversationally, acknowledge their answer, and take any sensible next step.`
+                  : undefined,
+              },
+            },
+          );
           void sessions.refresh();
           return;
         }
