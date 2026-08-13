@@ -584,6 +584,38 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
       if (interaction?.status === "open") {
         const answer = submission.text.trim();
         if (!answer || interactionBusy) return;
+
+        // Proactive nudges are a real conversation, not a paused-run resume:
+        // send the answer as a normal chat turn (with the check-in as context)
+        // so the agent replies NATURALLY here, and just record the interaction
+        // as answered to clear the badge — no canned acknowledgement.
+        if (interaction.kind === "nudge") {
+          const key = sessionKey || newSessionKey(agentId);
+          if (!sessionKey) setSessionKey(key);
+          clearError();
+          setNotice(null);
+          const contextual = interaction.question?.trim()
+            ? `(Re your check-in: "${interaction.question.trim()}") ${answer}`
+            : answer;
+          void fetch("/api/interactions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "answer",
+              id: interaction.id,
+              answer,
+              channel: "mission-control-chat",
+            }),
+          })
+            .then(() => announceInteractionsChanged())
+            .catch(() => {});
+          setInteraction(null);
+          registerDraftSession(key, contextual);
+          await sendMessage({ text: contextual }, { body: { agentId, sessionKey: key } });
+          void sessions.refresh();
+          return;
+        }
+
         setInteractionBusy(true);
         setNotice(null);
         try {

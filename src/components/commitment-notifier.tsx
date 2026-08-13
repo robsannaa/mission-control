@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { notificationStore } from "@/lib/notification-store";
 
 /**
  * Headless global watcher that makes commitments proactive INSIDE Mission
@@ -36,7 +34,6 @@ function saveSeen(seen: Set<string>) {
 }
 
 export function CommitmentNotifier() {
-  const router = useRouter();
   const seededRef = useRef(false);
 
   useEffect(() => {
@@ -71,27 +68,27 @@ export function CommitmentNotifier() {
           if (!c.id || seen.has(c.id)) continue;
           seen.add(c.id);
           // First run seeds the backlog silently — we never replay old loops as
-          // a flood of toasts/desktop pings. Only genuinely new nudges surface.
+          // a flood. Only genuinely new nudges reach out.
           if (seeding) continue;
-          const title = "Your agent";
-          const detail = c.suggestedText || c.reason || "A follow-up needs you.";
-          notificationStore.push({
-            type: "commitment",
-            severity: "info",
-            title,
-            detail,
-            href: "/commitments",
-            displayMode: "both",
-            actions: [{ label: "Answer", callback: () => router.push("/commitments") }],
-            dedupKey: `commitment:${c.id}`,
+          const question = c.suggestedText || c.reason || "How did this go?";
+          // Turn the follow-up into a proactive "nudge" interaction: it surfaces
+          // in the bell + browser notification AND in the chat view, where the
+          // user answers and the agent replies naturally (see chat-view).
+          await fetch("/api/interactions", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              action: "create",
+              interaction: {
+                kind: "nudge",
+                title: question.slice(0, 80),
+                question,
+                source: { kind: "cron", id: `commitment:${c.id}`, label: "Proactive check-in" },
+              },
+            }),
+          }).catch(() => {
+            /* transient — retried next poll since we re-add on failure below */
           });
-          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-            try {
-              new Notification(title, { body: detail, tag: `commitment-${c.id}`, icon: "/favicon.ico" });
-            } catch {
-              /* ignore */
-            }
-          }
         }
         seededRef.current = true;
         saveSeen(seen);
@@ -106,7 +103,7 @@ export function CommitmentNotifier() {
       active = false;
       clearInterval(iv);
     };
-  }, [router]);
+  }, []);
 
   return null;
 }

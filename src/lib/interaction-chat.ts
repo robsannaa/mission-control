@@ -44,6 +44,11 @@ export function interactionReplyMessages(
   const answer = interaction?.answer?.trim();
   if (!interaction || !answer) return [];
 
+  // A proactive nudge is answered as a real chat turn — the agent's genuine
+  // reply lands in the conversation itself, so we must NOT also stamp a canned
+  // acknowledgement (that was the robotic "your answer was saved" line).
+  if (interaction.kind === "nudge") return [];
+
   const timestamp = interaction.answeredAt ?? interaction.updatedAt;
   const rows = [message(interaction, "user", answer, timestamp)];
   const reply = acknowledgement(interaction);

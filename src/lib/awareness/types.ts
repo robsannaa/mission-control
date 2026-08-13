@@ -6,7 +6,11 @@ export type InteractionKind =
   | "approval"
   | "correction"
   | "confirmation"
-  | "missing-context";
+  | "missing-context"
+  // A proactive check-in the agent initiated (not a paused-run clarification).
+  // Answering one is a normal chat turn, not a resume — the agent replies in
+  // the chat conversation itself. See chat-view + interaction-chat.
+  | "nudge";
 
 export type InteractionStatus =
   | "open"
