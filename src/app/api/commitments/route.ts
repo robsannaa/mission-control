@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { dismissCommitments, listCommitments, sendNudge, type Commitment } from "@/lib/commitments";
+import {
+  answerCommitment,
+  dismissCommitments,
+  listCommitments,
+  sendNudge,
+  type Commitment,
+} from "@/lib/commitments";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +35,14 @@ export async function POST(request: NextRequest) {
       const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(String) : [];
       if (ids.length === 0) return NextResponse.json({ error: "ids are required" }, { status: 400 });
       await dismissCommitments(ids);
+    } else if (action === "answer") {
+      const commitment = body.commitment as Commitment | undefined;
+      const answer = String(body.answer || "");
+      if (!commitment?.id) return NextResponse.json({ error: "commitment is required" }, { status: 400 });
+      if (!answer.trim()) return NextResponse.json({ error: "answer is required" }, { status: 400 });
+      await answerCommitment(commitment, answer);
+      const result = await listCommitments("pending");
+      return NextResponse.json({ ok: true, ...result });
     } else if (action === "send") {
       const commitment = body.commitment as Commitment | undefined;
       if (!commitment?.id) return NextResponse.json({ error: "commitment is required" }, { status: 400 });
@@ -43,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = /required|no channel|no recipient|no suggested/i.test(message) ? 400 : 500;
+    const status = /required|no channel|no recipient|no suggested|no session/i.test(message) ? 400 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

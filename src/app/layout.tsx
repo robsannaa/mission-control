@@ -10,6 +10,7 @@ import { ChatNotificationToast } from "@/components/chat-notification-toast";
 
 import { SetupGate } from "@/components/setup-gate";
 import { UsageAlertMonitor } from "@/components/usage-alert-monitor";
+import { CommitmentNotifier } from "@/components/commitment-notifier";
 import { OpenClawUpdateBanner } from "@/components/openclaw-update-banner";
 import { MissionControlUpdateBanner } from "@/components/mission-control-update-banner";
 import { ToastRenderer } from "@/components/toast-renderer";
@@ -139,6 +140,7 @@ export default function RootLayout({
             <PairingBanner />
             <VersionSkewBanner />
             <UsageAlertMonitor />
+            <CommitmentNotifier />
             <ToastRenderer />
           </SetupGate>
         </ThemeProvider>

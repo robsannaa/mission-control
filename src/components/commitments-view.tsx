@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Clock, Loader2, RefreshCw, Send, X } from "lucide-react";
+import { Check, Clock, CornerDownLeft, Loader2, RefreshCw, Reply, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { SectionBody, SectionHeader, SectionLayout } from "@/components/section-layout";
 import { ContentLoadingState } from "@/components/ui/loading-state";
 import { cn } from "@/lib/utils";
@@ -140,21 +141,34 @@ function CommitmentCard({
   onChanged: (next: CommitmentsResult | null) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
-  const [confirmSend, setConfirmSend] = useState(false);
+  const [answering, setAnswering] = useState(false);
+  const [answer, setAnswer] = useState("");
   const conf = confidenceLabel(commitment.confidence);
   const due = formatDue(commitment.dueWindow);
-  const canSend = Boolean(commitment.channel && (commitment.to || commitment.senderId) && commitment.suggestedText);
+  const canAnswer = Boolean(commitment.sessionKey);
 
   const run = async (key: string, payload: Record<string, unknown>) => {
     setBusy(key);
     try {
       onChanged(await post(payload));
     } catch (e) {
-      // Surface inline; keep it lightweight.
       alert(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
-      setConfirmSend(false);
+    }
+  };
+
+  const submitAnswer = async () => {
+    if (!answer.trim()) return;
+    setBusy("answer");
+    try {
+      onChanged(await post({ action: "answer", commitment, answer: answer.trim() }));
+      setAnswer("");
+      setAnswering(false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -183,39 +197,47 @@ function CommitmentCard({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-end gap-2">
-        {confirmSend ? (
-          <>
-            <span className="mr-auto text-xs text-muted-foreground">
-              Send this to {channelLabel(commitment.channel)}?
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => setConfirmSend(false)} disabled={busy !== null}>
+      {answering ? (
+        <div className="mt-3 space-y-2">
+          <Textarea
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void submitAnswer();
+            }}
+            placeholder="Answer the agent — it'll pick this up and act on it…"
+            rows={3}
+            autoFocus
+          />
+          <div className="flex items-center justify-end gap-2">
+            <span className="mr-auto text-xs text-fg-subtle">Goes straight to your agent · ⌘⏎ to send</span>
+            <Button variant="ghost" size="sm" onClick={() => { setAnswering(false); setAnswer(""); }} disabled={busy !== null}>
               Cancel
             </Button>
-            <Button size="sm" onClick={() => void run("send", { action: "send", commitment })} disabled={busy !== null}>
-              {busy === "send" ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-              Send now
+            <Button size="sm" onClick={() => void submitAnswer()} disabled={busy !== null || !answer.trim()}>
+              {busy === "answer" ? <Loader2 className="size-3.5 animate-spin" /> : <CornerDownLeft className="size-3.5" />}
+              Answer here
             </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void run("dismiss", { action: "dismiss", ids: [commitment.id] })}
-              disabled={busy !== null}
-            >
-              {busy === "dismiss" ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
-              Dismiss
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void run("dismiss", { action: "dismiss", ids: [commitment.id] })}
+            disabled={busy !== null}
+          >
+            {busy === "dismiss" ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
+            Dismiss
+          </Button>
+          {canAnswer && (
+            <Button size="sm" onClick={() => setAnswering(true)} disabled={busy !== null}>
+              <Reply className="size-3.5" /> Answer here
             </Button>
-            {canSend && (
-              <Button size="sm" variant="outline" onClick={() => setConfirmSend(true)} disabled={busy !== null}>
-                <Send className="size-3.5" /> Send nudge
-              </Button>
-            )}
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
