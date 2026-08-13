@@ -9,10 +9,24 @@ test.describe("automated session detection", () => {
     expect(isAutomatedSessionTitle("memory extraction")).toBe(true);
   });
 
+  test("flags OpenClaw self-test / capability probes", () => {
+    expect(isAutomatedSessionTitle("Say A-OK")).toBe(true);
+    expect(isAutomatedSessionTitle("Reply exactly: TEXTOK")).toBe(true);
+    expect(isAutomatedSessionTitle("Reply with exactly: TEXTOK")).toBe(true);
+    expect(isAutomatedSessionTitle("Reply with the single word: pong")).toBe(true);
+    expect(isAutomatedSessionTitle("What is the secret word in the attached file?")).toBe(true);
+    expect(isAutomatedSessionTitle("Remember the codeword ZEBRA")).toBe(true);
+    expect(isAutomatedSessionTitle("Colour? One word.")).toBe(true);
+    expect(isAutomatedSessionTitle("What colour fills this image?")).toBe(true);
+    expect(isAutomatedSessionTitle('(Re your check-in: "Hey — how did it go?") its monday')).toBe(true);
+  });
+
   test("leaves real user conversations alone", () => {
-    expect(isAutomatedSessionTitle("How did the interview go?")).toBe(false);
     expect(isAutomatedSessionTitle("iPhone")).toBe(false);
     expect(isAutomatedSessionTitle("@DREAMS.md what this file has?")).toBe(false);
+    expect(isAutomatedSessionTitle("What can you do?")).toBe(false);
+    expect(isAutomatedSessionTitle("its on monday, not today")).toBe(false); // a real nudge reply
+    expect(isAutomatedSessionTitle("Can you reply to this email for me?")).toBe(false);
     expect(isAutomatedSessionTitle("")).toBe(false);
     expect(isAutomatedSessionTitle(undefined)).toBe(false);
   });

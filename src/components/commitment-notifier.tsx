@@ -57,12 +57,14 @@ export function CommitmentNotifier() {
         });
         if (!res.ok || !active) return;
         const body = await res.json();
-        const commitments: Array<{ id?: string; suggestedText?: string; reason?: string }> = Array.isArray(
-          body?.commitments,
-        )
-          ? body.commitments
-          : [];
+        const commitments: Array<{
+          id?: string;
+          suggestedText?: string;
+          reason?: string;
+          dueWindow?: { earliestMs?: number; latestMs?: number };
+        }> = Array.isArray(body?.commitments) ? body.commitments : [];
         const seeding = !seededRef.current && seen.size === 0;
+        const now = Date.now();
 
         for (const c of commitments) {
           if (!c.id || seen.has(c.id)) continue;
@@ -70,6 +72,11 @@ export function CommitmentNotifier() {
           // First run seeds the backlog silently — we never replay old loops as
           // a flood. Only genuinely new nudges reach out.
           if (seeding) continue;
+          // Only nudge about commitments that are actually DUE (overdue or due
+          // within ~2 days). The rest stay quietly in the Commitments tab — no
+          // flooding the chat with the whole backlog.
+          const due = c.dueWindow?.latestMs ?? c.dueWindow?.earliestMs;
+          if (due != null && due - now > 2 * 24 * 60 * 60 * 1000) continue;
           const question = c.suggestedText || c.reason || "How did this go?";
           // Turn the follow-up into a proactive "nudge" interaction: it surfaces
           // in the bell + browser notification AND in the chat view, where the

@@ -91,11 +91,24 @@ export function isAutomatedSessionTitle(title?: string): boolean {
   const t = String(title || "").trim();
   if (!t) return false;
   return (
+    // Mission Control's own programmatic calls
     /^TASK:/i.test(t) ||
     /called programmatically by mission control/i.test(t) ||
     /read-only knowledge extraction/i.test(t) ||
     /^@memory\/dreaming/i.test(t) ||
-    /^\[?(memory|gbrain)[ _-]?(extraction|dream|promotion)/i.test(t)
+    /^\[?(memory|gbrain)[ _-]?(extraction|dream|promotion)/i.test(t) ||
+    // Nudge plumbing (legacy prefixed check-in answers)
+    /^\(re your check-in/i.test(t) ||
+    // OpenClaw self-tests / capability probes — never a real user conversation
+    /^say [a-z][ -]?ok\b/i.test(t) ||
+    /^reply (with )?(exactly|the single word|just the word|with exactly)/i.test(t) ||
+    /^reply exactly[:\s]/i.test(t) ||
+    /\bsecret word\b/i.test(t) ||
+    /\bcodeword\b/i.test(t) ||
+    /^colou?r\?\s*one word/i.test(t) ||
+    /^what colou?r (fills|is)/i.test(t) ||
+    /^read the referenced file/i.test(t) ||
+    /^reply with the single word/i.test(t)
   );
 }
 

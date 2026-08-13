@@ -617,6 +617,16 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
           })
             .then(() => announceInteractionsChanged())
             .catch(() => {});
+          // If this nudge came from a commitment, dismiss it too so the agent
+          // never re-nudges about something you already answered.
+          const src = interaction.source?.id ?? "";
+          if (src.startsWith("commitment:")) {
+            void fetch("/api/commitments", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "dismiss", ids: [src.slice("commitment:".length)] }),
+            }).catch(() => {});
+          }
           setInteraction(null);
           // Show the agent's check-in as its own bubble so it reads as a real
           // exchange, then send the user's PLAIN answer. The question reaches the
