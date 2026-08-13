@@ -1070,7 +1070,11 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
                       )}
                       <p className="mt-3 text-[15px] font-medium leading-relaxed text-foreground">{interaction.question}</p>
                       {interaction.status === "open" && (
-                        <p className="mt-2 text-xs text-fg-subtle">Reply in the message box below. Your answer will resume the paused cron run.</p>
+                        <p className="mt-2 text-xs text-fg-subtle">
+                          {interaction.kind === "nudge"
+                            ? "Reply below and your agent picks it up right here."
+                            : "Reply in the message box below. Your answer will resume the paused cron run."}
+                        </p>
                       )}
                       {interaction.status === "resuming" && (
                         <p className="mt-2 text-xs text-muted-foreground">Answer received. The original run is continuing from its checkpoint.</p>
@@ -1152,7 +1156,13 @@ function ChatViewInner({ isVisible }: { isVisible: boolean }) {
                 ? "Connect a model provider to start chatting"
                 : "Waiting for the gateway…"
             }
-            placeholder={interaction?.status === "open" ? "Type your clarification…" : undefined}
+            placeholder={
+              interaction?.status === "open"
+                ? interaction.kind === "nudge"
+                  ? "Reply to your agent…"
+                  : "Type your clarification…"
+                : undefined
+            }
             isStreaming={isStreaming || status === "submitted" || interactionBusy}
             showStarters={isEmpty && !noModels && !interaction}
             onSubmit={(submission) => void handleSubmit(submission)}

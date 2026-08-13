@@ -540,30 +540,43 @@ export function SessionSidebar({
       </div>
 
       {confirmDelete && (
-        <div className="border-t border-border bg-card px-3 py-3">
-          <p className="text-[12.5px] text-foreground">Delete this conversation?</p>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
-            The transcript is removed from the gateway. This cannot be undone.
-          </p>
-          <div className="mt-2.5 flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                onDelete(confirmDelete);
-                setConfirmDelete(null);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-danger px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Check className="h-3 w-3" aria-hidden />
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(null)}
-              className="rounded-full border border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Cancel
-            </button>
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px] animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Delete conversation"
+          onClick={() => setConfirmDelete(null)}
+          onKeyDown={(e) => e.key === "Escape" && setConfirmDelete(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-border bg-card p-5 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-[15px] font-semibold text-foreground">Delete this conversation?</h3>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+              The transcript is removed from the gateway. This cannot be undone.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                className="rounded-control border border-border px-3.5 py-2 text-[13px] font-medium text-fg-secondary transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => {
+                  onDelete(confirmDelete);
+                  setConfirmDelete(null);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-control bg-danger px-3.5 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Check className="h-3.5 w-3.5" aria-hidden />
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
