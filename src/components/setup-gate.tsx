@@ -178,12 +178,14 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (loading && !status) {
-    return <ScreenLoadingState className="bg-muted dark:bg-background" />;
+    // Onboarding is forced-light; keep the gate's loading screen light too so a
+    // dark-theme reload doesn't flash black before the light wizard paints.
+    return <ScreenLoadingState className="onboarding-light bg-[#f3f3f2]" />;
   }
 
   if (error) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background px-4">
+      <div className="onboarding-light fixed inset-0 z-50 flex items-center justify-center bg-[#f3f3f2] px-4 text-foreground">
         <div className="flex max-w-sm flex-col items-center gap-4 text-center">
           {isHosted ? (
             <>

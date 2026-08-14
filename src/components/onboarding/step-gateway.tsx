@@ -7,7 +7,7 @@ import { Celebration } from "./celebration";
 import {
   cardClass,
   primaryBtnClass,
-  secondaryBtnClass,
+  skipBtnClass,
   type DetectPayload,
 } from "./types";
 
@@ -112,7 +112,7 @@ export function StepGateway({
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
           <Server className="h-3.5 w-3.5 text-fg-subtle" />
-          <h2 className="text-base font-semibold tracking-tight text-foreground">
+          <h2 className="text-base font-medium tracking-tight text-foreground">
             Your gateway
           </h2>
         </div>
@@ -176,10 +176,7 @@ export function StepGateway({
         <Celebration message="Gateway is up and answering. Nicely done." />
       )}
 
-      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        <button type="button" onClick={onSkip} className={secondaryBtnClass}>
-          Skip for now
-        </button>
+      <div className="sticky bottom-0 z-10 mt-auto -mx-5 flex flex-col items-center gap-3 bg-white px-5 pb-6 pt-5 sm:-mx-8 sm:px-8 sm:pb-7">
         <button
           type="button"
           onClick={() => onDone({ version: detect?.cliVersion ?? null })}
@@ -188,6 +185,9 @@ export function StepGateway({
         >
           Continue
           <ChevronRight className="h-4 w-4" />
+        </button>
+        <button type="button" onClick={onSkip} className={skipBtnClass}>
+          Skip for now
         </button>
       </div>
     </div>

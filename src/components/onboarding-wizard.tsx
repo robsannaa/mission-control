@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MeshGradient, type MeshVariant } from "@/components/ui/mesh-gradient";
+import { BrandMark } from "@/components/ui/brand-mark";
+import { StepHeroVisual } from "@/components/onboarding/step-hero-visual";
 import { useOnboardingState } from "@/components/onboarding/use-onboarding-state";
 import { StepGateway } from "@/components/onboarding/step-gateway";
 import { StepModel } from "@/components/onboarding/step-model";
@@ -21,6 +23,15 @@ const STEP_LABELS: Record<OnboardingStepId, string> = {
   model: "Model",
   channel: "Telegram",
   chat: "First chat",
+};
+
+// The aurora gradient (the welcome's) reads best — use it across the whole flow
+// so every screen shares the same signature colour field.
+const HERO_VARIANT: Record<OnboardingStepId, MeshVariant> = {
+  gateway: "aurora",
+  model: "aurora",
+  channel: "aurora",
+  chat: "aurora",
 };
 
 // A hosted container guarantees a running, healthy gateway — showing a step
@@ -94,10 +105,12 @@ export function OnboardingWizard({ onComplete }: Props) {
   }, [loaded, welcomeDismissed, state?.startedAt, activeStep, advance]);
 
   if (!loaded || activeStep === null) {
-    return <ScreenLoadingState className="bg-muted" />;
+    return <ScreenLoadingState className="onboarding-light bg-[#f3f3f2]" />;
   }
 
-  if (!welcomeDismissed && !state?.startedAt) {
+  // Always greet with the welcome screen on load (until dismissed this session),
+  // so a reload replays onboarding from the very start — not mid-flow.
+  if (!welcomeDismissed) {
     return (
       <OnboardingWelcome
         onStart={() => {
@@ -108,100 +121,92 @@ export function OnboardingWizard({ onComplete }: Props) {
     );
   }
 
-  // Past the welcome screen: the auto-skip effect above is about to advance
-  // past "gateway" on hosted deployments — a brief spinner beats flashing the
-  // gateway step it's already skipping.
-  if (isHosted && activeStep === "gateway") {
-    return <ScreenLoadingState className="bg-muted" />;
-  }
-
-  const activeIdx = VISIBLE_STEP_IDS.indexOf(activeStep);
+  // On hosted, "gateway" isn't a visible step — instead of flashing a spinner
+  // while the auto-skip effect advances state, render the first visible step
+  // straight away, so the transition just slides. `visibleStep` is always a
+  // real, shown step.
+  const visibleStep = VISIBLE_STEP_IDS.includes(activeStep) ? activeStep : VISIBLE_STEP_IDS[0];
+  const activeIdx = VISIBLE_STEP_IDS.indexOf(visibleStep);
 
   return (
     // Mobile (<640px): a truly full-screen native-app surface — no floating
     // card, no dimmed backdrop peeking around the edges. sm+: a polished
     // centered panel over a dimmed backdrop, matching welcome.tsx's feel.
     <div className="onboarding-light fixed inset-0 z-50 flex flex-col bg-white text-[#111111] sm:items-center sm:justify-center sm:bg-[#f3f3f2] sm:p-4">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white sm:max-h-[calc(100vh-2rem)] sm:w-full sm:max-w-[560px] sm:flex-none sm:rounded-3xl sm:border sm:border-black/10 sm:shadow-[0_24px_60px_rgba(0,0,0,0.14)]">
-        {/* Step rail */}
-        <div className="px-5 pt-6 pb-4 sm:px-8 sm:pt-7 sm:pb-5">
-          <div className="flex items-center gap-0">
-            {VISIBLE_STEP_IDS.map((id, i) => {
-              const persisted = state?.steps[id]?.status;
-              const done = persisted === "done" || (persisted !== "skipped" && i < activeIdx);
-              const active = id === activeStep;
-              return (
-                <div key={id} className="flex flex-1 items-center last:flex-none">
+      {/* Fixed card size — hero + body sum to the SAME height on every step, so
+          the gradient hero keeps identical proportions throughout the flow. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white sm:h-[660px] sm:max-h-[calc(100vh-2rem)] sm:w-full sm:max-w-[560px] sm:flex-none sm:rounded-3xl sm:border sm:border-black/10 sm:shadow-[0_24px_60px_rgba(0,0,0,0.14)]">
+        {/* Gradient hero — the ElevenLabs shape: a mesh band up top carrying
+            the mark + progress, step content below. Each step gets its own
+            variant. Dots stay revisitable, like the old numbered rail. */}
+        <MeshGradient variant={HERO_VARIANT[visibleStep]} className="h-[240px] shrink-0">
+          <div className="flex h-full flex-col justify-between p-5 sm:px-8 sm:py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-white/95 text-[#0a0a0a] shadow-[0_4px_14px_rgba(0,0,0,0.28)]">
+                  <BrandMark className="h-[18px] w-[18px]" />
+                </div>
+                <span className="text-[13px] font-semibold text-white">Set up Mission Control</span>
+              </div>
+              <span className="rounded-full bg-black/25 px-2.5 py-1 font-mono text-[11px] font-medium text-white/80 backdrop-blur-sm">
+                Step {activeIdx + 1} of {VISIBLE_STEP_IDS.length}
+              </span>
+            </div>
+
+            <div className="flex flex-1 items-center justify-center">
+              <StepHeroVisual step={visibleStep} />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {VISIBLE_STEP_IDS.map((id, i) => {
+                const persisted = state?.steps[id]?.status;
+                const done = persisted === "done" || (persisted !== "skipped" && i < activeIdx);
+                const reachable = i <= activeIdx || done;
+                return (
                   <button
+                    key={id}
                     type="button"
+                    aria-label={STEP_LABELS[id]}
                     onClick={() => {
                       // Visited steps are revisitable — every step is safe to re-run
-                      if (i <= activeIdx || done) setChosenStep(id);
+                      if (reachable) setChosenStep(id);
                     }}
-                    className="flex flex-col items-center gap-1.5"
-                  >
-                    <div
-                      className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ring-1 transition-all duration-300",
-                        done && !active
-                          ? "bg-[#111111] text-white ring-black/15"
-                          : active
-                            ? "bg-primary text-primary-foreground ring-border-strong"
-                            : "bg-transparent text-fg-subtle ring-border",
-                      )}
-                    >
-                      {done && !active ? <Check className="h-3.5 w-3.5" /> : i + 1}
-                    </div>
-                    <span
-                      className={cn(
-                        "text-[10px] font-medium uppercase tracking-wide transition-colors duration-300",
-                        active
-                          ? "text-foreground"
-                          : done
-                            ? "text-black/60"
-                            : "text-fg-subtle",
-                      )}
-                    >
-                      {STEP_LABELS[id]}
-                    </span>
-                  </button>
-                  {i < VISIBLE_STEP_IDS.length - 1 && (
-                    <div className="relative mx-2 mb-4 flex-1">
-                      <div className="h-px w-full bg-secondary" />
-                      <div
-                        className="absolute inset-y-0 left-0 h-px bg-[#111111] transition-all duration-500"
-                        style={{ width: i < activeIdx ? "100%" : "0%" }}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    disabled={!reachable}
+                    className={cn(
+                      "h-1.5 flex-1 rounded-full transition-all duration-500",
+                      i <= activeIdx ? "bg-white" : "bg-white/30",
+                      reachable ? "cursor-pointer" : "cursor-default",
+                    )}
+                  />
+                );
+              })}
+            </div>
           </div>
-        </div>
+        </MeshGradient>
 
-        <div className="h-px bg-black/10" />
-
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:max-h-[min(72vh,560px)] sm:flex-none sm:px-8 sm:py-7">
-          {activeStep === "gateway" && (
+        {/* Fixed content height — the card is ONE size for every step and every
+            provider choice. Taller content scrolls inside this frame; it never
+            resizes the card. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-6 sm:px-8 sm:pt-7">
+          {visibleStep === "gateway" && (
             <StepGateway
               onDone={(meta) => void advance("gateway", "done", meta)}
               onSkip={() => void advance("gateway", "skipped")}
             />
           )}
-          {activeStep === "model" && (
+          {visibleStep === "model" && (
             <StepModel
               onDone={(meta) => void advance("model", "done", meta)}
               onSkip={() => void advance("model", "skipped")}
             />
           )}
-          {activeStep === "channel" && (
+          {visibleStep === "channel" && (
             <StepChannel
               onDone={(meta) => void advance("channel", "done", meta)}
               onSkip={() => void advance("channel", "skipped")}
             />
           )}
-          {activeStep === "chat" && (
+          {visibleStep === "chat" && (
             <StepChat
               onDone={(meta) => void advance("chat", "done", meta)}
               onSkip={() => void advance("chat", "skipped")}

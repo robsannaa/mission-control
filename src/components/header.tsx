@@ -768,7 +768,15 @@ export function Header() {
               )}
             >
               {powerBusy ? (
-                <InlineSpinner className="border-white/40 border-t-white" />
+                // Match the spinner to the button's own foreground — the Start
+                // state is a light button, so a hardcoded white spinner vanished.
+                <InlineSpinner
+                  className={
+                    isAlive
+                      ? "border-white/40 border-t-white"
+                      : "border-primary-foreground/30 border-t-primary-foreground"
+                  }
+                />
               ) : (
                 <Power className="h-3.5 w-3.5" />
               )}

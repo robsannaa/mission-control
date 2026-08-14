@@ -1,3 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <text x="32" y="52" font-size="54" text-anchor="middle">🦞</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="42" fill="#0a0a0a"/>
+  <g fill="none" stroke="#fafafa" stroke-width="16.5" stroke-linecap="round">
+    <path d="M96 45 A51 51 0 0 1 140.4 70.5"/>
+    <path d="M96 45 A51 51 0 0 1 140.4 70.5" transform="rotate(120 96 96)"/>
+    <path d="M96 45 A51 51 0 0 1 140.4 70.5" transform="rotate(240 96 96)"/>
+  </g>
 </svg>

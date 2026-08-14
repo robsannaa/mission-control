@@ -10,7 +10,7 @@ import {
   inputClass,
   labelClass,
   primaryBtnClass,
-  secondaryBtnClass,
+  skipBtnClass,
   type ChannelStatusPayload,
 } from "./types";
 
@@ -48,6 +48,8 @@ export function StepChannel({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrError, setQrError] = useState(false);
   const [paired, setPaired] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const connectAttempts = useRef(0);
   // lastInboundAt at the moment we started watching — anything newer is "the first message"
   const inboundBaselineRef = useRef<number | null | undefined>(undefined);
   const wasConnectedRef = useRef(false);
@@ -216,12 +218,64 @@ export function StepChannel({
     };
   }, [deepLink]);
 
+  // Once the phone pairs (or a first message lands), Telegram is set up — move
+  // to the next step on its own, no "Continue" click. Refs keep the wizard's
+  // per-render onDone/status from cancelling the timer.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  const advancedRef = useRef(false);
+  useEffect(() => {
+    if (advancedRef.current || !(paired || firstMessage)) return;
+    advancedRef.current = true;
+    const t = setTimeout(
+      () =>
+        onDoneRef.current({
+          botUsername: statusRef.current?.botUsername ?? null,
+          firstMessage: true,
+          paired,
+        }),
+      1200,
+    );
+    return () => clearTimeout(t);
+  }, [paired, firstMessage]);
+
+  // Robust connect: if the bot doesn't come online shortly after the token is
+  // saved, re-apply it once (which forces a fresh connection) so the user is
+  // never stuck on a spinner. If it still hasn't connected, surface a manual
+  // retry. `connected` here means "actually reachable", so we only stop
+  // recovering once messages will truly land.
+  const handleConnectRef = useRef(handleConnect);
+  handleConnectRef.current = handleConnect;
+  useEffect(() => {
+    if (!configured || connected) {
+      setSlow(false);
+      return;
+    }
+    const t = setTimeout(() => {
+      if (connectAttempts.current < 1) {
+        connectAttempts.current += 1;
+        void handleConnectRef.current();
+      } else {
+        setSlow(true);
+      }
+    }, 11000);
+    return () => clearTimeout(t);
+  }, [configured, connected]);
+
+  const retryConnect = useCallback(() => {
+    connectAttempts.current = 0;
+    setSlow(false);
+    void handleConnectRef.current();
+  }, []);
+
   return (
-    <div className="flex min-h-full flex-col gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
+    <div className="flex min-h-full flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
           <MessageCircle className="h-3.5 w-3.5 text-fg-subtle" />
-          <h2 className="text-base font-semibold tracking-tight text-foreground">
+          <h2 className="text-base font-medium tracking-tight text-foreground">
             Put your agent in your pocket
           </h2>
         </div>
@@ -262,34 +316,28 @@ export function StepChannel({
               {error}
             </p>
           )}
-          <button
-            type="button"
-            onClick={handleConnect}
-            disabled={!token.trim() || connecting}
-            className={cn(primaryBtnClass, "mt-2")}
-          >
-            {connecting ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Verifying with Telegram…
-              </>
-            ) : (
-              <>
-                <Send className="h-3.5 w-3.5" />
-                Connect Telegram
-              </>
-            )}
-          </button>
         </div>
       )}
 
       {configured && !connected && (
-        <div className={cn(cardClass, "flex items-center gap-3")}>
-          <Loader2 className="h-4 w-4 animate-spin text-fg-subtle" />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Token saved — the gateway is restarting and connecting to Telegram. This usually takes a
-            few seconds…
-          </p>
+        <div className={cn(cardClass, "space-y-2.5")}>
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fg-subtle" />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {slow
+                ? "Still bringing your bot online — this is taking longer than usual."
+                : "Connecting your bot to Telegram… this usually takes a few seconds."}
+            </p>
+          </div>
+          {slow && (
+            <button
+              type="button"
+              onClick={retryConnect}
+              className="text-xs font-medium text-foreground underline underline-offset-2 hover:opacity-80"
+            >
+              Retry connection
+            </button>
+          )}
         </div>
       )}
 
@@ -395,20 +443,50 @@ export function StepChannel({
         </div>
       )}
 
-      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        <button type="button" onClick={onSkip} className={secondaryBtnClass}>
+      <div className="sticky bottom-0 z-10 mt-auto -mx-5 flex flex-col items-center gap-3 bg-white px-5 pb-6 pt-5 sm:-mx-8 sm:px-8 sm:pb-7">
+        {connected ? (
+          <button
+            type="button"
+            onClick={() =>
+              onDone({ botUsername: status?.botUsername ?? null, firstMessage, paired })
+            }
+            className={primaryBtnClass}
+          >
+            Continue
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        ) : slow ? (
+          <button type="button" onClick={retryConnect} className={primaryBtnClass}>
+            <Send className="h-3.5 w-3.5" />
+            Retry connection
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={!token.trim() || connecting || configured}
+            className={primaryBtnClass}
+          >
+            {connecting ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Verifying with Telegram…
+              </>
+            ) : configured ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Connecting…
+              </>
+            ) : (
+              <>
+                <Send className="h-3.5 w-3.5" />
+                Connect Telegram
+              </>
+            )}
+          </button>
+        )}
+        <button type="button" onClick={onSkip} className={skipBtnClass}>
           Skip for now
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            onDone({ botUsername: status?.botUsername ?? null, firstMessage, paired })
-          }
-          disabled={!connected}
-          className={primaryBtnClass}
-        >
-          Continue
-          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
     </div>

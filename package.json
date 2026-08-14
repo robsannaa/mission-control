@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/dashboard",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Mission Control — open-source OpenClaw GUI and AI agent dashboard for managing local AI agents, models, memory, and skills",
   "keywords": [
     "openclaw",
@@ -33,6 +33,9 @@
   },
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 3000 --webpack",
+    "dev:vpc": "node scripts/dev-vpc.mjs",
+    "dev:vpc:empty": "VPC_EMPTY=1 node scripts/dev-vpc.mjs",
+    "vpc:reset": "node scripts/vpc-reset-onboarding.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",

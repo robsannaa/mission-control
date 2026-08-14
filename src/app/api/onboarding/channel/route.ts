@@ -95,7 +95,12 @@ export async function GET() {
 
     const configured = telegram.configured === true || account?.configured === true;
     const running = telegram.running === true || account?.running === true;
-    const connected = account?.connected === true || running;
+    // "connected" must mean the bot is genuinely polling Telegram and will
+    // receive a message NOW — not merely that the process is running. The
+    // account's own `connected` flag (with mode:"polling" + lastConnectedAt) is
+    // that signal; `running` alone is the process being up mid-handshake, which
+    // is too early to promise the user their message will land.
+    const connected = account?.connected === true;
     const lastInboundAt =
       typeof account?.lastInboundAt === "number" ? account.lastInboundAt : null;
     const lastError =

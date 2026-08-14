@@ -61,3 +61,6 @@ next-env.d.ts
 
 # OpenClaw backup archives (created by the Backup view; never commit)
 *-openclaw-backup.tar.gz
+
+# Local VPC dev harness secret (scripts/dev-vpc.mjs)
+.vpc-proxy-secret

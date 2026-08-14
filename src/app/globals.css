@@ -832,6 +832,26 @@ body {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-4px); opacity: 1; }
 }
+@keyframes caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+/* Onboarding step-hero motifs: a connection "flow" between two nodes. */
+@keyframes hero-flow { to { stroke-dashoffset: -14; } }
+@keyframes hero-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.35); }
+  50% { transform: scale(1.06); box-shadow: 0 0 0 6px rgba(255, 255, 255, 0); }
+}
+@keyframes hero-rise {
+  0% { opacity: 0; transform: translateY(6px); }
+  12%, 78% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+.hero-flow-line { animation: hero-flow 0.7s linear infinite; }
+.hero-pulse { animation: hero-pulse 2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-flow-line, .hero-pulse { animation: none; }
+}
 
 .animate-bounce-dot {
   animation: bounce-dot 1.2s ease-in-out infinite;
@@ -1061,4 +1081,53 @@ body {
 ::selection {
   background: var(--foreground);
   color: var(--background);
+}
+
+/* ── Mesh gradient (src/components/ui/mesh-gradient.tsx) ──
+   Soft, organic, ElevenLabs-style colour fields: blurred colour blobs on a
+   near-black base, screen-blended so overlaps glow, dusted with film grain.
+   Reusable anywhere a hero surface is wanted — onboarding, empty states,
+   feature cards. Colours come from inline styles per preset; this file owns
+   the physics (blur, blend, grain, drift). */
+.mesh-blob {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  filter: blur(24px);
+  mix-blend-mode: screen;
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Film grain: a tiled SVG turbulence — the tactile ElevenLabs texture. Two
+   blend layers (soft-light for tonal dither + a lighter overlay for sparkle)
+   make it read clearly over vivid colour without muddying it. */
+.mesh-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+  opacity: 0.85;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.mesh-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: overlay;
+  opacity: 0.35;
+  background-image: inherit;
+}
+
+.mesh-animated .mesh-blob {
+  animation: mesh-drift 20s ease-in-out infinite alternate;
+}
+
+@keyframes mesh-drift {
+  0%   { transform: translate(-50%, -50%) scale(1); }
+  100% { transform: translate(-44%, -56%) scale(1.14); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mesh-animated .mesh-blob { animation: none; }
 }

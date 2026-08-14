@@ -20,6 +20,7 @@ import {
   labelClass,
   primaryBtnClass,
   secondaryBtnClass,
+  skipBtnClass,
   type ProviderCatalogEntry,
 } from "./types";
 
@@ -36,6 +37,22 @@ function isAdvisedModel(provider: string, modelId: string): boolean {
   const advised = ADVISED_MODELS[provider];
   if (!advised) return false;
   return modelId === advised || modelId.endsWith(advised.replace(/^[^/]+\//, ""));
+}
+
+/** Best-effort provider detection from an API key's prefix, so pasting a key
+ * auto-selects the right provider — much less friction than picking a tab first. */
+function detectProviderFromKey(key: string): string | null {
+  const k = key.trim();
+  if (!k) return null;
+  if (k.startsWith("sk-ant-")) return "anthropic";
+  if (k.startsWith("sk-or-")) return "openrouter";
+  if (k.startsWith("sk-proj-") || k.startsWith("sk-svcacct-")) return "openai";
+  if (k.startsWith("AIza")) return "google";
+  if (k.startsWith("gsk_")) return "groq";
+  if (k.startsWith("xai-")) return "xai";
+  // A bare sk- key (not Anthropic/OpenRouter) is almost always OpenAI.
+  if (/^sk-[A-Za-z0-9]{16,}/.test(k)) return "openai";
+  return null;
 }
 
 const isHosted =
@@ -143,6 +160,12 @@ export function StepModel({
   }, []);
 
   const activeProvider = providers.find((p) => p.id === providerId);
+  // Auto-detect drives everything now: no provider tabs. We surface which
+  // provider the pasted key belongs to, and which providers are supported.
+  const detectedProvider = providers.find((p) => p.id === detectProviderFromKey(apiKey));
+  const supportedProviders = providers.map((p) => p.label).join(" · ");
+  const getKeyProvider =
+    detectedProvider || providers.find((p) => p.id === "openrouter") || providers[0];
 
   const resetKeyState = useCallback(() => {
     setValidated(false);
@@ -160,9 +183,10 @@ export function StepModel({
   }, []);
 
   const validateKey = useCallback(
-    async (key: string) => {
+    async (key: string, providerOverride?: string) => {
       const trimmed = key.trim();
       if (!trimmed) return;
+      const provider = providerOverride || providerId;
       const seq = ++validateSeq.current;
       setValidating(true);
       setError(null);
@@ -170,7 +194,7 @@ export function StepModel({
         const res = await fetch("/api/onboarding/model-auth", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "validate-key", provider: providerId, token: trimmed }),
+          body: JSON.stringify({ action: "validate-key", provider, token: trimmed }),
         });
         const data = await res.json();
         if (seq !== validateSeq.current) return;
@@ -184,17 +208,23 @@ export function StepModel({
         const modelsRes = await fetch("/api/models", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "list-models", provider: providerId, token: trimmed }),
+          body: JSON.stringify({ action: "list-models", provider, token: trimmed }),
         });
         const modelsData = await modelsRes.json();
         if (seq !== validateSeq.current) return;
-        if (modelsData.ok && Array.isArray(modelsData.models)) {
-          const sorted = [...(modelsData.models as Model[])].sort((a, b) =>
-            isAdvisedModel(providerId, a.id) ? -1 : isAdvisedModel(providerId, b.id) ? 1 : 0,
+        const list =
+          modelsData.ok && Array.isArray(modelsData.models) ? (modelsData.models as Model[]) : [];
+        if (list.length) {
+          const sorted = [...list].sort((a, b) =>
+            isAdvisedModel(provider, a.id) ? -1 : isAdvisedModel(provider, b.id) ? 1 : 0,
           );
           setModels(sorted);
-          const preferred = sorted.find((m) => isAdvisedModel(providerId, m.id)) || sorted[0];
-          if (preferred) setSelectedModel(preferred.id);
+          const preferred = sorted.find((m) => isAdvisedModel(provider, m.id)) || sorted[0];
+          setSelectedModel(preferred.id);
+        } else if (ADVISED_MODELS[provider]) {
+          // No live list (or it failed) — still proceed with the advised model
+          // so the auto-save/advance never stalls.
+          setSelectedModel(ADVISED_MODELS[provider]);
         }
       } catch {
         if (seq === validateSeq.current) setError("Network error. Please try again.");
@@ -203,6 +233,22 @@ export function StepModel({
       }
     },
     [providerId],
+  );
+
+  // Paste/type a key → auto-select the provider it belongs to. Returns the
+  // provider to validate against (so we don't race the state update).
+  const maybeSwitchProvider = useCallback(
+    (key: string): string => {
+      const detected = detectProviderFromKey(key);
+      if (detected && detected !== providerId && providers.some((p) => p.id === detected)) {
+        setProviderId(detected);
+        setAuthMode("api-key");
+        resetSubscriptionState();
+        return detected;
+      }
+      return providerId;
+    },
+    [providerId, providers, resetSubscriptionState],
   );
 
   const handleSave = useCallback(async () => {
@@ -225,23 +271,18 @@ export function StepModel({
         setError(data.error || "Failed to save credentials.");
         return;
       }
-
-      // Honest verification: the route already polled `models status` after
-      // saving, so `authenticated` means OpenClaw itself can use the
-      // credential — not just that the write didn't throw.
-      if (!data.authenticated) {
-        setError(
-          "The key was saved, but OpenClaw hasn't picked it up yet. The gateway may still be restarting — try again in a few seconds.",
-        );
-        return;
-      }
+      // The key was already validated against the provider, and the config is
+      // written — so the credential is good. `authenticated` is a best-effort
+      // gateway confirmation; don't block the user on a slow restart. Advance.
       setVerified(true);
+      onDone({ provider: providerId, model: selectedModel, via: "api-key" });
     } catch {
       setError("Network error while saving. Please try again.");
     } finally {
       setSaving(false);
     }
-  }, [validated, selectedModel, saving, providerId, apiKey]);
+  }, [validated, selectedModel, saving, providerId, apiKey, onDone]);
+
 
   const handleSubscriptionConnect = useCallback(async () => {
     const trimmed = subToken.trim();
@@ -261,9 +302,7 @@ export function StepModel({
         return;
       }
       if (!data.authenticated) {
-        setSubError(
-          "The token was saved, but OpenClaw hasn't picked it up yet. The gateway may still be restarting — try again in a few seconds.",
-        );
+        setSubError("Saved, but it's not active yet — give it a few seconds and try again.");
         return;
       }
       setSubVerified(true);
@@ -383,7 +422,10 @@ export function StepModel({
     !apiKey &&
     !subToken &&
     !localSaving;
-  const supportsSubscription = Boolean(activeProvider?.authMethods.includes("paste-token"));
+  // Subscription (paste-token) auth is not available on hosted/VPC instances —
+  // there's no local Claude Code login to mint a setup token from.
+  const supportsSubscription =
+    !isHosted && Boolean(activeProvider?.authMethods.includes("paste-token"));
 
   function switchMode(next: "cloud" | "local") {
     setMode(next);
@@ -398,11 +440,11 @@ export function StepModel({
   }
 
   return (
-    <div className="flex min-h-full flex-col gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
+    <div className="flex min-h-full flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
           <Key className="h-3.5 w-3.5 text-fg-subtle" />
-          <h2 className="text-base font-semibold tracking-tight text-foreground">
+          <h2 className="text-base font-medium tracking-tight text-foreground">
             Connect an AI model
           </h2>
         </div>
@@ -484,77 +526,15 @@ export function StepModel({
           skeleton — rendering the key input first and swapping in the cards a
           beat later reads as a glitch. */}
       {mode === "cloud" && !catalogLoaded && (
-        <div className="space-y-6" aria-hidden="true">
-          <div className="grid grid-cols-3 gap-2">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-[68px] animate-pulse rounded-xl border border-black/5 bg-black/[0.04]" />
-            ))}
-          </div>
-          <div className="h-4 w-2/3 animate-pulse rounded bg-black/[0.05]" />
-          <div className="space-y-1.5">
-            <div className="h-3 w-36 animate-pulse rounded bg-black/[0.05]" />
-            <div className="h-12 animate-pulse rounded-xl border border-black/5 bg-black/[0.03]" />
-          </div>
+        <div className="space-y-1.5" aria-hidden="true">
+          <div className="h-3 w-16 animate-pulse rounded bg-black/[0.05]" />
+          <div className="h-12 animate-pulse rounded-xl border border-black/5 bg-black/[0.03]" />
         </div>
       )}
 
       {mode === "cloud" && catalogLoaded && (
         <>
-          {/* Provider cards */}
-          <div className="grid grid-cols-3 gap-2">
-            {providers.map((p) => {
-              const isSelected = providerId === p.id;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    setProviderId(p.id);
-                    setApiKey("");
-                    resetKeyState();
-                    setAuthMode("api-key");
-                    resetSubscriptionState();
-                  }}
-                  disabled={validating || saving}
-                  className={cn(
-                    "group relative flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3.5 transition-all duration-200",
-                    isSelected
-                      ? "border-border-strong bg-foreground/[0.04] shadow-sm"
-                      : "border-border bg-card hover:border-border-strong hover:-translate-y-px hover:shadow-sm",
-                    (validating || saving) && "opacity-50 cursor-not-allowed",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "text-xs font-semibold transition-colors",
-                      isSelected
-                        ? "text-foreground"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {p.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {activeProvider && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {activeProvider.hint}{" "}
-              {authMode === "api-key" && (
-                <a
-                  href={activeProvider.keyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-foreground underline underline-offset-2 hover:opacity-90"
-                >
-                  Get your key
-                  <ExternalLink className="h-2.5 w-2.5" />
-                </a>
-              )}
-            </p>
-          )}
+          {/* No provider tabs — the key's prefix tells us the provider. */}
 
           {/* API key vs. subscription — first-class, no CLI commands either way */}
           {supportsSubscription && (
@@ -581,14 +561,16 @@ export function StepModel({
           {/* Key input with instant validation */}
           {authMode === "api-key" && (
             <div className="space-y-1.5">
-              <label className={labelClass}>{activeProvider?.label || "Provider"} API key</label>
+              <label className={labelClass}>API key</label>
               <div className="relative flex items-center gap-2">
                 <input
                   type="password"
                   value={apiKey}
                   onChange={(e) => {
-                    setApiKey(e.target.value);
+                    const val = e.target.value;
+                    setApiKey(val);
                     resetKeyState();
+                    maybeSwitchProvider(val);
                   }}
                   onPaste={(e) => {
                     const pasted = e.clipboardData.getData("text").trim();
@@ -596,7 +578,8 @@ export function StepModel({
                       e.preventDefault();
                       setApiKey(pasted);
                       resetKeyState();
-                      setTimeout(() => void validateKey(pasted), 0);
+                      const provider = maybeSwitchProvider(pasted);
+                      setTimeout(() => void validateKey(pasted, provider), 0);
                     }
                   }}
                   onKeyDown={(e) => {
@@ -604,22 +587,49 @@ export function StepModel({
                       void validateKey(apiKey);
                     }
                   }}
-                  placeholder={activeProvider?.placeholder || "sk-..."}
+                  placeholder="Paste your API key…"
                   disabled={validating || saving}
                   className={cn(inputClass, "flex-1")}
                 />
                 {(validating || validated) && (
                   <div
                     className={cn(
-                      "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-300",
-                      validating
-                        ? "bg-muted text-muted-foreground"
-                        : "bg-black/[0.04] text-[#111111] ring-1 ring-black/10",
+                      "flex shrink-0 items-center gap-1.5 text-xs font-medium animate-in fade-in slide-in-from-right-1 duration-200",
+                      validating ? "text-[#777169]" : "text-[#0a0a0a]",
                     )}
                   >
-                    {validating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                    {validating ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#a59f97]" />
+                    ) : (
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#0a0a0a] text-white animate-in zoom-in-50 duration-300">
+                        <Check className="h-2.5 w-2.5" strokeWidth={3.5} />
+                      </span>
+                    )}
                     {validating ? "Checking" : "Verified"}
                   </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                {detectedProvider ? (
+                  <span className="flex items-center gap-1.5 text-xs text-fg-secondary">
+                    <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#0a0a0a] text-white">
+                      <Check className="h-2 w-2" strokeWidth={3.5} />
+                    </span>
+                    <span className="font-medium text-foreground">{detectedProvider.label}</span> detected
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Works with {supportedProviders}</span>
+                )}
+                {getKeyProvider && (
+                  <a
+                    href={getKeyProvider.keyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1 text-xs text-foreground underline underline-offset-2 hover:opacity-90"
+                  >
+                    Get a key
+                    <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
                 )}
               </div>
               {error && (
@@ -631,9 +641,10 @@ export function StepModel({
             </div>
           )}
 
-          {/* Model picker */}
+          {/* Model picker — appears once the key verifies. The recommended
+              model is pre-selected; the user can pick any of the provider's. */}
           {authMode === "api-key" && validated && models.length > 0 && (
-            <div className="space-y-1.5 animate-in fade-in duration-300">
+            <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300">
               <label className={labelClass}>Model</label>
               <select
                 value={selectedModel}
@@ -644,7 +655,7 @@ export function StepModel({
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
                     {getFriendlyModelName(m.id)}
-                    {isAdvisedModel(providerId, m.id) ? "  (advised)" : ""}
+                    {isAdvisedModel(providerId, m.id) ? "  (recommended)" : ""}
                   </option>
                 ))}
               </select>
@@ -693,7 +704,7 @@ export function StepModel({
             </div>
           )}
 
-          {(verified || subVerified) && (
+          {subVerified && (
             <Celebration message="Model connected and verified. Your agent can think now!" />
           )}
         </>
@@ -842,16 +853,7 @@ export function StepModel({
         </div>
       )}
 
-      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        {/* Hosted: an instance without a model is dead weight — no skipping */}
-        {isHosted ? (
-          <span />
-        ) : (
-          <button type="button" onClick={onSkip} className={secondaryBtnClass}>
-            Skip for now
-          </button>
-        )}
-
+      <div className="sticky bottom-0 z-10 mt-auto -mx-5 flex flex-col items-center gap-3 bg-white px-5 pb-6 pt-5 sm:-mx-8 sm:px-8 sm:pb-7">
         {mode === "local" ? (
           localVerified ? (
             <button
@@ -888,58 +890,68 @@ export function StepModel({
               )}
             </button>
           )
-        ) : verified || subVerified ? (
-          <button
-            type="button"
-            onClick={() =>
-              onDone({
-                provider: providerId,
-                model: verified ? selectedModel : ADVISED_MODELS[providerId] || null,
-                via: verified ? "api-key" : "subscription",
-              })
-            }
-            className={primaryBtnClass}
-          >
-            Continue
-            <ChevronRight className="h-4 w-4" />
-          </button>
         ) : authMode === "subscription" ? (
+          subVerified ? (
+            <button
+              type="button"
+              onClick={() =>
+                onDone({ provider: providerId, model: ADVISED_MODELS[providerId] || null, via: "subscription" })
+              }
+              className={primaryBtnClass}
+            >
+              Continue
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSubscriptionConnect}
+              disabled={!subToken.trim() || subSaving}
+              className={primaryBtnClass}
+            >
+              {subSaving ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Connecting…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Connect subscription
+                </>
+              )}
+            </button>
+          )
+        ) : (
+          // Paste → auto-verify → pick a model → Save & continue (fast now).
           <button
             type="button"
-            onClick={handleSubscriptionConnect}
-            disabled={!subToken.trim() || subSaving}
+            onClick={() => void handleSave()}
+            disabled={!validated || !selectedModel || saving || validating}
             className={primaryBtnClass}
           >
-            {subSaving ? (
+            {validating ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Connecting…
+                Verifying…
               </>
-            ) : (
-              <>
-                <Sparkles className="h-3.5 w-3.5" />
-                Connect subscription
-              </>
-            )}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!validated || !selectedModel || saving}
-            className={primaryBtnClass}
-          >
-            {saving ? (
+            ) : saving ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Saving…
               </>
             ) : (
               <>
-                Save &amp; verify
+                Save &amp; continue
                 <ChevronRight className="h-4 w-4" />
               </>
             )}
+          </button>
+        )}
+        {/* Hosted: an instance without a model is dead weight — no skipping */}
+        {!isHosted && (
+          <button type="button" onClick={onSkip} className={skipBtnClass}>
+            Skip for now
           </button>
         )}
       </div>

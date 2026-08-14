@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { Loader2, PartyPopper, Send, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Celebration } from "./celebration";
-import { inputClass, primaryBtnClass, secondaryBtnClass } from "./types";
+import { inputClass, primaryBtnClass, skipBtnClass } from "./types";
 import { splitOnboardChatFrame } from "./error-frame";
 
 const SUGGESTED_PROMPTS = [
@@ -97,7 +97,7 @@ export function StepChat({
       <div className="space-y-0.5">
         <div className="mb-1 flex items-center gap-2">
           <Sparkles className="h-3.5 w-3.5 text-fg-subtle" />
-          <h2 className="text-base font-semibold tracking-tight text-foreground">
+          <h2 className="text-base font-medium tracking-tight text-foreground">
             Say hello to your agent
           </h2>
         </div>
@@ -172,7 +172,7 @@ export function StepChat({
           type="button"
           onClick={() => void send(input)}
           disabled={!input.trim() || streaming}
-          className={cn(primaryBtnClass, "px-3.5")}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-30"
           aria-label="Send message"
         >
           {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -190,10 +190,7 @@ export function StepChat({
         <Celebration message="That's your agent, live and thinking. You're all set!" />
       )}
 
-      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        <button type="button" onClick={onSkip} className={secondaryBtnClass}>
-          Skip for now
-        </button>
+      <div className="sticky bottom-0 z-10 mt-auto -mx-5 flex flex-col items-center gap-3 bg-white px-5 pb-6 pt-5 sm:-mx-8 sm:px-8 sm:pb-7">
         <button
           type="button"
           onClick={() => onDone({ chatted: gotReply })}
@@ -202,6 +199,9 @@ export function StepChat({
         >
           <PartyPopper className="h-4 w-4" />
           Finish setup
+        </button>
+        <button type="button" onClick={onSkip} className={skipBtnClass}>
+          Skip for now
         </button>
       </div>
     </div>

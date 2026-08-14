@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useCallback, useSyncExternalStore, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/ui/brand-mark";
 import {
   Activity,
   Archive,
@@ -680,15 +681,15 @@ export function Sidebar() {
         <div className={cn("shrink-0", collapsed ? "px-2 pb-2" : "px-3 pb-3 pt-3")}>
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-base">
-                🦞
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-foreground">
+                <BrandMark className="h-[19px] w-[19px]" />
               </div>
             </div>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-base">
-                  🦞
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-foreground">
+                  <BrandMark className="h-[19px] w-[19px]" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">

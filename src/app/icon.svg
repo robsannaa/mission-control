@@ -1,3 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <text x="32" y="52" font-size="54" text-anchor="middle">🦞</text>
+  <rect width="64" height="64" rx="14" fill="#0a0a0a"/>
+  <g fill="none" stroke="#fafafa" stroke-width="5.5" stroke-linecap="round">
+    <path d="M32 15 A17 17 0 0 1 46.8 23.5"/>
+    <path d="M32 15 A17 17 0 0 1 46.8 23.5" transform="rotate(120 32 32)"/>
+    <path d="M32 15 A17 17 0 0 1 46.8 23.5" transform="rotate(240 32 32)"/>
+  </g>
 </svg>

@@ -100,11 +100,11 @@ type ModelsStatusJson = {
   };
 };
 
-async function readAuthStatus(): Promise<{
+async function readAuthStatus(timeoutMs = 45000): Promise<{
   defaultModel: string | null;
   authenticatedProviders: string[];
 }> {
-  const { stdout } = await runCliCaptureBoth(["models", "status", "--json"], 45000);
+  const { stdout } = await runCliCaptureBoth(["models", "status", "--json"], timeoutMs);
   const jsonStart = stdout.indexOf("{");
   const parsed: ModelsStatusJson = JSON.parse(jsonStart >= 0 ? stdout.slice(jsonStart) : stdout);
   const providers = Array.isArray(parsed.auth?.providers) ? parsed.auth!.providers! : [];
@@ -130,16 +130,18 @@ async function readAuthStatus(): Promise<{
  * credential usable, so "Verified" means the agent can actually use it —
  * never just "the write didn't throw".
  */
-async function pollProviderAuthenticated(provider: string, budgetMs = 20_000): Promise<boolean> {
+async function pollProviderAuthenticated(provider: string, budgetMs = 6_000): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < budgetMs) {
     try {
-      const status = await readAuthStatus();
+      // Cap each status call tightly — `models status` can otherwise hang for
+      // tens of seconds fetching catalogs, which is what made saving feel broken.
+      const status = await readAuthStatus(5000);
       if (status.authenticatedProviders.includes(provider)) return true;
     } catch {
       // Gateway may be mid-restart — keep polling within budget.
     }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await new Promise((resolve) => setTimeout(resolve, 800));
   }
   return false;
 }
