@@ -64,3 +64,6 @@ next-env.d.ts
 
 # Local VPC dev harness secret (scripts/dev-vpc.mjs)
 .vpc-proxy-secret
+
+# Private design docs — not for the public repo
+docs/design/
