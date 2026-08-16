@@ -507,6 +507,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (err) {
+    // Bug fix 2026-08-16: a malformed JSON body throws a SyntaxError from
+    // `request.json()`. That is a client error, not an internal failure.
+    if (err instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: `Invalid JSON body: ${err.message}` },
+        { status: 400 },
+      );
+    }
     return NextResponse.json({ error: cliError(err) }, { status: 500 });
   }
 }
