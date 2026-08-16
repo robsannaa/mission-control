@@ -14,7 +14,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const supportedProviders = ["openrouter", "openai", "anthropic"] as const;
     type SupportedProvider = (typeof supportedProviders)[number];
     if (!supportedProviders.includes(provider as SupportedProvider)) {
-      return NextResponse.json({ ok: false, error: "Unsupported provider" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, error: `${provider} usage tracking not yet supported` },
+        { status: 501 },
+      );
     }
     if (request.nextUrl.searchParams.get("refresh") === "1") {
       await maybeCollectProvider(provider as SupportedProvider);
@@ -46,7 +49,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const supportedProviders = ["openrouter", "openai", "anthropic"] as const;
     type SupportedProvider = (typeof supportedProviders)[number];
     if (!supportedProviders.includes(provider as SupportedProvider)) {
-      return NextResponse.json({ ok: false, error: "Unsupported provider" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, error: `${provider} usage tracking not yet supported` },
+        { status: 501 },
+      );
     }
 
     const body = await request.json();
