@@ -107,14 +107,28 @@ export function validateQuestion(input: {
   choices?: InteractionChoice[];
 }): string[] {
   const errors: string[] = [];
-  const question = input.question.trim();
-  if (!input.title.trim()) errors.push("title is required");
+  // Bug fix 2026-08-16: callers previously sent non-string values (numbers,
+  // arrays) or strings containing NUL bytes. `.trim()` blew up with
+  // "a.title.trim is not a function" or "a.question.trim is not a function",
+  // and NUL bytes made it to `sqlite3` which threw "must be a string without
+  // null bytes". Reject those inputs up front with a clear 400-style error.
+  if (typeof input.title !== "string") errors.push("title must be a string");
+  if (typeof input.question !== "string") errors.push("question must be a string");
+  if (typeof input.title === "string" && input.title.includes("\u0000")) {
+    errors.push("title must not contain NUL bytes");
+  }
+  if (typeof input.question === "string" && input.question.includes("\u0000")) {
+    errors.push("question must not contain NUL bytes");
+  }
+  const question = typeof input.question === "string" ? input.question.trim() : "";
+  if (typeof input.title === "string" && !input.title.trim()) errors.push("title is required");
   if (!question) errors.push("question is required");
   if (question.length > 2000) errors.push("question must be 2000 characters or fewer");
-  if (input.title.trim().length > 240) errors.push("title must be 240 characters or fewer");
+  if (typeof input.title === "string" && input.title.trim().length > 240) errors.push("title must be 240 characters or fewer");
   const ids = new Set<string>();
   for (const choice of input.choices || []) {
-    if (!choice.id.trim() || !choice.label.trim() || !choice.value.trim()) {
+    if (typeof choice.id !== "string" || typeof choice.label !== "string" || typeof choice.value !== "string" ||
+        !choice.id.trim() || !choice.label.trim() || !choice.value.trim()) {
       errors.push("every choice requires id, label, and value");
       continue;
     }
