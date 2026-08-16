@@ -68,6 +68,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ...(await getTasksSnapshot(scope)) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // Bug fix 2026-08-16: the OpenClaw CLI surfaces "Task not found" / "TaskFlow
+    // not found" with a non-zero exit code. Map these to 404 instead of a generic
+    // 500 so clients can distinguish "doesn't exist" from "internal failure".
+    if (/Task(?:Flow)? not found/i.test(message)) {
+      return NextResponse.json({ ok: false, error: message }, { status: 404 });
+    }
     const status = /required|must be/i.test(message) ? 400 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
