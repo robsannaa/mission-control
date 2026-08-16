@@ -315,6 +315,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (err) {
+    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
+    if (err instanceof SyntaxError) {
+      return NextResponse.json(
+        { ok: false, error: `Invalid JSON body: ${err.message}` },
+        { status: 400 },
+      );
+    }
     return NextResponse.json({ error: cliError(err) }, { status: 500 });
   }
 }
