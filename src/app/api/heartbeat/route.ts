@@ -467,6 +467,13 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     console.error("Heartbeat POST error:", err);
+    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
+    if (err instanceof SyntaxError) {
+      return jsonNoStore(
+        { ok: false, error: `Invalid JSON body: ${err.message}` },
+        { status: 400 },
+      );
+    }
     return jsonNoStore({ ok: false, error: String(err) }, { status: 500 });
   }
 }
