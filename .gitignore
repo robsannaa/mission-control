@@ -71,3 +71,6 @@ next-env.d.ts
 
 # Private design docs — not for the public repo
 docs/design/
+
+# sqlite backup snapshots
+*.db.bak*
