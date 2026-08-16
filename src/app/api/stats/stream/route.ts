@@ -517,6 +517,7 @@ export async function GET() {
 
   const encoder = new TextEncoder();
   let closed = false;
+  let interval: ReturnType<typeof setInterval> | undefined;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -538,7 +539,7 @@ export async function GET() {
       }
 
       // Then send updates every 5 seconds
-      const interval = setInterval(async () => {
+      interval = setInterval(async () => {
         if (closed) {
           clearInterval(interval);
           return;
@@ -557,6 +558,7 @@ export async function GET() {
     },
     cancel() {
       closed = true;
+      if (interval) clearInterval(interval);
     },
   });
 
