@@ -28,6 +28,10 @@
 .DS_Store
 *.pem
 
+# runtime sqlite stores
+interactions.db
+usage.db
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -67,3 +71,6 @@ next-env.d.ts
 
 # Private design docs — not for the public repo
 docs/design/
+
+# sqlite backup snapshots
+*.db.bak*

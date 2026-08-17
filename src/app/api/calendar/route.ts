@@ -34,6 +34,13 @@ export async function GET(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: `Invalid JSON body: ${error.message}` },
+        { status: 400 },
+      );
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },
       { status: 500 }
@@ -127,6 +134,13 @@ export async function POST(request: NextRequest) {
         );
     }
   } catch (error) {
+    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: `Invalid JSON body: ${error.message}` },
+        { status: 400 },
+      );
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },
       { status: 500 }

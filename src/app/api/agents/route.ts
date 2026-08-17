@@ -1218,6 +1218,14 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("Agents API POST error:", err);
     const msg = String(err);
+    // Bug fix 2026-08-16: a malformed JSON body throws a SyntaxError from
+    // `request.json()`. That is a client error, not an internal failure.
+    if (err instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: `Invalid JSON body: ${err.message}` },
+        { status: 400 },
+      );
+    }
     // Make gateway errors user-friendly
     if (msg.includes("already exists") || msg.includes("Agent already")) {
       return NextResponse.json(

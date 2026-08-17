@@ -10,12 +10,16 @@ import {
 import type { CreateInteractionInput, InteractionRequest, InteractionResolution } from "./types";
 
 export async function requestClarification(
-  input: Omit<CreateInteractionInput, "idempotencyKey"> & { idempotencyKey?: string },
+  input: Omit<CreateInteractionInput, "idempotencyKey"> & { idempotencyKey?: string; runId?: string },
 ) {
+  // Allow explicit caller-provided idempotencyKey OR a caller-provided runId to
+  // scope the key. Falls back to source-derived key only when neither is given.
+  // Bug fix 2026-08-16: body.runId was previously ignored, causing silent dedup
+  // for retried runs with identical source+question combinations.
+  const explicitKey = input.idempotencyKey || (input.runId ? `run:${input.runId}` : undefined);
   return createInteraction({
     ...input,
-    idempotencyKey:
-      input.idempotencyKey || buildInteractionIdempotencyKey(input.source, input.question),
+    idempotencyKey: explicitKey || buildInteractionIdempotencyKey(input.source, input.question),
   });
 }
 

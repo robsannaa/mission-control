@@ -84,6 +84,13 @@ export async function POST(request: NextRequest) {
       durationMs: Date.now() - startedAt,
     });
   } catch (err) {
+    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
+    if (err instanceof SyntaxError) {
+      return NextResponse.json(
+        { ok: false, error: `Invalid JSON body: ${err.message}` },
+        { status: 400 },
+      );
+    }
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
       { ok: false, error: message || "Skill test failed" },

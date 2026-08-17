@@ -71,15 +71,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, interaction });
     }
     if (!body.interaction) return NextResponse.json({ error: "interaction is required" }, { status: 400 });
+    // Bug fix 2026-08-16: validate `source` before delegating. Without it, the
+    // awareness engine throws "Cannot read properties of undefined (reading
+    // 'runId')" and surfaces as a generic 500. Surface a precise 400 instead.
+    if (!body.interaction.source || typeof body.interaction.source !== "object") {
+      return NextResponse.json(
+        { error: "interaction.source is required (kind, id, label, and optional sessionKey/agentId)" },
+        { status: 400 },
+      );
+    }
     // Overwrite any caller-supplied tenant/user with the server-resolved scope.
     const interaction = await requestClarification({
       ...body.interaction,
       tenantId: scope.tenantId,
       userId: scope.userId,
+      runId: body.runId,
     });
     return NextResponse.json({ ok: true, interaction }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: /required|characters/i.test(message) ? 400 : 500 });
+    // Bug fix 2026-08-16: extend the client-error heuristic so the new
+    // `validateQuestion` messages (type checks, NUL-byte checks) surface as
+    // 400 instead of 500. Matches: "required", "characters", "must be a string",
+    // "must not contain", "must start with", "must contain only".
+    const isClientError =
+      /required|characters|must be a string|must not contain|must start with|must contain only/i.test(message);
+    return NextResponse.json({ error: message }, { status: isClientError ? 400 : 500 });
   }
 }

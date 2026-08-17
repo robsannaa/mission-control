@@ -59,11 +59,28 @@ function parseUrlsFromStatusText(text: string): string[] {
     .map((line) => line.split(" ")[0]);
 }
 
+/**
+ * Typed error thrown when the `tailscale` binary is not on PATH. Distinguishes
+ * "feature unavailable on this host" from generic subprocess failures, so route
+ * handlers can return 503 (Service Unavailable) instead of a generic 500.
+ *
+ * The class lives in src/lib/tailscale.ts (not here) because Next.js typed
+ * routes reject any non-handler export from route files.
+ */
+import { TailscaleNotInstalledError } from "@/lib/tailscale";
+
 async function runTailscale(args: string[], timeout = 12000): Promise<{ stdout: string; stderr: string }> {
-  return exec("tailscale", args, {
-    timeout,
-    env: { ...process.env, NO_COLOR: "1" },
-  });
+  try {
+    return await exec("tailscale", args, {
+      timeout,
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "ENOENT") {
+      throw new TailscaleNotInstalledError();
+    }
+    throw err;
+  }
 }
 
 function normalizeRunArgs(value: unknown): string[] {
@@ -225,6 +242,9 @@ export async function POST(req: Request) {
         output: normalizeCliText(out.stdout, out.stderr),
       });
     } catch (err) {
+      // Bug fix 2026-08-16: distinguish "tailscale not installed" (503) from
+      // other subprocess failures (500).
+      const status = err instanceof TailscaleNotInstalledError ? 503 : 500;
       return NextResponse.json(
         {
           ok: false,
@@ -232,13 +252,14 @@ export async function POST(req: Request) {
           args,
           error: formatExecError(err),
         },
-        { status: 500 }
+        { status }
       );
     }
   } catch (err) {
+    const status = err instanceof TailscaleNotInstalledError ? 503 : 500;
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
+      { status }
     );
   }
 }
