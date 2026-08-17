@@ -8,8 +8,23 @@ import {
   setNotify,
   showTask,
 } from "@/lib/tasks-native";
+import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
+
+/** Max accepted JSON body for POST /api/tasks (action/id/policy only). */
+const MAX_TASKS_BODY_BYTES = 1024 * 1024; // 1 MB
+
+/** Max length for a task / flow id passed to the CLI (a UUID/hash is ~36 chars). */
+const MAX_TASK_ID_LENGTH = 512;
+
+/** Validates a task/flow id before it reaches the OpenClaw CLI subprocess. */
+function validateTaskId(id: unknown): string | null {
+  const raw = typeof id === "string" ? id.trim() : "";
+  if (!raw) return "Invalid id";
+  if (raw.length > MAX_TASK_ID_LENGTH) return "Invalid id";
+  return null;
+}
 
 /**
  * GET /api/tasks?scope=active|all  — the native OpenClaw task + TaskFlow ledger.
@@ -44,20 +59,23 @@ export async function GET(request: NextRequest) {
 
 /** POST — cancel a task/flow, or set a task's notify policy. */
 export async function POST(request: NextRequest) {
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+  const parsed = await readJsonBody(request, { maxBytes: MAX_TASKS_BODY_BYTES });
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   const action = String(body.action || "");
   try {
     if (action === "cancel") {
-      await cancelTask(String(body.id || ""));
+      const idErr = validateTaskId(body.id);
+      if (idErr) return NextResponse.json({ error: idErr }, { status: 400 });
+      await cancelTask(String(body.id));
     } else if (action === "cancel-flow") {
-      await cancelFlow(String(body.id || ""));
+      const idErr = validateTaskId(body.id);
+      if (idErr) return NextResponse.json({ error: idErr }, { status: 400 });
+      await cancelFlow(String(body.id));
     } else if (action === "notify") {
-      await setNotify(String(body.id || ""), String(body.policy || ""));
+      const idErr = validateTaskId(body.id);
+      if (idErr) return NextResponse.json({ error: idErr }, { status: 400 });
+      await setNotify(String(body.id), String(body.policy || ""));
     } else if (action === "maintenance-apply") {
       const result = await runMaintenance(true);
       return NextResponse.json({ ok: true, maintenance: result });
