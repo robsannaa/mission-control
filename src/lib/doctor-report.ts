@@ -21,12 +21,13 @@
  * least one finding, `2` = the command failed before it could lint. So a
  * non-zero exit is *not* an error — only exit 2 (or unparseable stdout) is.
  *
- * There is no `--fast` / `--quick` flag on this build. What exists is check
- * *selection*: the default lint set skips checks that are "deep, historical, or
- * more likely to surface repairable legacy residue" (24 run / 27 skipped here),
- * and `--all` runs the complete inventory (51 checks). `fast: true` (the
- * default) therefore means the default set; `fast: false` adds `--all`.
- * Measured on this machine: default ~4.0s warm / ~9.3s cold, `--all` ~4.7s.
+ * There is no `--fast` / `--quick` flag on this build, and as of OpenClaw
+ * 2026.6.9+ there is no `--all` either — the opt-in check split it used to
+ * toggle is gone, and `--lint` always runs the full inventory now (verified:
+ * checksSkipped: 0). Passing `--all` makes the CLI exit 2 before it lints
+ * anything, so it is not sent. `fast` is kept as a parameter name for callers,
+ * but no longer changes which checks run — only kept in case a future CLI
+ * reintroduces a subset.
  *
  * ## Fallback ladder
  *
@@ -666,7 +667,6 @@ export async function runDoctorReport(options: DoctorReportOptions = {}): Promis
   }
 
   const args = ["doctor", "--lint", "--json", "--non-interactive"];
-  if (!fast) args.push("--all");
 
   let result: SpawnResult;
   try {
