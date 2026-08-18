@@ -1,17 +1,19 @@
 # Testing
 
-Mission Control has two test runners and five lanes. This document is the single
-source of truth for which lanes exist, which of them block a merge, and how to
-run the ones GitHub Actions cannot run.
+Mission Control has two test runners, five lanes, and one contract gate that
+runs ahead of both. This document is the single source of truth for which
+lanes and gates exist, which of them block a merge, and how to run the ones
+GitHub Actions cannot run.
 
 For the API error envelope every route answers with, the wrapper contract
 routes are migrated onto, and the migration recipe for `src/app/api/**`, see
 [`docs/API-CONTRACT.md`](./API-CONTRACT.md).
 
-## Two runners, five lanes
+## Two runners, five lanes, one contract gate
 
 | Lane | Command | Requires | Typical runtime | Where it runs |
 |------|---------|----------|------------------|----------------|
+| API contract check | `npm run check:contract` | Nothing | <1s | GitHub Actions + local |
 | Vitest unit + component | `npm run test:unit` | Nothing | ~1s (117 tests) | GitHub Actions + local |
 | Vitest live | `npm run test:integration` | Dev instance | <1s (1 test) | Local only |
 | Playwright CI | `npm test` | Nothing | ~16s (406 tests) | GitHub Actions + local |
@@ -22,12 +24,26 @@ routes are migrated onto, and the migration recipe for `src/app/api/**`, see
 plus Mission Control running against it. "Chromium" means `npm run test:install` has
 been run once.
 
+The API contract check (`scripts/check-api-contract.mjs`) is not a Vitest or
+Playwright lane — it's a dependency-free Node script that scans every file
+under `src/app/api/**` for envelope, logging, and passthrough violations
+against [`docs/API-CONTRACT.md`](./API-CONTRACT.md). It needs no gateway, no
+dev instance, and no browser, so it runs everywhere the Vitest fast lane runs.
+
 ## What blocks what
 
-GitHub Actions blocks a pull request on two lanes: the Vitest fast lane
-(`npm run test:unit`) and the Playwright CI project (`npm test`). Both run in
-`.github/workflows/ci.yml` on every push to `main` and every pull request, before
-lint, type check, and build.
+GitHub Actions blocks a pull request on three checks: the API contract check
+(`npm run check:contract`), the Vitest fast lane (`npm run test:unit`), and the
+Playwright CI project (`npm test`). All three run in `.github/workflows/ci.yml`
+on every push to `main` and every pull request — the contract check runs right
+after the Vitest fast lane and before lint, so a route-shape regression is
+reported by the tool that explains it, not by a generic lint failure. Lint,
+type check, and build run after.
+
+The scoped `no-console` ESLint rule (`eslint.config.mjs`, `src/app/api/**` and
+`src/lib/**`, one exemption for `src/lib/logger.ts`) is enforced by the `Lint`
+step in the same job — a bare `console.*` call in a server route or server
+library fails the build the same way any other lint error does.
 
 The three instance-dependent lanes — Vitest live, Playwright LIVE_GATEWAY,
 Playwright LIVE_UI — do **not** run in GitHub Actions, because GitHub Actions has
@@ -35,12 +51,22 @@ no OpenClaw gateway, no Mission Control instance, and no G-Brain. They block a
 merge through `npm run test:premerge`, run locally by a maintainer before merging.
 
 Say this plainly: that half of the suite is enforced by convention and review, not
-by the platform. `npm run test:premerge` chains `test:unit && test:integration &&
-test:live` — the first failing lane stops the run and returns a non-zero exit
-code, so it is a gate, not a report. If this convention proves unreliable, the
-deferred alternative — provisioning an ephemeral OpenClaw instance inside GitHub
-Actions — is recorded in `.planning/phases/01-test-foundation/01-CONTEXT.md`
-(Decision 2).
+by the platform. `npm run test:premerge` chains `check:contract && test:unit &&
+test:integration && test:live` — the first failing lane stops the run and returns
+a non-zero exit code, so it is a gate, not a report. If this convention proves
+unreliable, the deferred alternative — provisioning an ephemeral OpenClaw instance
+inside GitHub Actions — is recorded in
+`.planning/phases/01-test-foundation/01-CONTEXT.md` (Decision 2).
+
+## When the contract check is red
+
+A red `npm run check:contract` means a route in `src/app/api/**` left the
+documented envelope, logging, or passthrough contract — not that the checker
+is wrong. Read [`docs/API-CONTRACT.md`](./API-CONTRACT.md), find which builder
+or wrapper the flagged file should be using, and fix the route. Do not loosen
+`scripts/check-api-contract.mjs`'s detectors to make a violation disappear —
+that erases the phase's whole hardening guarantee for every future
+contributor, not just the one who introduced the regression.
 
 ## Running the local gate
 

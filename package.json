@@ -47,7 +47,7 @@
     "test:install": "playwright install chromium",
     "test:unit": "vitest run --project unit --project component",
     "test:integration": "vitest run --project live",
-    "test:premerge": "npm run test:unit && npm run test:integration && npm run test:live",
+    "test:premerge": "npm run check:contract && npm run test:unit && npm run test:integration && npm run test:live",
     "dashboard": "node bin/cli.mjs",
     "setup": "./setup.sh",
     "setup:dev": "./setup.sh --dev --no-service"

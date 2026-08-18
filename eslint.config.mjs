@@ -31,6 +31,20 @@ const eslintConfig = defineConfig([
       }],
     },
   },
+  // Ban bare console.* calls in server routes and server libraries (REL-01,
+  // D-03 in .planning/phases/02-server-contract-hardening/02-CONTEXT.md).
+  // Scope is server-only by design — client-component console.* calls are
+  // deliberately out of scope this phase; do not add src/components here.
+  // src/lib/logger.ts is exempt because it is the one legitimate writer the
+  // shared pino logger sits behind (docs/API-CONTRACT.md's single-logger
+  // contract).
+  {
+    files: ["src/app/api/**/*.ts", "src/lib/**/*.ts"],
+    ignores: ["src/lib/logger.ts"],
+    rules: {
+      "no-console": "error",
+    },
+  },
 ]);
 
 export default eslintConfig;

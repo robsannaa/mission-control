@@ -52,6 +52,9 @@ jobs:
       - name: Vitest fast lane (unit and component projects)
         run: npm run test:unit
 
+      - name: API contract check (docs/API-CONTRACT.md envelope + logging)
+        run: npm run check:contract
+
       - name: Lint
         run: npm run lint
 
