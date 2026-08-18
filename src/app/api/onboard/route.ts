@@ -10,7 +10,7 @@
  *   { action: "save-and-restart", provider, apiKey, model, telegramToken?, discordToken? [, customBaseUrl, customApiKeyHeader ] }
  */
 
-import {NextRequest, NextResponse} from "next/server";
+import {NextResponse} from "next/server";
 import {access, mkdir, readFile, writeFile} from "fs/promises";
 import {dirname, join} from "path";
 import {gatewayCall, runCli, runCliCaptureBoth} from "@/lib/openclaw";
@@ -25,6 +25,9 @@ import {
   validateCustomProviderToken,
   validateProviderToken,
 } from "@/lib/provider-auth";
+import {withRoute} from "@/lib/api-route";
+import {onboardPostSchema} from "@/lib/schemas/onboarding";
+import {badRequest, serverError} from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +81,7 @@ function getDotPath(obj: Record<string, unknown>, dotPath: string): unknown {
 
 /* ── GET /api/onboard ──────────────────────────────── */
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/onboard" }, async (_request, ctx) => {
   try {
     const home = getOpenClawHome();
     const configPath = join(home, "openclaw.json");
@@ -225,25 +228,19 @@ export async function GET() {
       home,
     });
   } catch (err) {
-    console.error("Onboard GET error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    ctx.log.error({ err: message }, "Onboard GET error");
+    return serverError(message);
   }
-}
+});
 
 /* ── POST /api/onboard ─────────────────────────────── */
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/onboard", bodySchema: onboardPostSchema },
+  async (_request, ctx) => {
   try {
-    let body: Record<string, unknown>;
-    try {
-      const raw = await request.json();
-      body = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-    } catch {
-      return NextResponse.json(
-        { ok: false, error: "Invalid or empty JSON body" },
-        { status: 400 },
-      );
-    }
+    const body = ctx.body;
     const action = body.action as string;
 
     switch (action) {
@@ -252,10 +249,7 @@ export async function POST(request: NextRequest) {
         const provider = String(body.provider || "").trim().toLowerCase();
         const token = String(body.token || "").trim();
         if (!provider || !token) {
-          return NextResponse.json(
-            { ok: false, error: "Provider and token are required" },
-            { status: 400 },
-          );
+          return badRequest("Provider and token are required");
         }
         if (provider === "custom") {
           const baseUrl = String(body.customBaseUrl || "").trim();
@@ -272,10 +266,7 @@ export async function POST(request: NextRequest) {
         const provider = String(body.provider || "").trim().toLowerCase();
         const token = String(body.token || "").trim();
         if (!provider || !token) {
-          return NextResponse.json(
-            { ok: false, error: "Provider and token are required" },
-            { status: 400 },
-          );
+          return badRequest("Provider and token are required");
         }
         try {
           let models: Array<{ id: string; name: string }>;
@@ -305,10 +296,7 @@ export async function POST(request: NextRequest) {
         const discordToken = String(body.discordToken || "").trim();
 
         if (!provider || !apiKeyValue || !model) {
-          return NextResponse.json(
-            { ok: false, error: "Provider, API key, and model are required" },
-            { status: 400 },
-          );
+          return badRequest("Provider, API key, and model are required");
         }
 
         const isCustom = provider === "custom";
@@ -316,18 +304,12 @@ export async function POST(request: NextRequest) {
         const customApiKeyHeader = String(body.customApiKeyHeader || "Authorization").trim() || "Authorization";
 
         if (isCustom && !customBaseUrl) {
-          return NextResponse.json(
-            { ok: false, error: "Custom provider requires baseUrl" },
-            { status: 400 },
-          );
+          return badRequest("Custom provider requires baseUrl");
         }
 
         const envKey = PROVIDER_ENV_KEYS[provider];
         if (!isCustom && !envKey) {
-          return NextResponse.json(
-            { ok: false, error: `Unsupported provider: ${provider}` },
-            { status: 400 },
-          );
+          return badRequest(`Unsupported provider: ${provider}`);
         }
 
         const home = getOpenClawHome();
@@ -361,16 +343,10 @@ export async function POST(request: NextRequest) {
             const onboardResult = await runCliCaptureBoth(onboardArgs, 60000);
             if (onboardResult.code !== 0) {
               const detail = String(onboardResult.stderr || onboardResult.stdout || "").trim();
-              return NextResponse.json(
-                { ok: false, error: `Bootstrap failed: ${detail || `exit code ${onboardResult.code}`}` },
-                { status: 500 },
-              );
+              return serverError(`Bootstrap failed: ${detail || `exit code ${onboardResult.code}`}`);
             }
           } catch (err) {
-            return NextResponse.json(
-              { ok: false, error: `Bootstrap failed: ${err instanceof Error ? err.message : err}` },
-              { status: 500 },
-            );
+            return serverError(`Bootstrap failed: ${err instanceof Error ? err.message : err}`);
           }
         }
 
@@ -476,10 +452,7 @@ export async function POST(request: NextRequest) {
           await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
           patchMethod = "disk";
         } catch (err) {
-          return NextResponse.json(
-            { ok: false, error: `Config save failed: ${err instanceof Error ? err.message : err}` },
-            { status: 500 },
-          );
+          return serverError(`Config save failed: ${err instanceof Error ? err.message : err}`);
         }
 
         // ── Step 4: Notify gateway of config change (best-effort) ──
@@ -568,13 +541,12 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 },
-        );
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    console.error("Onboard POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    ctx.log.error({ err: message }, "Onboard POST error");
+    return serverError(message);
   }
-}
+  },
+);

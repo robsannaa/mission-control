@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { runCli, runCliCaptureBoth, gatewayCall } from "@/lib/openclaw";
 import {
   PROVIDER_ENV_KEYS,
@@ -14,6 +14,9 @@ import {
 } from "@/lib/provider-auth";
 import { patchConfig, getCurrentPrimaryModel, shouldSetPrimary } from "@/lib/gateway-config";
 import { bootstrapFreshMachine, configFileExists } from "../_lib/bootstrap";
+import { withRoute } from "@/lib/api-route";
+import { modelAuthPostSchema } from "@/lib/schemas/onboarding";
+import { badRequest, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -150,7 +153,7 @@ async function pollProviderAuthenticated(provider: string, budgetMs = 6_000): Pr
  * Returns the provider catalog plus what the live gateway already knows:
  * which providers exist in the model catalog and the configured default. */
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/onboarding/model-auth" }, async () => {
   try {
     let gatewayProviders: string[] = [];
     let defaultModel: string | null = null;
@@ -204,9 +207,9 @@ export async function GET() {
       hasLmStudio,
     });
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return serverError(String(err));
   }
-}
+});
 
 /* ── POST /api/onboarding/model-auth ──
  * Actions (all support dryRun: true — dry runs validate input shape only and
@@ -224,9 +227,11 @@ export async function GET() {
  * routes. A fresh machine with nothing configured still gets `model` set
  * automatically, exactly as before. */
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/onboarding/model-auth", bodySchema: modelAuthPostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
+    const body = ctx.body;
     const action = String(body.action || "").trim();
     const dryRun = body.dryRun === true;
 
@@ -235,20 +240,20 @@ export async function POST(request: NextRequest) {
         const provider = String(body.provider || "").trim().toLowerCase();
         const token = String(body.token || "").trim();
         if (!provider || !PROVIDER_ID_RE.test(provider)) {
-          return json({ error: "A valid provider id is required" }, 400);
+          return badRequest("A valid provider id is required");
         }
         if (!token) {
-          return json({ error: "API key is required" }, 400);
+          return badRequest("API key is required");
         }
         if (!findCatalogEntry(provider)) {
-          return json({ error: `Unknown provider: ${provider}` }, 400);
+          return badRequest(`Unknown provider: ${provider}`);
         }
         if (dryRun) {
           return json({ ok: true, dryRun: true, action, provider });
         }
         const result = await validateProviderToken(provider, token);
         if (!result.ok) {
-          return json({ ok: false, error: result.error || "Invalid API key" }, 400);
+          return badRequest(result.error || "Invalid API key");
         }
         return json({ ok: true, provider });
       }
@@ -259,14 +264,14 @@ export async function POST(request: NextRequest) {
         const model = String(body.model || "").trim();
         const makePrimary = body.makePrimary === true;
         if (!provider || !PROVIDER_ID_RE.test(provider)) {
-          return json({ error: "A valid provider id is required" }, 400);
+          return badRequest("A valid provider id is required");
         }
         if (!token) {
-          return json({ error: "API key is required" }, 400);
+          return badRequest("API key is required");
         }
         const entry = findCatalogEntry(provider);
         if (!entry || !entry.envKey) {
-          return json({ error: `Provider ${provider} does not support API-key auth here` }, 400);
+          return badRequest(`Provider ${provider} does not support API-key auth here`);
         }
         if (dryRun) {
           return json({
@@ -280,7 +285,7 @@ export async function POST(request: NextRequest) {
 
         const validation = await validateProviderToken(provider, token);
         if (!validation.ok) {
-          return json({ ok: false, error: validation.error || "Invalid API key" }, 400);
+          return badRequest(validation.error || "Invalid API key");
         }
 
         // A truly fresh machine has no gateway config to patch yet — bootstrap
@@ -289,7 +294,7 @@ export async function POST(request: NextRequest) {
         if (!(await configFileExists())) {
           const bootstrap = await bootstrapFreshMachine();
           if (!bootstrap.ok) {
-            return json({ ok: false, error: `Could not set up OpenClaw: ${bootstrap.error}` }, 500);
+            return serverError(`Could not set up OpenClaw: ${bootstrap.error}`);
           }
         }
 
@@ -323,13 +328,13 @@ export async function POST(request: NextRequest) {
         const model = String(body.model || "").trim();
         const makePrimary = body.makePrimary === true;
         if (!provider || !PROVIDER_ID_RE.test(provider)) {
-          return json({ error: "A valid provider id is required" }, 400);
+          return badRequest("A valid provider id is required");
         }
         if (!token) {
-          return json({ error: "Token is required" }, 400);
+          return badRequest("Token is required");
         }
         if (expiresIn && !/^\d+[smhdwy]$/.test(expiresIn)) {
-          return json({ error: "expiresIn must look like 365d or 12h" }, 400);
+          return badRequest("expiresIn must look like 365d or 12h");
         }
         const args = ["models", "auth", "paste-token", "--provider", provider];
         if (expiresIn) args.push("--expires-in", expiresIn);
@@ -349,7 +354,7 @@ export async function POST(request: NextRequest) {
         if (!(await configFileExists())) {
           const bootstrap = await bootstrapFreshMachine();
           if (!bootstrap.ok) {
-            return json({ ok: false, error: `Could not set up OpenClaw: ${bootstrap.error}` }, 500);
+            return serverError(`Could not set up OpenClaw: ${bootstrap.error}`);
           }
         }
 
@@ -358,9 +363,8 @@ export async function POST(request: NextRequest) {
         try {
           output = await runCli(args, 60000, `${token}\n`);
         } catch (err) {
-          return json(
-            { ok: false, error: err instanceof Error ? err.message : "Could not save the subscription token." },
-            400,
+          return badRequest(
+            err instanceof Error ? err.message : "Could not save the subscription token.",
           );
         }
 
@@ -399,7 +403,7 @@ export async function POST(request: NextRequest) {
           const status = await readAuthStatus();
           return json({ ok: true, ...status });
         } catch (err) {
-          return json({ ok: false, error: String(err) }, 500);
+          return serverError(String(err));
         }
       }
 
@@ -411,9 +415,9 @@ export async function POST(request: NextRequest) {
         const kind = String(body.kind || "").trim().toLowerCase() as LocalProviderKind;
         const baseUrl = String(body.baseUrl || "").trim();
         if (!["ollama", "lmstudio", "custom"].includes(kind)) {
-          return json({ error: "kind must be one of: ollama, lmstudio, custom" }, 400);
+          return badRequest("kind must be one of: ollama, lmstudio, custom");
         }
-        if (!baseUrl) return json({ error: "baseUrl is required" }, 400);
+        if (!baseUrl) return badRequest("baseUrl is required");
         if (dryRun) {
           return json({ ok: true, dryRun: true, action, kind, baseUrl });
         }
@@ -451,22 +455,21 @@ export async function POST(request: NextRequest) {
             : undefined;
 
         if (!["ollama", "lmstudio", "custom"].includes(kind)) {
-          return json({ error: "kind must be one of: ollama, lmstudio, custom" }, 400);
+          return badRequest("kind must be one of: ollama, lmstudio, custom");
         }
         if (!baseUrl || !providerId) {
-          return json({ error: "baseUrl and providerId are required" }, 400);
+          return badRequest("baseUrl and providerId are required");
         }
         if (!PROVIDER_ID_RE.test(providerId)) {
-          return json({ error: "A valid providerId is required" }, 400);
+          return badRequest("A valid providerId is required");
         }
         // "custom" is the one kind that isn't a bundled provider id — the
         // gateway's config schema rejects it with no declared models
         // (verified live against a sandboxed gateway), so it needs a model
         // chosen up front rather than relying on auto-discovery.
         if (kind === "custom" && !model) {
-          return json(
-            { error: "Pick a model before connecting a custom provider — the gateway requires at least one." },
-            400,
+          return badRequest(
+            "Pick a model before connecting a custom provider — the gateway requires at least one.",
           );
         }
 
@@ -486,13 +489,13 @@ export async function POST(request: NextRequest) {
           });
         }
         if (!Object.keys(patch).length) {
-          return json({ error: "Could not build a config patch for this provider" }, 400);
+          return badRequest("Could not build a config patch for this provider");
         }
 
         if (!(await configFileExists())) {
           const bootstrap = await bootstrapFreshMachine();
           if (!bootstrap.ok) {
-            return json({ ok: false, error: `Could not set up OpenClaw: ${bootstrap.error}` }, 500);
+            return serverError(`Could not set up OpenClaw: ${bootstrap.error}`);
           }
         }
 
@@ -509,9 +512,8 @@ export async function POST(request: NextRequest) {
         try {
           await patchConfig(patch);
         } catch (err) {
-          return json(
-            { ok: false, error: `Could not save local provider: ${err instanceof Error ? err.message : err}` },
-            500,
+          return serverError(
+            `Could not save local provider: ${err instanceof Error ? err.message : err}`,
           );
         }
 
@@ -525,9 +527,10 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return json({ error: `Unknown action: ${action}` }, 400);
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return serverError(String(err));
   }
-}
+  },
+);

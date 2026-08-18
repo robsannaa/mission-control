@@ -1,8 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall, parseJsonFromCliOutput, runCli, runCliCaptureBoth } from "@/lib/openclaw";
 import { getOpenClawHome } from "@/lib/paths";
 import { readdir, readFile } from "fs/promises";
 import { join } from "path";
+import { withRoute } from "@/lib/api-route";
+import { pairingPostSchema } from "@/lib/schemas/onboarding";
+import { badRequest, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -231,7 +234,7 @@ async function listDmRequestsFromCli(): Promise<DmRequest[]> {
 
 /* ── GET: list all pending requests ──────────────── */
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/pairing" }, async () => {
   const home = getOpenClawHome();
   let dmRequests: DmRequest[] = [];
   const deviceRequests: DeviceRequest[] = [];
@@ -286,13 +289,15 @@ export async function GET() {
       Pragma: "no-cache",
     },
   });
-}
+});
 
 /* ── POST: approve / reject ──────────────────────── */
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/pairing", bodySchema: pairingPostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
+    const body = ctx.body;
     const action = body.action as string;
 
     switch (action) {
@@ -301,10 +306,7 @@ export async function POST(request: NextRequest) {
         const code = body.code as string;
         const account = body.account as string | undefined;
         if (!channel || !code) {
-          return NextResponse.json(
-            { error: "channel and code required" },
-            { status: 400 }
-          );
+          return badRequest("channel and code required");
         }
         const args = ["pairing", "approve", channel, code];
         if (account && account.trim()) args.push("--account", account.trim());
@@ -319,10 +321,7 @@ export async function POST(request: NextRequest) {
       case "approve-device": {
         const requestId = body.requestId as string;
         if (!requestId) {
-          return NextResponse.json(
-            { error: "requestId required" },
-            { status: 400 }
-          );
+          return badRequest("requestId required");
         }
         const result = await gatewayCall<Record<string, unknown>>(
           "device.pair.approve",
@@ -335,10 +334,7 @@ export async function POST(request: NextRequest) {
       case "reject-device": {
         const requestId = body.requestId as string;
         if (!requestId) {
-          return NextResponse.json(
-            { error: "requestId required" },
-            { status: 400 }
-          );
+          return badRequest("requestId required");
         }
         const result = await gatewayCall<Record<string, unknown>>(
           "device.pair.reject",
@@ -349,13 +345,12 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    console.error("Pairing API POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    ctx.log.error({ err: message }, "Pairing API POST error");
+    return serverError(message);
   }
-}
+  },
+);
