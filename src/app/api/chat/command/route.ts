@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { pairingRequiredResponse } from "@/lib/gateway-errors";
 import {
   isNewChatSessionKey,
   textFromContent,
 } from "@/app/api/chat/_lib/chat-sessions";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, apiError } from "@/lib/api-errors";
+import { chatCommandPostSchema } from "@/lib/schemas/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -69,36 +72,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function POST(request: NextRequest) {
-  let body: { sessionKey?: unknown; command?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
-  }
-
+export const POST = withRoute(
+  { name: "/api/chat/command", bodySchema: chatCommandPostSchema },
+  async (request, ctx) => {
   const sessionKey =
-    typeof body.sessionKey === "string" ? body.sessionKey.trim() : "";
-  const command = typeof body.command === "string" ? body.command.trim() : "";
+    typeof ctx.body.sessionKey === "string" ? ctx.body.sessionKey.trim() : "";
+  const command = typeof ctx.body.command === "string" ? ctx.body.command.trim() : "";
 
   if (!command.startsWith("/")) {
-    return NextResponse.json(
-      { error: "command must start with /" },
-      { status: 400 },
-    );
-  }
-  if (command.length > 4000) {
-    return NextResponse.json({ error: "command is too long" }, { status: 400 });
+    return badRequest("command must start with /");
   }
   // Shape check only: a command may target a session that does not exist yet
   // (the first thing typed in a brand new chat). Restricting the origin segment
   // to the chat allowlist means this can never address a channel, cron or
   // subagent session — the namespaces the gateway itself also reserves.
   if (!isNewChatSessionKey(sessionKey)) {
-    return NextResponse.json(
-      { error: "invalid or non-chat session key" },
-      { status: 400 },
-    );
+    return badRequest("invalid or non-chat session key");
   }
 
   const runId = `mc-${crypto.randomUUID()}`;
@@ -152,10 +141,8 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const pairing = pairingRequiredResponse(err);
     if (pairing) return pairing;
-    console.error("chat/command failed:", err);
-    return NextResponse.json(
-      { error: "The gateway could not run that command." },
-      { status: 502 },
-    );
+    ctx.log.error({ err }, "chat/command failed");
+    return apiError("The gateway could not run that command.", 502);
   }
-}
+  },
+);

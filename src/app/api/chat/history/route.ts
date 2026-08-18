@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { pairingRequiredResponse } from "@/lib/gateway-errors";
 import {
@@ -6,6 +6,9 @@ import {
   sessionKindOf,
   sessionTitleOf,
 } from "@/lib/session-kinds";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, notFound, apiError } from "@/lib/api-errors";
+import { chatHistoryGetQuerySchema, DEFAULT_CHAT_HISTORY_LIMIT } from "@/lib/schemas/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +26,6 @@ export const dynamic = "force-dynamic";
  *    supports `limit`, so we always send one. Unbounded reads made every
  *    session switch pull a full history through this route.
  */
-
-const DEFAULT_LIMIT = 100;
-const MAX_LIMIT = 500;
 
 type HistoryMessage = {
   role?: string;
@@ -48,24 +48,16 @@ type SessionSummary = {
   displayName?: string;
 };
 
-/** Session keys are `agent:<id>:<kind>:<uuid>` — reject anything exotic early. */
-const SESSION_KEY_RE = /^[A-Za-z0-9_.:-]{1,256}$/;
-
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const sessionKey = searchParams.get("sessionKey")?.trim();
+export const GET = withRoute(
+  { name: "/api/chat/history", querySchema: chatHistoryGetQuerySchema },
+  async (_request, ctx) => {
+  const sessionKey = ctx.query.sessionKey;
 
   if (!sessionKey) {
-    return NextResponse.json({ error: "sessionKey is required" }, { status: 400 });
-  }
-  if (!SESSION_KEY_RE.test(sessionKey)) {
-    return NextResponse.json({ error: "invalid sessionKey" }, { status: 400 });
+    return badRequest("sessionKey is required");
   }
 
-  const requestedLimit = Number(searchParams.get("limit") ?? DEFAULT_LIMIT);
-  const limit = Number.isFinite(requestedLimit)
-    ? Math.min(Math.max(Math.trunc(requestedLimit), 1), MAX_LIMIT)
-    : DEFAULT_LIMIT;
+  const limit = ctx.query.limit ?? DEFAULT_CHAT_HISTORY_LIMIT;
 
   try {
     // Resolve the session's kind from the gateway's own listing rather than
@@ -80,7 +72,7 @@ export async function GET(request: NextRequest) {
     const match = sessions.find((s) => s.key === sessionKey);
 
     if (!match) {
-      return NextResponse.json({ error: "session not found" }, { status: 404 });
+      return notFound("session not found");
     }
 
     const kind = sessionKindOf(match);
@@ -88,8 +80,12 @@ export async function GET(request: NextRequest) {
     if (!classification.isInspectable) {
       // Deliberately not 403-with-detail: do not confirm what kind of private
       // session this is. It simply is not available here.
+      // Built manually (not via forbidden()) because `detail` is an extra
+      // top-level field the client reads that the shared builder has no slot
+      // for — same precedent as 02-04's config 409/max-cap bodies.
       return NextResponse.json(
         {
+          ok: false,
           error: "session not available",
           detail:
             "This session belongs to a channel conversation and is not readable from the dashboard.",
@@ -120,10 +116,8 @@ export async function GET(request: NextRequest) {
 
     // Gateway errors can carry internal URLs and RPC details — log them, but
     // hand the browser a stable, generic message.
-    console.error("chat/history failed:", err);
-    return NextResponse.json(
-      { error: "Could not load this conversation from the gateway." },
-      { status: 502 },
-    );
+    ctx.log.error({ err }, "chat/history failed");
+    return apiError("Could not load this conversation from the gateway.", 502);
   }
-}
+  },
+);

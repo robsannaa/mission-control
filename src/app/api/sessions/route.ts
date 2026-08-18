@@ -1,6 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { pairingRequiredResponse } from "@/lib/gateway-errors";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { sessionsDeleteQuerySchema } from "@/lib/schemas/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +35,7 @@ function toNonNegativeNumber(value: unknown, fallback = 0): number {
   return num;
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/sessions" }, async (_request, ctx) => {
   try {
     const data = await gatewayCall<{
       count: number;
@@ -70,17 +73,18 @@ export async function GET() {
   } catch (err) {
     const pairing = pairingRequiredResponse(err);
     if (pairing) return pairing;
-    console.error("Sessions GET error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err }, "Sessions GET error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+});
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withRoute(
+  { name: "/api/sessions", querySchema: sessionsDeleteQuerySchema },
+  async (_request, ctx) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const key = searchParams.get("key");
+    const key = ctx.query.key;
     if (!key) {
-      return NextResponse.json({ error: "session key required" }, { status: 400 });
+      return badRequest("session key required");
     }
 
     const result = await gatewayCall<{
@@ -94,7 +98,8 @@ export async function DELETE(request: NextRequest) {
   } catch (err) {
     const pairing = pairingRequiredResponse(err);
     if (pairing) return pairing;
-    console.error("Sessions DELETE error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err }, "Sessions DELETE error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);

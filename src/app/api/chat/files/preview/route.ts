@@ -1,8 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
 import { readFile, stat } from "fs/promises";
 import path from "path";
+import { NextResponse } from "next/server";
 import { getDefaultWorkspace } from "@/lib/paths";
 import { gatewayCall } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, notFound, apiError } from "@/lib/api-errors";
+import { chatFilesPreviewGetQuerySchema } from "@/lib/schemas/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -42,16 +45,14 @@ async function resolveWorkspaceRoot(agentId?: string): Promise<string> {
   return path.resolve(await getDefaultWorkspace());
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const relative = searchParams.get("path")?.trim();
-  const agentId = searchParams.get("agentId")?.trim() || undefined;
+export const GET = withRoute(
+  { name: "/api/chat/files/preview", querySchema: chatFilesPreviewGetQuerySchema },
+  async (_request, ctx) => {
+  const relative = ctx.query.path?.trim();
+  const agentId = ctx.query.agentId?.trim() || undefined;
 
   if (!relative) {
-    return NextResponse.json({ error: "path is required" }, { status: 400 });
-  }
-  if (relative.length > 512 || relative.includes("\0")) {
-    return NextResponse.json({ error: "invalid path" }, { status: 400 });
+    return badRequest("path is required");
   }
 
   try {
@@ -59,13 +60,15 @@ export async function GET(request: NextRequest) {
     const target = path.resolve(root, relative);
 
     // Containment check — the resolved path must be inside the workspace.
+    // Defense-in-depth: the schema already rejected traversal segments and
+    // absolute-path prefixes before this handler ever ran.
     if (target !== root && !target.startsWith(root + path.sep)) {
-      return NextResponse.json({ error: "invalid path" }, { status: 400 });
+      return badRequest("invalid path");
     }
 
     const info = await stat(target).catch(() => null);
     if (!info || !info.isFile()) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+      return notFound("not found");
     }
 
     const ext = path.extname(target).slice(1).toLowerCase();
@@ -95,10 +98,8 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
-    console.error("chat/files/preview failed:", err);
-    return NextResponse.json(
-      { error: "Could not read that file." },
-      { status: 502 },
-    );
+    ctx.log.error({ err }, "chat/files/preview failed");
+    return apiError("Could not read that file.", 502);
   }
-}
+  },
+);

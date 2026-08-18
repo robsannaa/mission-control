@@ -1,10 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { pairingRequiredResponse } from "@/lib/gateway-errors";
 import {
   assertChatSession,
   listChatSessions,
 } from "@/app/api/chat/_lib/chat-sessions";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, apiError } from "@/lib/api-errors";
+import type pino from "pino";
+import {
+  chatSessionsGetQuerySchema,
+  chatSessionsPatchSchema,
+  chatSessionsDeleteQuerySchema,
+} from "@/lib/schemas/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -20,21 +28,21 @@ export const dynamic = "force-dynamic";
  * so the browser never has to fan out one history request per row.
  */
 
-function errorResponse(err: unknown, fallback: string) {
+function errorResponse(err: unknown, fallback: string, log: pino.Logger) {
   const pairing = pairingRequiredResponse(err);
   if (pairing) return pairing;
   // Gateway errors carry internal URLs and RPC frames — log them, return a
   // stable message the UI can show verbatim.
-  console.error("chat/sessions failed:", err);
-  return NextResponse.json({ error: fallback }, { status: 502 });
+  log.error({ err }, "chat/sessions failed");
+  return apiError(fallback, 502);
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const agentId = searchParams.get("agentId")?.trim() || undefined;
-  const rawLimit = Number(searchParams.get("limit"));
-  const limit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : undefined;
-  const includeArchived = searchParams.get("archived") === "1";
+export const GET = withRoute(
+  { name: "/api/chat/sessions", querySchema: chatSessionsGetQuerySchema },
+  async (_request, ctx) => {
+  const agentId = ctx.query.agentId?.trim() || undefined;
+  const limit = ctx.query.limit;
+  const includeArchived = ctx.query.archived === "1";
 
   try {
     const result = await listChatSessions({ agentId, limit, includeArchived });
@@ -42,17 +50,10 @@ export async function GET(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (err) {
-    return errorResponse(err, "Could not reach the OpenClaw gateway.");
+    return errorResponse(err, "Could not reach the OpenClaw gateway.", ctx.log);
   }
-}
-
-type PatchBody = {
-  key?: unknown;
-  label?: unknown;
-  pinned?: unknown;
-  unread?: unknown;
-  archived?: unknown;
-};
+  },
+);
 
 /**
  * Rename / pin / mark-read a conversation.
@@ -62,65 +63,54 @@ type PatchBody = {
  * exactly what `sessionTitleOf` prefers. That makes rename the honest fix for
  * unnamed sessions — derived titles are only a fallback.
  */
-export async function PATCH(request: NextRequest) {
-  let body: PatchBody;
-  try {
-    body = (await request.json()) as PatchBody;
-  } catch {
-    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
-  }
-
-  const key = typeof body.key === "string" ? body.key.trim() : "";
+export const PATCH = withRoute(
+  { name: "/api/chat/sessions", bodySchema: chatSessionsPatchSchema },
+  async (_request, ctx) => {
+  const key = ctx.body.key ?? "";
   const patch: Record<string, unknown> = { key };
 
-  if (typeof body.label === "string") {
-    const label = body.label.trim().slice(0, 120);
+  if (typeof ctx.body.label === "string") {
+    const label = ctx.body.label.trim().slice(0, 120);
     if (!label) {
-      return NextResponse.json(
-        { error: "a conversation name cannot be empty" },
-        { status: 400 },
-      );
+      return badRequest("a conversation name cannot be empty");
     }
     patch.label = label;
   }
-  if (typeof body.pinned === "boolean") patch.pinned = body.pinned;
-  if (typeof body.unread === "boolean") patch.unread = body.unread;
-  if (typeof body.archived === "boolean") patch.archived = body.archived;
+  if (typeof ctx.body.pinned === "boolean") patch.pinned = ctx.body.pinned;
+  if (typeof ctx.body.unread === "boolean") patch.unread = ctx.body.unread;
+  if (typeof ctx.body.archived === "boolean") patch.archived = ctx.body.archived;
 
   if (Object.keys(patch).length < 2) {
-    return NextResponse.json({ error: "nothing to update" }, { status: 400 });
+    return badRequest("nothing to update");
   }
 
   try {
     const failure = await assertChatSession(key);
     if (failure) {
-      return NextResponse.json(
-        { error: failure.message },
-        { status: failure.status },
-      );
+      return apiError(failure.message, failure.status);
     }
     await gatewayCall("sessions.patch", patch, 12_000);
     return NextResponse.json({ ok: true, key });
   } catch (err) {
-    return errorResponse(err, "Could not update this conversation.");
+    return errorResponse(err, "Could not update this conversation.", ctx.log);
   }
-}
+  },
+);
 
-export async function DELETE(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const key = searchParams.get("key")?.trim() || "";
+export const DELETE = withRoute(
+  { name: "/api/chat/sessions", querySchema: chatSessionsDeleteQuerySchema },
+  async (_request, ctx) => {
+  const key = ctx.query.key ?? "";
 
   try {
     const failure = await assertChatSession(key);
     if (failure) {
-      return NextResponse.json(
-        { error: failure.message },
-        { status: failure.status },
-      );
+      return apiError(failure.message, failure.status);
     }
     await gatewayCall("sessions.delete", { key }, 15_000);
     return NextResponse.json({ ok: true, key });
   } catch (err) {
-    return errorResponse(err, "Could not delete this conversation.");
+    return errorResponse(err, "Could not delete this conversation.", ctx.log);
   }
-}
+  },
+);

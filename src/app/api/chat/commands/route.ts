@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { pairingRequiredResponse } from "@/lib/gateway-errors";
+import { withRoute } from "@/lib/api-route";
+import { apiError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -102,7 +104,7 @@ function normalize(raw: RawCommand): SlashCommand | null {
   };
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/chat/commands" }, async (_request, ctx) => {
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) {
     return NextResponse.json(
       { commands: cache.commands, cached: true },
@@ -129,7 +131,7 @@ export async function GET() {
   } catch (err) {
     const pairing = pairingRequiredResponse(err);
     if (pairing) return pairing;
-    console.error("chat/commands failed:", err);
+    ctx.log.error({ err }, "chat/commands failed");
     // Serve a stale catalogue rather than an empty menu when the gateway blips.
     if (cache) {
       return NextResponse.json(
@@ -137,9 +139,6 @@ export async function GET() {
         { headers: { "Cache-Control": "no-store" } },
       );
     }
-    return NextResponse.json(
-      { error: "Could not load the command list from the gateway." },
-      { status: 502 },
-    );
+    return apiError("Could not load the command list from the gateway.", 502);
   }
-}
+});

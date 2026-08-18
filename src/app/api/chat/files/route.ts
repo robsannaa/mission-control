@@ -1,8 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
 import { readdir, realpath, stat } from "fs/promises";
 import { join, relative, sep } from "path";
+import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { getDefaultWorkspace } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
+import { apiError } from "@/lib/api-errors";
+import { chatFilesGetQuerySchema } from "@/lib/schemas/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -166,10 +169,11 @@ function score(file: WorkspaceFile, query: string): number {
   return 200 + hits;
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const agentId = searchParams.get("agentId")?.trim() || undefined;
-  const query = (searchParams.get("q") || "").trim().toLowerCase().slice(0, 120);
+export const GET = withRoute(
+  { name: "/api/chat/files", querySchema: chatFilesGetQuerySchema },
+  async (_request, ctx) => {
+  const agentId = ctx.query.agentId?.trim() || undefined;
+  const query = (ctx.query.q || "").trim().toLowerCase().slice(0, 120);
 
   try {
     const root = await resolveRoot(agentId);
@@ -195,10 +199,8 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
-    console.error("chat/files failed:", err);
-    return NextResponse.json(
-      { error: "Could not read the agent workspace." },
-      { status: 502 },
-    );
+    ctx.log.error({ err }, "chat/files failed");
+    return apiError("Could not read the agent workspace.", 502);
   }
-}
+  },
+);
