@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { access, readFile, readdir, writeFile, mkdir } from "fs/promises";
 import { constants as FS_CONSTANTS } from "fs";
 import { join, dirname } from "path";
@@ -7,6 +7,9 @@ import { gatewayCall, runCliJson } from "@/lib/openclaw";
 import { buildModelsSummary } from "@/lib/models-summary";
 import { gatewayConfigPatch } from "@/lib/gateway-config";
 import { PROVIDER_ENV_KEYS } from "@/lib/provider-auth";
+import { withRoute } from "@/lib/api-route";
+import { badRequest } from "@/lib/api-errors";
+import { accountsPostSchema, type AccountsPostInput } from "@/lib/schemas/accounts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -599,7 +602,7 @@ function normalizeAgentRow(raw: AgentListEntry): {
   };
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/accounts" }, async () => {
   const warnings: string[] = [];
 
   const [modelsSummary, channelsStatusRaw, configGetRaw] =
@@ -917,32 +920,21 @@ export async function GET() {
     configSecrets,
     warnings,
   });
-}
+});
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = (await request.json()) as {
-      action?: string;
-      key?: string;
-      value?: string;
-    };
-    const action = toStringValue(body.action).trim().toLowerCase();
+export const POST = withRoute<AccountsPostInput>(
+  { name: "/api/accounts", bodySchema: accountsPostSchema },
+  async (_request, ctx) => {
+    const { action } = ctx.body;
 
-    if (action !== "update-env-key") {
-      return jsonNoStore({ ok: false, error: `Unknown action: ${action || "(empty)"}` }, { status: 400 });
-    }
-
-    const key = toStringValue(body.key).trim().toUpperCase();
-    const value = toStringValue(body.value);
+    const key = toStringValue(ctx.body.key).trim().toUpperCase();
+    const value = toStringValue(ctx.body.value);
 
     if (!ENV_KEY_NAME_RE.test(key)) {
-      return jsonNoStore(
-        { ok: false, error: "Invalid env key name. Use uppercase letters, numbers, and underscores." },
-        { status: 400 }
-      );
+      return badRequest("Invalid env key name. Use uppercase letters, numbers, and underscores.");
     }
     if (!value.trim()) {
-      return jsonNoStore({ ok: false, error: "Value cannot be empty." }, { status: 400 });
+      return badRequest("Value cannot be empty.");
     }
 
     // Try gateway RPC first (triggers live reload), fall back to direct file write
@@ -958,7 +950,7 @@ export async function POST(request: NextRequest) {
         20000,
       );
     } catch (rpcErr) {
-      console.warn("[accounts] update-env-key: gateway RPC failed, writing to disk:", rpcErr);
+      ctx.log.warn({ err: rpcErr instanceof Error ? rpcErr.message : String(rpcErr) }, "update-env-key: gateway RPC failed, writing to disk");
       // Direct file write — cannot fail unless filesystem is read-only
       const configPath = join(OPENCLAW_HOME, "openclaw.json");
       let config: Record<string, unknown> = {};
@@ -974,10 +966,5 @@ export async function POST(request: NextRequest) {
     }
 
     return jsonNoStore({ ok: true, action, key, method });
-  } catch (err) {
-    return jsonNoStore(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
-  }
-}
+  },
+);

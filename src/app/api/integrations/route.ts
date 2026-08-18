@@ -1,4 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, notFound } from "@/lib/api-errors";
+import {
+  agentIdQuerySchema,
+  integrationsPostSchema,
+  type AgentIdQuery,
+  type IntegrationsPostInput,
+} from "@/lib/schemas/integrations";
 import {
   cleanupGogAuthSession,
   createCalendarEventForAccount,
@@ -351,24 +359,20 @@ async function queueOrExecuteAction(params: {
   }
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    const agentId = request.nextUrl.searchParams.get("agentId");
-    const snapshot = await buildGoogleIntegrationsSnapshot(agentId);
+export const GET = withRoute<unknown, AgentIdQuery>(
+  { name: "/api/integrations", querySchema: agentIdQuerySchema },
+  async (_request, ctx) => {
+    const snapshot = await buildGoogleIntegrationsSnapshot(ctx.query.agentId || null);
     return NextResponse.json(snapshot, {
       headers: { "Cache-Control": "no-store" },
     });
-  } catch (error) {
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
-  }
-}
+  },
+);
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = (await request.json()) as Record<string, unknown>;
+export const POST = withRoute<IntegrationsPostInput>(
+  { name: "/api/integrations", bodySchema: integrationsPostSchema },
+  async (_request, ctx) => {
+    const body = ctx.body as Record<string, unknown> & IntegrationsPostInput;
     const action = String(body.action || "");
     let store = await readGoogleIntegrationsStore();
 
@@ -377,7 +381,7 @@ export async function POST(request: NextRequest) {
         const email = requireString(body.email, "email").toLowerCase();
         const accessLevel = requireString(body.accessLevel, "accessLevel");
         if (!isGoogleAccessLevel(accessLevel)) {
-          return NextResponse.json({ error: "Invalid access level" }, { status: 400 });
+          return badRequest("Invalid access level");
         }
         const existing =
           store.accounts.find((entry) => entry.email === email) ||
@@ -533,7 +537,7 @@ export async function POST(request: NextRequest) {
         const email = requireString(body.email, "email").toLowerCase();
         const accessLevel = requireString(body.accessLevel, "accessLevel");
         if (!isGoogleAccessLevel(accessLevel)) {
-          return NextResponse.json({ error: "Invalid access level" }, { status: 400 });
+          return badRequest("Invalid access level");
         }
         const base =
           store.accounts.find((entry) => entry.email === email) ||
@@ -589,7 +593,7 @@ export async function POST(request: NextRequest) {
         const accountId = requireString(body.accountId, "accountId");
         const accessLevel = requireString(body.accessLevel, "accessLevel");
         if (!isGoogleAccessLevel(accessLevel)) {
-          return NextResponse.json({ error: "Invalid access level" }, { status: 400 });
+          return badRequest("Invalid access level");
         }
         const account = getAccountOrThrow(store, accountId);
         store = upsertGoogleAccount(store, {
@@ -607,7 +611,7 @@ export async function POST(request: NextRequest) {
         const accountId = requireString(body.accountId, "accountId");
         const capability = requireString(body.capability, "capability");
         if (!isGoogleCapabilityKey(capability)) {
-          return NextResponse.json({ error: "Invalid capability" }, { status: 400 });
+          return badRequest("Invalid capability");
         }
         const enabled = body.enabled === true;
         const account = getAccountOrThrow(store, accountId);
@@ -631,7 +635,7 @@ export async function POST(request: NextRequest) {
         const service = body.service;
         const mode = String(body.mode || "");
         if (!isGoogleService(service) || (mode !== "read" && mode !== "write")) {
-          return NextResponse.json({ error: "Invalid service or mode" }, { status: 400 });
+          return badRequest("Invalid service or mode");
         }
         const account = getAccountOrThrow(store, accountId);
         const serviceCapabilities = GOOGLE_CAPABILITY_DEFINITIONS.filter(
@@ -660,7 +664,7 @@ export async function POST(request: NextRequest) {
         const capability = requireString(body.capability, "capability");
         const policy = requireString(body.policy, "policy");
         if (!isGoogleCapabilityKey(capability) || !isGoogleAgentPolicy(policy)) {
-          return NextResponse.json({ error: "Invalid capability or policy" }, { status: 400 });
+          return badRequest("Invalid capability or policy");
         }
         store = setGoogleAgentPolicyRecord(store, {
           accountId,
@@ -746,10 +750,7 @@ export async function POST(request: NextRequest) {
         const accountId = requireString(body.accountId, "accountId");
         const account = getAccountOrThrow(store, accountId);
         if (!account.watch.projectId.trim()) {
-          return NextResponse.json(
-            { error: "Project ID is required before Gmail watch setup." },
-            { status: 400 },
-          );
+          return badRequest("Project ID is required before Gmail watch setup.");
         }
         const result = await setupOpenClawGmailWatch({
           account: account.email,
@@ -997,10 +998,10 @@ export async function POST(request: NextRequest) {
         const approvalId = requireString(body.approvalId, "approvalId");
         const approval = store.approvals.find((entry) => entry.id === approvalId);
         if (!approval) {
-          return NextResponse.json({ error: "Approval request not found" }, { status: 404 });
+          return notFound("Approval request not found");
         }
         if (approval.status !== "pending") {
-          return NextResponse.json({ error: "Approval request is no longer pending" }, { status: 400 });
+          return badRequest("Approval request is no longer pending");
         }
         try {
           const result = await executeApprovedPayload(approval.payload);
@@ -1051,7 +1052,7 @@ export async function POST(request: NextRequest) {
         const approvalId = requireString(body.approvalId, "approvalId");
         const approval = store.approvals.find((entry) => entry.id === approvalId);
         if (!approval) {
-          return NextResponse.json({ error: "Approval request not found" }, { status: 404 });
+          return notFound("Approval request not found");
         }
         store = updateGoogleApproval(store, approvalId, {
           status: "denied",
@@ -1076,12 +1077,12 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+        // Unreachable: integrationsPostSchema's discriminated union already
+        // rejects any `action` outside the literals above before this
+        // handler runs (T-02-27). Kept as a defensive fallback, matching the
+        // `terminalPostSchema` exhaustiveness guard in
+        // src/app/api/terminal/route.ts.
+        return badRequest(`Unknown action: ${action}`);
     }
-  } catch (error) {
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
-  }
-}
+  },
+);
