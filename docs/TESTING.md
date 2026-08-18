@@ -4,6 +4,10 @@ Mission Control has two test runners and five lanes. This document is the single
 source of truth for which lanes exist, which of them block a merge, and how to
 run the ones GitHub Actions cannot run.
 
+For the API error envelope every route answers with, the wrapper contract
+routes are migrated onto, and the migration recipe for `src/app/api/**`, see
+[`docs/API-CONTRACT.md`](./API-CONTRACT.md).
+
 ## Two runners, five lanes
 
 | Lane | Command | Requires | Typical runtime | Where it runs |
