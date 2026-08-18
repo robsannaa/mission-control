@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { fetchConfig, patchConfig } from "@/lib/gateway-config";
 import { gatewayCall } from "@/lib/openclaw";
 import { readFile, readdir } from "fs/promises";
@@ -12,6 +12,9 @@ import {
   type SkillStatusRow,
 } from "@/lib/skills-status";
 import { describeSkillsFailure } from "@/lib/skills-errors";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, notFound, serverError } from "@/lib/api-errors";
+import { skillsGetQuerySchema, skillsPostSchema } from "@/lib/schemas/automation";
 
 export const dynamic = "force-dynamic";
 
@@ -166,12 +169,13 @@ function toListPayload(status: SkillsStatus): SkillsList {
   };
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const action = searchParams.get("action") || "list";
+export const GET = withRoute(
+  { name: "/api/skills", querySchema: skillsGetQuerySchema },
+  async (request, ctx) => {
+  const action = ctx.query.action || "list";
   // Must be a real id from agents.list; the gateway rejects an unknown one
   // rather than falling back to the default agent.
-  const agentId = searchParams.get("agent")?.trim() || undefined;
+  const agentId = ctx.query.agent?.trim() || undefined;
 
   try {
     if (action === "config") {
@@ -201,8 +205,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (action === "info" && !searchParams.get("name")) {
-      return NextResponse.json({ error: "name required" }, { status: 400 });
+    if (action === "info" && !ctx.query.name) {
+      return badRequest("name required");
     }
 
     // One inventory snapshot answers list, check and info alike: every row
@@ -215,13 +219,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === "info") {
-      const name = searchParams.get("name") as string;
+      const name = ctx.query.name as string;
       const row = findSkillRow(status, name);
       if (!row) {
-        return NextResponse.json(
-          { error: `Unknown skill: ${name}` },
-          { status: 404 },
-        );
+        return notFound(`Unknown skill: ${name}`);
       }
 
       // Read SKILL.md for display. The list-only CLI fallback has no filePath,
@@ -251,7 +252,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ ...toListPayload(status), warning });
   } catch (err) {
-    console.error("Skills API error:", err);
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Skills API error");
 
     // Last resort: read SKILL.md files off disk. Loses eligibility and
     // requirement state, but beats showing an empty Skills page when neither
@@ -294,7 +295,10 @@ export async function GET(request: NextRequest) {
           });
         }
       } catch (fsErr) {
-        console.error("Skills filesystem fallback error:", fsErr);
+        ctx.log.error(
+          { err: fsErr instanceof Error ? fsErr.message : String(fsErr) },
+          "Skills filesystem fallback error",
+        );
       }
     }
 
@@ -334,16 +338,19 @@ export async function GET(request: NextRequest) {
         degraded: true,
       });
     }
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return serverError(String(err));
   }
-}
+  },
+);
 
 /* ── POST: install / enable / disable / config ──── */
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/skills", bodySchema: skillsPostSchema },
+  async (request, ctx) => {
   try {
-    const body = await request.json();
-    const action = body.action as string;
+    const body = ctx.body as Record<string, unknown> & { action: string };
+    const action = body.action;
 
     switch (action) {
       // Non-streaming counterpart of POST /api/skills/install. Both go through
@@ -353,10 +360,7 @@ export async function POST(request: NextRequest) {
         const name = body.name as string;
         const installId = body.installId as string;
         if (!name || !installId) {
-          return NextResponse.json(
-            { error: "name and installId required" },
-            { status: 400 }
-          );
+          return badRequest("name and installId required");
         }
         try {
           const result = await gatewayCall<{
@@ -366,25 +370,18 @@ export async function POST(request: NextRequest) {
             stderr?: string;
           }>("skills.install", { name, installId }, 285_000);
           if (!result?.ok) {
-            return NextResponse.json(
-              { error: result?.message || "install failed", ...result },
-              { status: 500 }
-            );
+            return serverError(result?.message || "install failed");
           }
           return NextResponse.json({ ok: true, action, name, installId, ...result });
         } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+          return serverError(String(err));
         }
       }
 
       case "enable-skill":
       case "disable-skill": {
         const name = body.name as string;
-        if (!name)
-          return NextResponse.json(
-            { error: "name required" },
-            { status: 400 }
-          );
+        if (!name) return badRequest("name required");
 
         const enabled = action === "enable-skill";
 
@@ -408,7 +405,7 @@ export async function POST(request: NextRequest) {
               warning: `skills.update unavailable (${rpcErr instanceof Error ? rpcErr.message : String(rpcErr)}); wrote the config and restarted the gateway instead.`,
             });
           } catch (err) {
-            return NextResponse.json({ error: String(err) }, { status: 500 });
+            return serverError(String(err));
           }
         }
       }
@@ -417,28 +414,24 @@ export async function POST(request: NextRequest) {
         // Patch tools.<skillKey> config
         const skillKey = body.skillKey as string;
         const config = body.config as Record<string, unknown>;
-        if (!skillKey || !config)
-          return NextResponse.json(
-            { error: "skillKey and config required" },
-            { status: 400 }
-          );
+        if (!skillKey || !config) return badRequest("skillKey and config required");
 
         try {
           await patchConfig({ tools: { [skillKey]: config } });
           return NextResponse.json({ ok: true, action, skillKey });
         } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+          return serverError(String(err));
         }
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
+        // Unreachable in practice — skillsPostSchema's discriminated union
+        // already rejects any action outside the literal set above.
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    console.error("Skills POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Skills POST error");
+    return serverError(String(err));
   }
-}
+  },
+);

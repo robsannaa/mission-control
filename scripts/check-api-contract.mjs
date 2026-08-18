@@ -53,15 +53,22 @@ function parseArgs(argv) {
 
 // ── File discovery ──────────────────────────────────
 
-function walk(dir, out) {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    const st = statSync(full);
-    if (st.isDirectory()) {
-      walk(full, out);
-    } else if (extname(full) === ".ts" && !full.endsWith(".test.ts")) {
-      out.push(full);
+/**
+ * `path` may itself be a single file (a `--scope` pointing directly at a
+ * route file, e.g. "src/app/api/skills/route.ts" — used by later batch
+ * plans' acceptance criteria to isolate one file inside a directory that
+ * also holds an out-of-scope sibling route) or a directory to recurse into.
+ */
+function walk(path, out) {
+  const st = statSync(path);
+  if (st.isDirectory()) {
+    for (const entry of readdirSync(path)) {
+      walk(join(path, entry), out);
     }
+    return;
+  }
+  if (extname(path) === ".ts" && !path.endsWith(".test.ts")) {
+    out.push(path);
   }
 }
 
@@ -70,11 +77,12 @@ function resolveScopeRoots(scopes) {
   return scopes.map((scope) => {
     // Accept both a repo-relative path ("src/app/api/agents") and a path
     // already rooted under src/app/api ("agents") — batch plans and the
-    // acceptance criteria in 02-03-PLAN.md use the former.
+    // acceptance criteria in 02-03-PLAN.md use the former. Either may name a
+    // directory or a single file.
     const asGiven = join(ROOT, scope);
     try {
-      const st = statSync(asGiven);
-      if (st.isDirectory()) return asGiven;
+      statSync(asGiven);
+      return asGiven;
     } catch {
       // fall through to the API-relative interpretation below
     }

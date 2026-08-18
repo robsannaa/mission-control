@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { access, readFile, realpath, rm, writeFile } from "fs/promises";
 import { constants as fsConstants } from "fs";
 import { resolve, sep } from "path";
@@ -12,6 +12,9 @@ import type {
   SkillCatalogSource,
   SkillTrustSignal,
 } from "@/lib/skills-catalog";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, conflict, serverError } from "@/lib/api-errors";
+import { skillsClawhubGetQuerySchema, skillsClawhubPostSchema } from "@/lib/schemas/automation";
 
 export const dynamic = "force-dynamic";
 
@@ -455,107 +458,130 @@ async function removeInstalledSkill(slug: string): Promise<boolean> {
   return true;
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const action = searchParams.get("action") || "explore";
-  try {
-    if (action === "capabilities") return NextResponse.json(await catalogCapabilities());
-    if (action === "list") return NextResponse.json({ items: await installedCatalog() });
-    if (action === "search") {
-      const query = String(searchParams.get("q") || "").trim();
-      if (!query) return NextResponse.json({ items: [] });
-      const limit = clamp(Number(searchParams.get("limit") || 28), 1, 50);
+export const GET = withRoute(
+  { name: "/api/skills/clawhub", querySchema: skillsClawhubGetQuerySchema },
+  async (request, ctx) => {
+    const action = ctx.query.action || "explore";
+    try {
+      if (action === "capabilities") return NextResponse.json(await catalogCapabilities());
+      if (action === "list") return NextResponse.json({ items: await installedCatalog() });
+      if (action === "search") {
+        const query = String(ctx.query.q || "").trim();
+        if (!query) return NextResponse.json({ items: [] });
+        const limit = clamp(Number(ctx.query.limit || 28), 1, 50);
+        const [clawHubItems, skillsShItems] = await Promise.all([
+          searchCatalog(query, limit),
+          searchSkillsSh(query, limit).catch(() => []),
+        ]);
+        return NextResponse.json({ items: mergeCatalogItems(clawHubItems, skillsShItems) });
+      }
+      if (action === "inspect") {
+        const slug = String(ctx.query.slug || "").trim();
+        if (!slug) return badRequest("slug required");
+        return NextResponse.json(await gatewayCall<Record<string, unknown>>("skills.detail", { slug }, 20_000));
+      }
+      const sort = String(ctx.query.sort || "trending");
+      const limit = clamp(Number(ctx.query.limit || 28), 1, 100);
       const [clawHubItems, skillsShItems] = await Promise.all([
-        searchCatalog(query, limit),
-        searchSkillsSh(query, limit).catch(() => []),
+        browseCatalog(sort, limit),
+        browseSkillsSh(sort, limit).catch(() => []),
       ]);
       return NextResponse.json({ items: mergeCatalogItems(clawHubItems, skillsShItems) });
+    } catch (error) {
+      ctx.log.error({ err: error instanceof Error ? error.message : String(error) }, "Skills clawhub GET error");
+      return serverError(error instanceof Error ? error.message : String(error));
     }
-    if (action === "inspect") {
-      const slug = String(searchParams.get("slug") || "").trim();
-      if (!slug) return NextResponse.json({ error: "slug required" }, { status: 400 });
-      return NextResponse.json(await gatewayCall<Record<string, unknown>>("skills.detail", { slug }, 20_000));
-    }
-    const sort = String(searchParams.get("sort") || "trending");
-    const limit = clamp(Number(searchParams.get("limit") || 28), 1, 100);
-    const [clawHubItems, skillsShItems] = await Promise.all([
-      browseCatalog(sort, limit),
-      browseSkillsSh(sort, limit).catch(() => []),
-    ]);
-    return NextResponse.json({ items: mergeCatalogItems(clawHubItems, skillsShItems) });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
-  }
-}
+  },
+);
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json() as Record<string, unknown>;
-    const action = String(body.action || "");
-    const slug = String(body.slug || "").trim();
-    const source = String(body.source || "clawhub") as SkillCatalogSource;
-    const reference = String(body.installReference || body.ref || slug).trim();
+export const POST = withRoute(
+  { name: "/api/skills/clawhub", bodySchema: skillsClawhubPostSchema },
+  async (request, ctx) => {
+    try {
+      const body = ctx.body as Record<string, unknown> & { action: string };
+      const action = body.action;
+      const slug = String(body.slug || "").trim();
+      const source = String(body.source || "clawhub") as SkillCatalogSource;
+      const reference = String(body.installReference || body.ref || slug).trim();
 
-    if (action === "install") {
-      if (source === "clawhub") {
-        if (!isValidClawHubReference(reference)) return NextResponse.json({ error: "Invalid ClawHub reference." }, { status: 400 });
-        const result = await gatewayCall<{ slug?: string; version?: string; message?: string; warning?: string }>(
-          "skills.install",
-          {
-            source: "clawhub",
-            slug: reference,
-            ...(body.version ? { version: String(body.version) } : {}),
-            ...(body.acknowledgeRisk ? { force: true, acknowledgeClawHubRisk: true } : {}),
-          },
-          120_000,
-        );
-        await disableInstalledSkill(result.slug || slug);
-        return NextResponse.json({ ok: true, ...result, output: [result.message, result.warning].filter(Boolean).join("\n") });
-      }
-      if (source === "skills-sh" || source === "git") {
-        if (source === "skills-sh" && !isValidSkillsShReference(reference)) {
-          return NextResponse.json({ error: "Invalid Skills.sh reference. Use skills-sh:owner/repository/skill.", code: "INVALID_SKILL_REFERENCE" }, { status: 400 });
+      if (action === "install") {
+        if (source === "clawhub") {
+          if (!isValidClawHubReference(reference)) return badRequest("Invalid ClawHub reference.");
+          const result = await gatewayCall<{ slug?: string; version?: string; message?: string; warning?: string }>(
+            "skills.install",
+            {
+              source: "clawhub",
+              slug: reference,
+              ...(body.version ? { version: String(body.version) } : {}),
+              ...(body.acknowledgeRisk ? { force: true, acknowledgeClawHubRisk: true } : {}),
+            },
+            120_000,
+          );
+          await disableInstalledSkill(result.slug || slug);
+          return NextResponse.json({ ok: true, ...result, output: [result.message, result.warning].filter(Boolean).join("\n") });
         }
-        if (source === "git" && !isValidGitReference(reference)) {
-          return NextResponse.json({ error: "Invalid Git reference. Use git:owner/repository or git:owner/repository@ref.", code: "INVALID_SKILL_REFERENCE" }, { status: 400 });
+        if (source === "skills-sh" || source === "git") {
+          if (source === "skills-sh" && !isValidSkillsShReference(reference)) {
+            // Extra `code` field an existing client reads by name — built
+            // manually rather than through api-errors.ts, matching the
+            // precedent in src/app/api/config/route.ts (02-04).
+            return NextResponse.json(
+              { ok: false, error: "Invalid Skills.sh reference. Use skills-sh:owner/repository/skill.", code: "INVALID_SKILL_REFERENCE" },
+              { status: 400 },
+            );
+          }
+          if (source === "git" && !isValidGitReference(reference)) {
+            return NextResponse.json(
+              { ok: false, error: "Invalid Git reference. Use git:owner/repository or git:owner/repository@ref.", code: "INVALID_SKILL_REFERENCE" },
+              { status: 400 },
+            );
+          }
+          const result = await installExternal(
+            reference,
+            source,
+            typeof body.agentId === "string" ? body.agentId.trim() || undefined : undefined,
+            body.scope === "global" ? "global" : "workspace",
+          );
+          await disableInstalledSkill(slug || reference.split("/").pop() || reference);
+          return NextResponse.json({ ok: true, slug: slug || reference.split("/").pop(), output: [result.stdout, result.stderr].filter(Boolean).join("\n") });
         }
-        const result = await installExternal(
-          reference,
-          source,
-          typeof body.agentId === "string" ? body.agentId.trim() || undefined : undefined,
-          body.scope === "global" ? "global" : "workspace",
-        );
-        await disableInstalledSkill(slug || reference.split("/").pop() || reference);
-        return NextResponse.json({ ok: true, slug: slug || reference.split("/").pop(), output: [result.stdout, result.stderr].filter(Boolean).join("\n") });
+        return badRequest(`Installation from ${source} is not supported.`);
       }
-      return NextResponse.json({ error: `Installation from ${source} is not supported.` }, { status: 400 });
-    }
 
-    if (action === "update") {
-      if (!slug) return NextResponse.json({ error: "slug required" }, { status: 400 });
-      if (source === "git" || source === "skills-sh") {
-        const result = await installExternal(reference, source, undefined, "workspace");
-        return NextResponse.json({ ok: true, slug, output: [result.stdout, result.stderr].filter(Boolean).join("\n") });
+      if (action === "update") {
+        if (!slug) return badRequest("slug required");
+        if (source === "git" || source === "skills-sh") {
+          const result = await installExternal(reference, source, undefined, "workspace");
+          return NextResponse.json({ ok: true, slug, output: [result.stdout, result.stderr].filter(Boolean).join("\n") });
+        }
+        const result = await gatewayCall<{ message?: string }>("skills.update", {
+          source: "clawhub",
+          slug,
+          ...(body.acknowledgeRisk ? { acknowledgeClawHubRisk: true } : {}),
+        }, 120_000);
+        return NextResponse.json({ ok: true, slug, output: result.message || "" });
       }
-      const result = await gatewayCall<{ message?: string }>("skills.update", {
-        source: "clawhub",
-        slug,
-        ...(body.acknowledgeRisk ? { acknowledgeClawHubRisk: true } : {}),
-      }, 120_000);
-      return NextResponse.json({ ok: true, slug, output: result.message || "" });
-    }
 
-    if (action === "uninstall") {
-      if (!slug || !/^[a-z0-9][a-z0-9_-]*$/i.test(slug)) return NextResponse.json({ error: "Valid slug required" }, { status: 400 });
-      const removed = await removeInstalledSkill(slug);
-      if (!removed) return NextResponse.json({ error: "Only workspace-installed skills can be uninstalled. Built-in, shared, and global skills are protected." }, { status: 409 });
-      return NextResponse.json({ ok: true, slug, scope: "workspace" });
-    }
+      if (action === "uninstall") {
+        if (!slug || !/^[a-z0-9][a-z0-9_-]*$/i.test(slug)) return badRequest("Valid slug required");
+        const removed = await removeInstalledSkill(slug);
+        if (!removed) return conflict("Only workspace-installed skills can be uninstalled. Built-in, shared, and global skills are protected.");
+        return NextResponse.json({ ok: true, slug, scope: "workspace" });
+      }
 
-    return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const suspicious = /suspicious|risk|virus|malicious|unsafe/i.test(message);
-    return NextResponse.json({ error: message, code: suspicious ? "TRUST_REVIEW_REQUIRED" : "SKILL_ACTION_FAILED" }, { status: suspicious ? 409 : 500 });
-  }
-}
+      // Unreachable in practice — skillsClawhubPostSchema's discriminated
+      // union already rejects any action outside the literal set above.
+      return badRequest(`Unknown action: ${action}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const suspicious = /suspicious|risk|virus|malicious|unsafe/i.test(message);
+      ctx.log.error({ err: message }, "Skills clawhub POST error");
+      // Extra `code` field an existing client reads by name — built manually
+      // rather than through api-errors.ts (same precedent as above).
+      return NextResponse.json(
+        { ok: false, error: message, code: suspicious ? "TRUST_REVIEW_REQUIRED" : "SKILL_ACTION_FAILED" },
+        { status: suspicious ? 409 : 500 },
+      );
+    }
+  },
+);
