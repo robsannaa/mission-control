@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import { getOpenClawHome } from "@/lib/paths";
 import { runCliJson, runCliCaptureBoth } from "@/lib/openclaw";
 import { buildModelsSummary } from "@/lib/models-summary";
+import { withRoute } from "@/lib/api-route";
+import { securityGetQuerySchema, securityPostSchema } from "@/lib/schemas/system";
 
 export const dynamic = "force-dynamic";
 
@@ -224,49 +226,66 @@ async function runFix(): Promise<{ fix: SecurityFixResult; report: SecurityAudit
   return { fix, report };
 }
 
-export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const shouldRun = url.searchParams.get("run") === "1";
-  const mode = url.searchParams.get("mode") === "deep" ? "deep" : "quick";
+/**
+ * GET /api/security — security audit dashboard read.
+ *
+ * Deliberately never returns an error status: on a CLI failure it serves a
+ * minimal, explicitly-degraded payload (`degraded: true`) instead. Kept as
+ * an internal try/catch (not thrown) so `withRoute`'s own catch never sees
+ * this failure and never converts it into a 500 (T-02-46).
+ */
+export const GET = withRoute(
+  { name: "/api/security", querySchema: securityGetQuerySchema },
+  async (_request, { query, log }) => {
+    const shouldRun = query.run === "1";
+    const mode = query.mode === "deep" ? "deep" : "quick";
 
-  try {
-    const { cache, warning } = await readCache();
-    let report: SecurityAuditReport | null = null;
+    try {
+      const { cache, warning } = await readCache();
+      let report: SecurityAuditReport | null = null;
 
-    if (shouldRun) {
-      report = await runAudit(mode);
-      cache.lastAudit = report;
-      cache.updatedAt = Date.now();
-      await writeCache(cache);
+      if (shouldRun) {
+        report = await runAudit(mode);
+        cache.lastAudit = report;
+        cache.updatedAt = Date.now();
+        await writeCache(cache);
+      }
+
+      return NextResponse.json({
+        ts: Date.now(),
+        docsUrl: DOCS_URL,
+        cache,
+        report,
+        warning: warning || undefined,
+        degraded: false,
+      });
+    } catch (err) {
+      log.warn({ err: cliError(err) }, "Security audit unavailable — returning degraded payload");
+      return NextResponse.json({
+        ts: Date.now(),
+        docsUrl: DOCS_URL,
+        cache: {},
+        error: cliError(err),
+        warning: "Security checks are unavailable right now.",
+        degraded: true,
+      });
     }
+  },
+);
 
-    return NextResponse.json({
-      ts: Date.now(),
-      docsUrl: DOCS_URL,
-      cache,
-      report,
-      warning: warning || undefined,
-      degraded: false,
-    });
-  } catch (err) {
-    return NextResponse.json({
-      ts: Date.now(),
-      docsUrl: DOCS_URL,
-      cache: {},
-      error: cliError(err),
-      warning: "Security checks are unavailable right now.",
-      degraded: true,
-    });
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const action = String(body.action || "").trim();
-
-    if (action === "audit") {
-      const mode = String(body.mode || "quick").toLowerCase() === "deep" ? "deep" : "quick";
+/**
+ * POST /api/security — security audit/fix actions writing instance-level
+ * security state. `securityPostSchema` rejects an unrecognized `action`
+ * before this handler runs, so no write (`security audit --fix`) is ever
+ * reached on a bad payload (T-02-44). A thrown error from any action's
+ * gateway/CLI call is left to `withRoute`'s own catch, which produces the
+ * same 500 + message text this route always returned.
+ */
+export const POST = withRoute(
+  { name: "/api/security", bodySchema: securityPostSchema },
+  async (_request, { body }) => {
+    if (body.action === "audit") {
+      const mode = (body.mode || "quick").toLowerCase() === "deep" ? "deep" : "quick";
       const report = await runAudit(mode);
       const { cache, warning } = await readCache();
       cache.lastAudit = report;
@@ -274,7 +293,7 @@ export async function POST(request: NextRequest) {
       await writeCache(cache);
       return NextResponse.json({
         ok: true,
-        action,
+        action: body.action,
         mode,
         report,
         cache,
@@ -282,7 +301,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (action === "fix") {
+    if (body.action === "fix") {
       const { fix, report } = await runFix();
       const { cache, warning } = await readCache();
       cache.lastFix = { ts: Date.now(), fix, report };
@@ -291,7 +310,7 @@ export async function POST(request: NextRequest) {
       await writeCache(cache);
       return NextResponse.json({
         ok: true,
-        action,
+        action: body.action,
         fix,
         report,
         cache,
@@ -299,29 +318,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (action === "check-secrets") {
+    if (body.action === "check-secrets") {
       const { stdout, stderr } = await runCliCaptureBoth(["secrets", "audit", "--check"], 15000);
-      return NextResponse.json({ ok: true, action, output: stdout || stderr || "No output." });
+      return NextResponse.json({ ok: true, action: body.action, output: stdout || stderr || "No output." });
     }
 
-    if (action === "check-models") {
-      try {
-        const summary = await buildModelsSummary();
-        return NextResponse.json({ ok: true, action, models: summary.status });
-      } catch (err) {
-        return NextResponse.json({ ok: true, action, output: String(err) });
-      }
+    // body.action === "check-models" — the only remaining variant of
+    // `securityPostSchema`'s discriminated union.
+    try {
+      const summary = await buildModelsSummary();
+      return NextResponse.json({ ok: true, action: body.action, models: summary.status });
+    } catch (err) {
+      return NextResponse.json({ ok: true, action: body.action, output: String(err) });
     }
-
-    return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
-  } catch (err) {
-    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
-    if (err instanceof SyntaxError) {
-      return NextResponse.json(
-        { ok: false, error: `Invalid JSON body: ${err.message}` },
-        { status: 400 },
-      );
-    }
-    return NextResponse.json({ error: cliError(err) }, { status: 500 });
-  }
-}
+  },
+);

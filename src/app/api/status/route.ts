@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getGatewayUrl } from "@/lib/paths";
 import { probeGatewayLiveness } from "@/lib/gateway-liveness";
 import { resolveTransport } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,14 @@ let statusCache: { payload: StatusPayload; expiresAt: number; fetchedAt: number 
  * Returns gateway reachability and transport mode without slow RPC calls.
  * Designed for health-check consumers, uptime monitors, and the frontend
  * status indicator. Serves stale data during transient gateway outages.
+ *
+ * Deliberately never returns an error status: on a gateway failure it
+ * serves the last cached payload (`stale: true`), and only when no cache
+ * exists at all does it fall back to a minimal offline payload — still a
+ * 200. Kept as an internal try/catch (not thrown) so `withRoute`'s own
+ * catch never sees this failure and never converts it into a 500 (T-02-46).
  */
-export async function GET() {
+export const GET = withRoute({ name: "/api/status" }, async (_request, { log }) => {
   const start = Date.now();
 
   // Serve fresh cache if available.
@@ -85,12 +92,12 @@ export async function GET() {
   } catch (err) {
     // Serve stale cache during transient failures.
     if (statusCache && start < statusCache.fetchedAt + STATUS_CACHE_MAX_STALE_MS) {
-      console.warn("Status API: serving stale cache due to error:", String(err));
+      log.warn({ err: String(err) }, "Status API: serving stale cache due to error");
       return NextResponse.json({ ...statusCache.payload, stale: true });
     }
 
     // No cache — return a minimal offline response rather than 500.
-    console.warn("Status API: no cache available, returning offline response:", String(err));
+    log.warn({ err: String(err) }, "Status API: no cache available, returning offline response");
     return NextResponse.json({
       ok: false,
       gateway: "offline",
@@ -103,4 +110,4 @@ export async function GET() {
       stale: true,
     });
   }
-}
+});

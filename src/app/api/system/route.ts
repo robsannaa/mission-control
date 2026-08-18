@@ -3,6 +3,8 @@ import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 import { getOpenClawHome, getSystemSkillsDir, getDefaultWorkspaceSync, readConfigFile } from "@/lib/paths";
 import { fetchGatewaySessions, type NormalizedGatewaySession } from "@/lib/gateway-sessions";
+import { withRoute } from "@/lib/api-route";
+import { serverError } from "@/lib/api-errors";
 
 const OPENCLAW_HOME = getOpenClawHome();
 export const dynamic = "force-dynamic";
@@ -310,7 +312,7 @@ function toSessionInfo(sessions: NormalizedGatewaySession[]): SessionInfo[] {
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/system" }, async (_request, { log }) => {
   try {
     const now = Date.now();
     if (systemCache && now < systemCache.expiresAt) {
@@ -391,10 +393,10 @@ export async function GET() {
       systemInFlight = null;
     }
   } catch (err) {
-    console.error("System API error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    log.error({ err: String(err) }, "System API error");
+    return serverError(String(err));
   }
-}
+});
 
 function extractModelAliases(
   config: Record<string, unknown>

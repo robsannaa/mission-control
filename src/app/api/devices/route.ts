@@ -1,5 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { devicesPostSchema } from "@/lib/schemas/system";
 
 type TokenInfo = {
   role: string;
@@ -45,8 +48,13 @@ type DeviceListResult = {
 
 /**
  * GET /api/devices - List all pending requests and paired devices.
+ *
+ * Deliberately never returns an error status: on a gateway failure it
+ * serves an empty, explicitly-degraded list (`degraded: true`) instead.
+ * Kept as an internal try/catch (not thrown) so `withRoute`'s own catch
+ * never sees this failure and never converts it into a 500 (T-02-46).
  */
-export async function GET() {
+export const GET = withRoute({ name: "/api/devices" }, async (_request, { log }) => {
   try {
     const data = await gatewayCall<DeviceListResult>("device.pair.list", {}, 15000);
 
@@ -67,7 +75,7 @@ export async function GET() {
       paired,
     });
   } catch (err) {
-    console.error("Devices API GET error:", err);
+    log.warn({ err: String(err) }, "Devices API GET error — returning degraded payload");
     return NextResponse.json({
       pending: [],
       paired: [],
@@ -75,7 +83,7 @@ export async function GET() {
       degraded: true,
     });
   }
-}
+});
 
 /**
  * POST /api/devices - Device management actions.
@@ -84,70 +92,64 @@ export async function GET() {
  *   { action: "approve", requestId: "..." }
  *   { action: "reject", requestId: "..." }
  *   { action: "revoke", deviceId: "...", role: "..." }
+ *
+ * `devicesPostSchema` rejects an unrecognized `action` before this handler
+ * runs, so a device record can never be altered by falling through to a
+ * default branch (T-02-48). `requestId`/`deviceId`+`role` stay manual
+ * required-field checks so their exact pre-migration messages survive
+ * (no `details` tree, matching `src/lib/schemas/agents.ts`'s split).
  */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const action = body.action as string;
-
-    switch (action) {
-      case "approve": {
-        const requestId = body.requestId as string;
-        if (!requestId) {
-          return NextResponse.json(
-            { error: "requestId is required" },
-            { status: 400 }
+export const POST = withRoute(
+  { name: "/api/devices", bodySchema: devicesPostSchema },
+  async (_request, { body, log }) => {
+    try {
+      switch (body.action) {
+        case "approve": {
+          const requestId = body.requestId;
+          if (!requestId) {
+            return badRequest("requestId is required");
+          }
+          const result = await gatewayCall<Record<string, unknown>>(
+            "device.pair.approve",
+            { requestId },
+            15000,
           );
+          return NextResponse.json({ ok: true, action: body.action, requestId, result });
         }
-        const result = await gatewayCall<Record<string, unknown>>(
-          "device.pair.approve",
-          { requestId },
-          15000,
-        );
-        return NextResponse.json({ ok: true, action, requestId, result });
-      }
 
-      case "reject": {
-        const requestId = body.requestId as string;
-        if (!requestId) {
-          return NextResponse.json(
-            { error: "requestId is required" },
-            { status: 400 }
+        case "reject": {
+          const requestId = body.requestId;
+          if (!requestId) {
+            return badRequest("requestId is required");
+          }
+          const result = await gatewayCall<Record<string, unknown>>(
+            "device.pair.reject",
+            { requestId },
+            15000,
           );
+          return NextResponse.json({ ok: true, action: body.action, requestId, result });
         }
-        const result = await gatewayCall<Record<string, unknown>>(
-          "device.pair.reject",
-          { requestId },
-          15000,
-        );
-        return NextResponse.json({ ok: true, action, requestId, result });
-      }
 
-      case "revoke": {
-        const deviceId = body.deviceId as string;
-        const role = body.role as string;
-        if (!deviceId || !role) {
-          return NextResponse.json(
-            { error: "deviceId and role are required" },
-            { status: 400 }
+        case "revoke": {
+          const deviceId = body.deviceId;
+          const role = body.role;
+          if (!deviceId || !role) {
+            return badRequest("deviceId and role are required");
+          }
+          const result = await gatewayCall<Record<string, unknown>>(
+            "device.token.revoke",
+            { deviceId, role },
+            15000,
           );
+          return NextResponse.json({ ok: true, action: body.action, deviceId, role, result });
         }
-        const result = await gatewayCall<Record<string, unknown>>(
-          "device.token.revoke",
-          { deviceId, role },
-          15000,
-        );
-        return NextResponse.json({ ok: true, action, deviceId, role, result });
       }
-
-      default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
+    } catch (err) {
+      // Preserves the pre-migration message text exactly (`String(err)`,
+      // not `err.message`) rather than delegating to `withRoute`'s own
+      // catch, whose message normalization drops the "Error: " prefix.
+      log.error({ err: String(err) }, "Devices API POST error");
+      return serverError(String(err));
     }
-  } catch (err) {
-    console.error("Devices API POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
-}
+  },
+);

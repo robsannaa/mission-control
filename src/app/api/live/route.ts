@@ -4,6 +4,8 @@ import { join } from "path";
 import { getOpenClawHome, getGatewayUrl, getGatewayPort, getDefaultAgentId, readConfigFile } from "@/lib/paths";
 import { fetchGatewaySessions, summarizeSessionsByAgent } from "@/lib/gateway-sessions";
 import { gatewayCall } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
+import { serverError } from "@/lib/api-errors";
 
 const OPENCLAW_HOME = getOpenClawHome();
 
@@ -117,7 +119,7 @@ type CronRunEntry = {
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/live" }, async (_request, { log }) => {
   try {
     const [gateway, cronData, tslogPath, cronRuns, agents] = await Promise.all([
       checkGatewayHealth(),
@@ -192,10 +194,10 @@ export async function GET() {
       logEntries: logEntries.slice(0, 30),
     });
   } catch (err) {
-    console.error("Live API error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    log.error({ err: String(err) }, "Live API error");
+    return serverError(String(err));
   }
-}
+});
 
 async function readCronJobs(): Promise<{
   jobs: CronJobLive[];
