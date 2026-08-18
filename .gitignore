@@ -74,3 +74,4 @@ docs/design/
 
 # sqlite backup snapshots
 *.db.bak*
+.planning/
