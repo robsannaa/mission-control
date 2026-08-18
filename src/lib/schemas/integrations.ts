@@ -47,10 +47,15 @@ export const agentIdQuerySchema = z
   .passthrough();
 export type AgentIdQuery = z.infer<typeof agentIdQuerySchema>;
 
-// ── Shared route-param schema: the dynamic `[id]` segment ──────────────
+// ── Shared route-param schema: the dynamic `[id]` (accountId) segment ──
 //
-// Bounded length + character set (T-02-24) — no account lookup ever runs
-// against a segment that fails this check.
+// Next.js's dynamic-segment folder name is `[id]`, so the params object key
+// stays `id` — but semantically this is always a Google account's
+// accountId, and every route below passes it straight into
+// getGoogleAccountDetail/Health/History/Watch(accountId, ...) as the id
+// that selects the credential-bearing record. Bounded length + character
+// set (T-02-24) — no account lookup ever runs against a segment that fails
+// this check.
 
 export const GOOGLE_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 

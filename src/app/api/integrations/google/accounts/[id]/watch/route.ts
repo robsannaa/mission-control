@@ -1,25 +1,31 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getGoogleAccountWatch } from "@/lib/google-integrations-api";
+import { withRoute } from "@/lib/api-route";
+import { apiError } from "@/lib/api-errors";
+import {
+  agentIdQuerySchema,
+  googleAccountRouteParamsSchema,
+  type AgentIdQuery,
+  type GoogleAccountRouteParams,
+} from "@/lib/schemas/integrations";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type RouteContext = {
-  params: Promise<{ id: string }>;
-};
-
-export async function GET(request: NextRequest, context: RouteContext) {
-  try {
-    const { id } = await context.params;
-    const agentId = request.nextUrl.searchParams.get("agentId");
-    return NextResponse.json(await getGoogleAccountWatch(id, agentId), {
-      headers: { "Cache-Control": "no-store" },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json(
-      { ok: false, error: message },
-      { status: message.includes("not found") ? 404 : 500 },
-    );
-  }
-}
+export const GET = withRoute<unknown, AgentIdQuery, GoogleAccountRouteParams>(
+  {
+    name: "/api/integrations/google/accounts/[id]/watch",
+    querySchema: agentIdQuerySchema,
+    routeSchema: googleAccountRouteParamsSchema,
+  },
+  async (_request, ctx) => {
+    try {
+      return NextResponse.json(await getGoogleAccountWatch(ctx.params.id, ctx.query.agentId || null), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return apiError(message, message.includes("not found") ? 404 : 500);
+    }
+  },
+);

@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { gatewayCall } from "@/lib/openclaw";
 import { patchConfig } from "@/lib/gateway-config";
 import { getOpenClawHome } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
+import { badRequest } from "@/lib/api-errors";
+import { channelsPostSchema, type ChannelsPostInput } from "@/lib/schemas/integrations";
 
 export const dynamic = "force-dynamic";
 
@@ -308,29 +311,25 @@ async function buildChannelStatuses(): Promise<ChannelsPayload> {
 
 /* ── GET /api/channels ── */
 
-export async function GET() {
-  try {
-    const payload = await buildChannelStatuses();
-    return NextResponse.json(payload);
-  } catch (err) {
-    console.error("Channels GET error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
-}
+export const GET = withRoute({ name: "/api/channels" }, async () => {
+  const payload = await buildChannelStatuses();
+  return NextResponse.json(payload);
+});
 
 /* ── POST /api/channels ── */
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const action = String(body.action || "").trim();
+export const POST = withRoute<ChannelsPostInput>(
+  { name: "/api/channels", bodySchema: channelsPostSchema },
+  async (_request, ctx) => {
+    const body = ctx.body as Record<string, unknown> & ChannelsPostInput;
+    const action = body.action;
     const channel = String(body.channel || "").trim().toLowerCase();
 
     if (!channel) {
-      return NextResponse.json({ error: "channel is required" }, { status: 400 });
+      return badRequest("channel is required");
     }
     if (!VALID_CHANNEL_ID.test(channel)) {
-      return NextResponse.json({ error: `Invalid channel id: ${channel}` }, { status: 400 });
+      return badRequest(`Invalid channel id: ${channel}`);
     }
 
     const meta = CHANNEL_SETUP[channel];
@@ -341,14 +340,13 @@ export async function POST(request: NextRequest) {
       case "add":
       case "connect": {
         if (meta && meta.setup !== "token") {
-          return NextResponse.json(
-            { error: `${meta.label} does not use token setup — follow the ${meta.setup === "qr" ? "QR link" : "CLI"} flow instead.` },
-            { status: 400 },
+          return badRequest(
+            `${meta.label} does not use token setup — follow the ${meta.setup === "qr" ? "QR link" : "CLI"} flow instead.`,
           );
         }
         const token = (body.token as string || "").trim();
         if (!token) {
-          return NextResponse.json({ error: "token is required" }, { status: 400 });
+          return badRequest("token is required");
         }
 
         await patchConfig(
@@ -399,7 +397,7 @@ export async function POST(request: NextRequest) {
         if (body.dmPolicy) patch.dmPolicy = body.dmPolicy;
         if (body.groupPolicy) patch.groupPolicy = body.groupPolicy;
         if (Object.keys(patch).length === 0) {
-          return NextResponse.json({ error: "dmPolicy or groupPolicy required" }, { status: 400 });
+          return badRequest("dmPolicy or groupPolicy required");
         }
         await patchConfig(
           { channels: { [channel]: patch } },
@@ -408,10 +406,10 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+        // Unreachable: channelsPostSchema's discriminated union already
+        // rejects any `action` outside the literals above before this
+        // handler runs (T-02-27). Kept as a defensive fallback.
+        return badRequest(`Unknown action: ${String(action)}`);
     }
-  } catch (err) {
-    console.error("Channels POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
-}
+  },
+);

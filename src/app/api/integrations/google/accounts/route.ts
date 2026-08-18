@@ -1,13 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { buildGoogleIntegrationsSnapshot } from "@/lib/google-integrations-api";
+import { withRoute } from "@/lib/api-route";
+import { agentIdQuerySchema, type AgentIdQuery } from "@/lib/schemas/integrations";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET(request: NextRequest) {
-  try {
-    const agentId = request.nextUrl.searchParams.get("agentId");
-    const snapshot = await buildGoogleIntegrationsSnapshot(agentId);
+export const GET = withRoute<unknown, AgentIdQuery>(
+  { name: "/api/integrations/google/accounts", querySchema: agentIdQuerySchema },
+  async (_request, ctx) => {
+    const snapshot = await buildGoogleIntegrationsSnapshot(ctx.query.agentId || null);
     return NextResponse.json(
       {
         generatedAt: snapshot.generatedAt,
@@ -16,10 +18,5 @@ export async function GET(request: NextRequest) {
       },
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch (error) {
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
-  }
-}
+  },
+);

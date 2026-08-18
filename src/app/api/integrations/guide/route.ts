@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import { withRoute } from "@/lib/api-route";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/integrations/guide" }, async () => {
   return NextResponse.json({
     generatedAt: Date.now(),
     title: "Google setup guide",
@@ -48,4 +49,4 @@ export async function GET() {
       },
     ],
   });
-}
+});
