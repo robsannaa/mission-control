@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { invokeGatewayTool, ToolNotAvailableError } from "@/lib/gateway-tools";
 import { unwrapExternalContent, plainifySnippet, type NormalizedSearchResult, type WebSearchRunResponse } from "@/components/search/providers";
+import { withRoute } from "@/lib/api-route";
+import { searchWebRunPostSchema } from "@/lib/schemas/search";
 
 export const dynamic = "force-dynamic";
 
@@ -72,18 +74,18 @@ function normalizeResults(details: WebSearchToolDetails): NormalizedSearchResult
     .filter((r) => r.url || r.snippet || r.title !== "(untitled)");
 }
 
-export async function POST(request: NextRequest) {
-  let query = "";
+export const POST = withRoute(
+  { name: "/api/search/web/run", bodySchema: searchWebRunPostSchema },
+  async (_request: NextRequest, ctx) => {
+  const query = ctx.body.query;
   try {
-    const body = (await request.json()) as { query?: string; count?: number };
-    query = String(body.query || "").trim();
     if (!query || query.length < 2) {
       return NextResponse.json(
         { ok: false, reason: "Type at least 2 characters to search." } satisfies WebSearchRunResponse,
         { status: 400 },
       );
     }
-    const count = Math.min(Math.max(Number(body.count) || 5, 1), 10);
+    const count = Math.min(Math.max(Number(ctx.body.count) || 5, 1), 10);
 
     const result = await invokeGatewayTool<WebSearchToolResult>("web_search", { query, count }, 45000);
     const details =
@@ -112,4 +114,5 @@ export async function POST(request: NextRequest) {
     const response: WebSearchRunResponse = { ok: false, reason, technical };
     return NextResponse.json(response, { status: 502 });
   }
-}
+  },
+);

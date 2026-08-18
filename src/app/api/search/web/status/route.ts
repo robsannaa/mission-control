@@ -5,6 +5,8 @@ import { fetchConfig } from "@/lib/gateway-config";
 import { runCliJson } from "@/lib/openclaw";
 import { getOpenClawHome } from "@/lib/paths";
 import { PROVIDER_CATALOG, AUTO_DETECT_ORDER, type ProviderMeta } from "@/components/search/providers";
+import { withRoute } from "@/lib/api-route";
+import { apiError, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -111,7 +113,7 @@ export type ProviderStatus = ProviderMeta & {
   note?: string;
 };
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/search/web/status" }, async () => {
   try {
     const [configData, dotEnvRaw, installedResult] = await Promise.all([
       fetchConfig(10000).catch(() => null),
@@ -120,10 +122,7 @@ export async function GET() {
     ]);
 
     if (!configData) {
-      return NextResponse.json(
-        { ok: false, error: "Could not reach OpenClaw to read its configuration." },
-        { status: 503 },
-      );
+      return apiError("Could not reach OpenClaw to read its configuration.", 503);
     }
 
     const dotEnv = parseDotEnv(dotEnvRaw);
@@ -242,9 +241,6 @@ export async function GET() {
       baseHash: configData.hash,
     });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 500 },
-    );
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+});

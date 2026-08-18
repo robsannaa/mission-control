@@ -5,14 +5,11 @@ import { homedir } from "os";
 import { runCli, gatewayCall } from "@/lib/openclaw";
 import { invokeGatewayTool } from "@/lib/gateway-tools";
 import { patchConfig } from "@/lib/gateway-config";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { webSearchPatchSchema, webSearchPostSchema } from "@/lib/schemas/search";
 
 export const dynamic = "force-dynamic";
-
-type WebSearchRequest = {
-  query?: string;
-  agentId?: string;
-  resultCount?: number;
-};
 
 type ConfigGet = {
   path?: string;
@@ -155,7 +152,7 @@ function resolveKey(
  *   4. openclaw.json → env block / env.vars
  *   5. process.env  (inherited from shell / launchd / systemd)
  */
-export async function GET() {
+export const GET = withRoute({ name: "/api/web-search" }, async () => {
   try {
     // ── Read all sources in parallel ──
     const [mainConfig, authProfiles, authJson, dotEnvRaw] = await Promise.all([
@@ -269,12 +266,9 @@ export async function GET() {
       },
     });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+});
 
 const VALID_MODELS = new Set([
   "perplexity/sonar",
@@ -290,15 +284,11 @@ const VALID_PROVIDERS = new Set(["brave", "perplexity"]);
  * Reads the current perplexity config first and merges the model in,
  * so we never clobber sibling keys like apiKey.
  */
-export async function PATCH(request: NextRequest) {
+export const PATCH = withRoute(
+  { name: "/api/web-search", bodySchema: webSearchPatchSchema },
+  async (_request: NextRequest, ctx) => {
   try {
-    const body = (await request.json()) as {
-      model?: string;
-      action?: string;
-      provider?: string;
-      apiKey?: string;
-      makeDefault?: boolean;
-    };
+    const body = ctx.body;
 
     // Read existing search config from disk so updates are additive and safe.
     const mainConfig = await readJsonSafe<Record<string, unknown>>(join(OPENCLAW_DIR, "openclaw.json"), {});
@@ -308,10 +298,7 @@ export async function PATCH(request: NextRequest) {
     if (action === "set-provider") {
       const provider = String(body.provider || "").trim().toLowerCase();
       if (!VALID_PROVIDERS.has(provider)) {
-        return NextResponse.json(
-          { ok: false, error: `Invalid provider. Valid: ${[...VALID_PROVIDERS].join(", ")}` },
-          { status: 400 }
-        );
+        return badRequest(`Invalid provider. Valid: ${[...VALID_PROVIDERS].join(", ")}`);
       }
       await patchConfig({
         tools: {
@@ -329,10 +316,7 @@ export async function PATCH(request: NextRequest) {
     if (action === "set-brave") {
       const apiKey = String(body.apiKey || "").trim();
       if (apiKey.length < 12) {
-        return NextResponse.json(
-          { ok: false, error: "Brave API key looks too short." },
-          { status: 400 }
-        );
+        return badRequest("Brave API key looks too short.");
       }
       const makeDefault = body.makeDefault !== false;
       await patchConfig({
@@ -351,10 +335,7 @@ export async function PATCH(request: NextRequest) {
 
     const model = String(body.model || "").trim();
     if (!model || !VALID_MODELS.has(model)) {
-      return NextResponse.json(
-        { ok: false, error: `Invalid model. Valid: ${[...VALID_MODELS].join(", ")}` },
-        { status: 400 }
-      );
+      return badRequest(`Invalid model. Valid: ${[...VALID_MODELS].join(", ")}`);
     }
 
     const existingPplx = (dig(existingSearch, "perplexity") || {}) as Record<string, unknown>;
@@ -372,35 +353,25 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ ok: true, model });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
 
 /** POST: run a web search via the agent */
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/web-search", bodySchema: webSearchPostSchema },
+  async (_request: NextRequest, ctx) => {
   try {
-    const body = (await request.json()) as WebSearchRequest;
-    const query = String(body.query || "").trim();
-    if (!query || query.length < 2) {
-      return NextResponse.json(
-        { ok: false, error: "Search query must be at least 2 characters" },
-        { status: 400 }
-      );
-    }
+    const query = ctx.body.query;
 
-    const agentId = safeToken(body.agentId || "", "main");
+    const agentId = safeToken(ctx.body.agentId || "", "main");
     if (!agentId) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid agentId" },
-        { status: 400 }
-      );
+      return badRequest("Invalid agentId");
     }
 
     const startedAt = Date.now();
-    const resultCount = Math.min(Math.max(Number(body.resultCount) || 5, 1), 10);
+    const resultCount = Math.min(Math.max(Number(ctx.body.resultCount) || 5, 1), 10);
 
     try {
       const result = await invokeGatewayWebSearch(query);
@@ -436,9 +407,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { ok: false, error: message || "Web search failed" },
-      { status: 500 }
-    );
+    return serverError(message || "Web search failed");
   }
-}
+  },
+);

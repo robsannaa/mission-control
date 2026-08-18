@@ -14,6 +14,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { invokeGatewayTool, ToolNotAvailableError } from "@/lib/gateway-tools";
 import { unwrapExternalContent, plainifySnippet } from "@/components/search/providers";
+import { withRoute } from "@/lib/api-route";
+import { badRequest } from "@/lib/api-errors";
+import { searchWebReadPostSchema } from "@/lib/schemas/search";
 
 export const dynamic = "force-dynamic";
 
@@ -68,21 +71,20 @@ function firstString(...values: unknown[]): string {
   return "";
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/search/web/read", bodySchema: searchWebReadPostSchema },
+  async (_request: NextRequest, ctx) => {
   let target: URL;
   try {
-    const body = (await request.json()) as { url?: string };
-    target = new URL(String(body.url ?? ""));
+    if (!ctx.body.url) throw new Error("missing url");
+    target = new URL(ctx.body.url);
     // Only the public web. This endpoint must not become a way to read the
     // machine's own filesystem or private network through the gateway.
     if (target.protocol !== "http:" && target.protocol !== "https:") {
       throw new Error("unsupported protocol");
     }
   } catch {
-    return NextResponse.json(
-      { ok: false, reason: "That does not look like a web address." },
-      { status: 400 },
-    );
+    return badRequest("That does not look like a web address.");
   }
 
   try {
@@ -126,4 +128,5 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return NextResponse.json({ ok: false, reason: describeFailure(err) }, { status: 200 });
   }
-}
+  },
+);
