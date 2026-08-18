@@ -1,6 +1,9 @@
 import { runOpenResponsesText, guessMime } from "@/lib/openresponses";
 import { getGatewayUrl, getGatewayToken } from "@/lib/paths";
 import { triggerResponsesEndpointSetup, waitForResponsesEndpoint } from "@/lib/responses-endpoint";
+import { withPassthroughRoute } from "@/lib/api-route";
+import { chatPostSchema, type ChatPostInput } from "@/lib/schemas/streaming";
+import type { Logger } from "pino";
 
 /**
  * Chat endpoint that sends a message to an OpenClaw agent and returns the response.
@@ -11,6 +14,10 @@ import { triggerResponsesEndpointSetup, waitForResponsesEndpoint } from "@/lib/r
  *
  * Request body: { messages, agentId, sessionKey?, model?, ... }
  * Each UIMessage has { id, role, parts: [{ type: 'text', text }, { type: 'file', url, filename }] }
+ *
+ * Wrapped with `withPassthroughRoute` (docs/API-CONTRACT.md §4): the body
+ * schema validates shape before any gateway call, but the streamed/plain-text
+ * `Response` this handler returns is never touched by the wrapper.
  */
 
 // ── Message extraction helpers ──────────────────────
@@ -258,6 +265,7 @@ async function* parseOpenResponsesStream(
 async function tryStreamingResponse(
   input: unknown,
   agentId: string,
+  log: Logger,
   sessionKey?: string,
 ): Promise<Response | null> {
   let gwUrl: string;
@@ -266,7 +274,7 @@ async function tryStreamingResponse(
     gwUrl = await getGatewayUrl();
     token = getGatewayToken();
   } catch (e) {
-    console.warn("[chat] Gateway URL/token not available:", e);
+    log.warn({ agentId, err: e instanceof Error ? e.message : String(e) }, "Gateway URL/token not available");
     return null;
   }
 
@@ -297,7 +305,7 @@ async function tryStreamingResponse(
     });
   } catch (e) {
     clearTimeout(timeout);
-    console.warn(`[chat] Gateway unreachable at ${endpoint}:`, e);
+    log.warn({ agentId, endpoint, err: e instanceof Error ? e.message : String(e) }, "Gateway unreachable");
     return null;
   }
 
@@ -305,7 +313,7 @@ async function tryStreamingResponse(
     clearTimeout(timeout);
     const status = gwRes.status;
     const text = await gwRes.text().catch(() => "");
-    console.warn(`[chat] Gateway returned ${status} from ${endpoint}.`, text.slice(0, 200));
+    log.warn({ agentId, endpoint, status, snippet: text.slice(0, 200) }, "Gateway returned an error status");
     // Surface auth/config errors (4xx) directly instead of falling through
     if (text && status >= 400 && status < 500 && status !== 404) {
       return new Response(`Error: ${text.slice(0, 500)}`, {
@@ -316,9 +324,7 @@ async function tryStreamingResponse(
     return null;
   }
 
-  console.log(
-    `[chat] Streaming via gateway OpenResponses API (agent=${agentId}, session=${sessionKey || "ephemeral"})`,
-  );
+  log.info({ agentId, session: sessionKey || "ephemeral" }, "Streaming via gateway OpenResponses API");
 
   // Stream text deltas as plain text for TextStreamChatTransport
   const reader = gwRes.body.getReader();
@@ -400,62 +406,66 @@ function delay(ms: number): Promise<void> {
 
 // ── Main handler ────────────────────────────────────
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const messages: Message[] = body.messages || [];
-    const agentId: string = body.agentId || body.agent || "main";
-    const sessionKey = normalizeRequestedSessionKey(body.sessionKey);
+export const POST = withPassthroughRoute<ChatPostInput>(
+  { name: "/api/chat", bodySchema: chatPostSchema },
+  async (_request, ctx) => {
+    const { body, log } = ctx;
+    try {
+      const messages: Message[] = body.messages || [];
+      const agentId: string = body.agentId || body.agent || "main";
+      const sessionKey = normalizeRequestedSessionKey(body.sessionKey);
 
-    const nudgeContext = typeof body.nudgeContext === "string" ? body.nudgeContext : undefined;
-    const { plainText, openResponsesInput } = extractContent(messages, nudgeContext);
+      const nudgeContext = typeof body.nudgeContext === "string" ? body.nudgeContext : undefined;
+      const { plainText, openResponsesInput } = extractContent(messages, nudgeContext);
 
-    if (!plainText) {
-      return new Response("Please send a message or attach a file.", {
-        status: 400,
+      if (!plainText) {
+        return new Response("Please send a message or attach a file.", {
+          status: 400,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+      }
+
+      // Ensure the OpenResponses endpoint is enabled (trigger setup if the
+      // gateway health poll hasn't fired yet), then wait for it to complete.
+      triggerResponsesEndpointSetup();
+      await waitForResponsesEndpoint();
+
+      const tryGatewayChatOnce = async (): Promise<Response | null> => {
+        // Try streaming via OpenResponses API first
+        const streamingRes = await tryStreamingResponse(
+          openResponsesInput,
+          agentId,
+          log,
+          sessionKey,
+        );
+        if (streamingRes) return streamingRes;
+
+        // Try a non-streaming OpenResponses request.
+        return nonStreamingResponse(
+          openResponsesInput,
+          agentId,
+          sessionKey,
+        );
+      };
+
+      // First attempt.
+      let response = await tryGatewayChatOnce();
+      if (response) return response;
+
+      // Gateway can briefly flap during restarts. Retry once before surfacing an error.
+      await delay(1200);
+      response = await tryGatewayChatOnce();
+      if (response) return response;
+
+      return gatewayUnavailableResponse();
+    } catch (err) {
+      log.error({ err: err instanceof Error ? err.message : String(err) }, "Chat API error");
+      const errMsg =
+        err instanceof Error ? err.message : "Failed to get agent response";
+      return new Response(`Error: ${errMsg}`, {
+        status: 500,
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
     }
-
-    // Ensure the OpenResponses endpoint is enabled (trigger setup if the
-    // gateway health poll hasn't fired yet), then wait for it to complete.
-    triggerResponsesEndpointSetup();
-    await waitForResponsesEndpoint();
-
-    const tryGatewayChatOnce = async (): Promise<Response | null> => {
-      // Try streaming via OpenResponses API first
-      const streamingRes = await tryStreamingResponse(
-        openResponsesInput,
-        agentId,
-        sessionKey,
-      );
-      if (streamingRes) return streamingRes;
-
-      // Try a non-streaming OpenResponses request.
-      return nonStreamingResponse(
-        openResponsesInput,
-        agentId,
-        sessionKey,
-      );
-    };
-
-    // First attempt.
-    let response = await tryGatewayChatOnce();
-    if (response) return response;
-
-    // Gateway can briefly flap during restarts. Retry once before surfacing an error.
-    await delay(1200);
-    response = await tryGatewayChatOnce();
-    if (response) return response;
-
-    return gatewayUnavailableResponse();
-  } catch (err) {
-    console.error("Chat API error:", err);
-    const errMsg =
-      err instanceof Error ? err.message : "Failed to get agent response";
-    return new Response(`Error: ${errMsg}`, {
-      status: 500,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
-}
+  },
+);
