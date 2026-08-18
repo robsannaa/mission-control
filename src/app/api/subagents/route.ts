@@ -1,6 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { getDefaultAgentId } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { subagentsGetQuerySchema, subagentsPostSchema } from "@/lib/schemas/automation";
 
 type GatewayMessage = {
   role?: string;
@@ -205,16 +208,17 @@ function defaultSessionKey(agentId: string): string {
   return `agent:${agentId}:subagents:mission-control`;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(
+  { name: "/api/subagents", querySchema: subagentsGetQuerySchema },
+  async (request, ctx) => {
   try {
-    const { searchParams } = new URL(request.url);
     // "main" is a mainKey alias rather than an agent id — the CLI accepts it and
     // silently targets a workspace inside the real one — so resolve the default.
     const agentId = sanitizeArg(
-      searchParams.get("agentId") || (await getDefaultAgentId()) || "main",
+      ctx.query.agentId || (await getDefaultAgentId()) || "main",
       64,
     );
-    const sessionKey = sanitizeArg(searchParams.get("sessionKey") || defaultSessionKey(agentId), 200);
+    const sessionKey = sanitizeArg(ctx.query.sessionKey || defaultSessionKey(agentId), 200);
     const out = await runAgentMessage({
       agentId,
       sessionKey,
@@ -224,16 +228,17 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json(out);
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Subagents GET error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/subagents", bodySchema: subagentsPostSchema },
+  async (request, ctx) => {
   try {
-    const body = await request.json();
+    const body = ctx.body as Record<string, unknown>;
     const action = sanitizeArg(body?.action, 24).toLowerCase();
     const agentId = sanitizeArg(body?.agentId || (await getDefaultAgentId()) || "main", 64);
     const sessionKey = sanitizeArg(body?.sessionKey || defaultSessionKey(agentId), 200);
@@ -250,7 +255,7 @@ export async function POST(request: NextRequest) {
       const spawnAgentId = sanitizeArg(body?.spawnAgentId || body?.target, 64);
       const task = sanitizeArg(body?.task || body?.prompt, 1500);
       if (!spawnAgentId || !task) {
-        return NextResponse.json({ ok: false, error: "spawnAgentId and task are required" }, { status: 400 });
+        return badRequest("spawnAgentId and task are required");
       }
 
       const model = sanitizeArg(body?.model, 200);
@@ -269,14 +274,14 @@ export async function POST(request: NextRequest) {
       if (label) command += ` --label ${quoteForSlash(label)}`;
     } else if (action === "kill") {
       const target = sanitizeArg(body?.target, 128);
-      if (!target) return NextResponse.json({ ok: false, error: "target is required" }, { status: 400 });
+      if (!target) return badRequest("target is required");
       command = `/subagents kill ${target}`;
     } else if (action === "info") {
       const target = sanitizeArg(body?.target, 128);
       command = target ? `/subagents info ${target}` : "/subagents info";
     } else if (action === "log") {
       const target = sanitizeArg(body?.target, 128);
-      if (!target) return NextResponse.json({ ok: false, error: "target is required" }, { status: 400 });
+      if (!target) return badRequest("target is required");
       const limit = Number(body?.limit || 0);
       const includeTools = Boolean(body?.includeTools);
       command = `/subagents log ${target}`;
@@ -286,30 +291,34 @@ export async function POST(request: NextRequest) {
       const target = sanitizeArg(body?.target, 128);
       const prompt = sanitizeArg(body?.prompt, 1500);
       if (!target || !prompt) {
-        return NextResponse.json({ ok: false, error: "target and prompt are required" }, { status: 400 });
+        return badRequest("target and prompt are required");
       }
       command = `/subagents steer ${target} ${quoteForSlash(prompt)}`;
     } else if (action === "send") {
       const target = sanitizeArg(body?.target, 128);
       const prompt = sanitizeArg(body?.prompt, 1500);
       if (!target || !prompt) {
-        return NextResponse.json({ ok: false, error: "target and prompt are required" }, { status: 400 });
+        return badRequest("target and prompt are required");
       }
       command = `/subagents send ${target} ${quoteForSlash(prompt)}`;
     } else if (action === "raw") {
       const raw = sanitizeArg(body?.rawCommand, 1800);
       if (!raw.startsWith("/subagents")) {
-        return NextResponse.json({ ok: false, error: "rawCommand must start with /subagents" }, { status: 400 });
+        return badRequest("rawCommand must start with /subagents");
       }
       command = raw;
     } else if (action === "agent-send") {
       const message = sanitizeArg(body?.message, 1800);
       if (!message) {
-        return NextResponse.json({ ok: false, error: "message is required" }, { status: 400 });
+        return badRequest("message is required");
       }
       command = message;
     } else {
-      return NextResponse.json({ ok: false, error: `Unknown action: ${action}` }, { status: 400 });
+      // The action field stays a loose optional string in the schema (see
+      // src/lib/schemas/automation.ts) because this handler case-folds it
+      // before comparing — so this branch is the actual guard against an
+      // unrecognized action, not a schema-enforced discriminant.
+      return badRequest(`Unknown action: ${action}`);
     }
 
     const out = await runAgentMessage({
@@ -324,9 +333,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(out);
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Subagents POST error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);

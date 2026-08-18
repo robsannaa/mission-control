@@ -1,6 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { runCliJson } from "@/lib/openclaw";
 import { patchConfig, fetchConfig } from "@/lib/gateway-config";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { hooksGetQuerySchema, hooksPostSchema } from "@/lib/schemas/automation";
 
 export const dynamic = "force-dynamic";
 
@@ -70,9 +73,10 @@ type HookDetail = {
 
 /* ── GET ──────────────────────────────────────────── */
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const action = searchParams.get("action") || "list";
+export const GET = withRoute(
+  { name: "/api/hooks", querySchema: hooksGetQuerySchema },
+  async (request, ctx) => {
+  const action = ctx.query.action || "list";
 
   try {
     if (action === "check") {
@@ -81,9 +85,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === "info") {
-      const name = searchParams.get("name");
-      if (!name)
-        return NextResponse.json({ error: "name required" }, { status: 400 });
+      const name = ctx.query.name;
+      if (!name) return badRequest("name required");
       const data = await runCliJson<HookDetail>(["hooks", "info", name]);
       return NextResponse.json(data);
     }
@@ -104,7 +107,7 @@ export async function GET(request: NextRequest) {
     const data = await runCliJson<HooksList>(["hooks", "list"]);
     return NextResponse.json({ ...data, hooksInternalEnabled });
   } catch (err) {
-    console.error("Hooks API error:", err);
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Hooks API error");
     if (action === "list") {
       return NextResponse.json({
         hooks: [],
@@ -113,23 +116,25 @@ export async function GET(request: NextRequest) {
         degraded: true,
       });
     }
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return serverError(String(err));
   }
-}
+  },
+);
 
 /* ── POST: enable / disable / toggle-system ──── */
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/hooks", bodySchema: hooksPostSchema },
+  async (request, ctx) => {
   try {
-    const body = await request.json();
-    const action = body.action as string;
+    const body = ctx.body as Record<string, unknown> & { action: string };
+    const action = body.action;
 
     switch (action) {
       case "enable-hook":
       case "disable-hook": {
         const name = body.name as string;
-        if (!name)
-          return NextResponse.json({ error: "name required" }, { status: 400 });
+        if (!name) return badRequest("name required");
 
         const enabling = action === "enable-hook";
 
@@ -145,7 +150,7 @@ export async function POST(request: NextRequest) {
           }, { restartDelayMs: 2000 });
           return NextResponse.json({ ok: true, action, name });
         } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+          return serverError(String(err));
         }
       }
 
@@ -153,8 +158,7 @@ export async function POST(request: NextRequest) {
         // Enable all hooks: first ensure hooks.internal.enabled = true,
         // then enable each hook by name
         const names = body.names as string[];
-        if (!names?.length)
-          return NextResponse.json({ error: "names required" }, { status: 400 });
+        if (!names?.length) return badRequest("names required");
 
         try {
           const entries: Record<string, { enabled: boolean }> = {};
@@ -171,7 +175,7 @@ export async function POST(request: NextRequest) {
           }, { restartDelayMs: 2000 });
           return NextResponse.json({ ok: true, action, count: names.length });
         } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+          return serverError(String(err));
         }
       }
 
@@ -189,7 +193,7 @@ export async function POST(request: NextRequest) {
           }, { restartDelayMs: 2000 });
           return NextResponse.json({ ok: true, action, enabled });
         } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+          return serverError(String(err));
         }
       }
 
@@ -197,8 +201,7 @@ export async function POST(request: NextRequest) {
         // Set per-hook env vars via hooks.internal.entries.<name>.env
         const name = body.name as string;
         const env = body.env as Record<string, string>;
-        if (!name || !env)
-          return NextResponse.json({ error: "name and env required" }, { status: 400 });
+        if (!name || !env) return badRequest("name and env required");
 
         try {
           await patchConfig({
@@ -212,18 +215,18 @@ export async function POST(request: NextRequest) {
           }, { restartDelayMs: 2000 });
           return NextResponse.json({ ok: true, action, name });
         } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+          return serverError(String(err));
         }
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 },
-        );
+        // Unreachable in practice — hooksPostSchema's discriminated union
+        // already rejects any action outside the literal set above.
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    console.error("Hooks POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Hooks POST error");
+    return serverError(String(err));
   }
-}
+  },
+);

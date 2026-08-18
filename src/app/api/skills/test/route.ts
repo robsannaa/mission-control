@@ -1,7 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { runCli } from "@/lib/openclaw";
 import { runOpenResponsesText } from "@/lib/openresponses";
 import { getDefaultAgentId } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { skillsTestPostSchema } from "@/lib/schemas/automation";
 
 export const dynamic = "force-dynamic";
 
@@ -20,16 +23,15 @@ function safeToken(raw: string, fallback = ""): string {
   return value;
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/skills/test", bodySchema: skillsTestPostSchema },
+  async (request, ctx) => {
   try {
-    const body = (await request.json()) as SkillTestRequest;
+    const body = ctx.body as SkillTestRequest;
 
     const skillName = safeToken(body.skillName || "");
     if (!skillName) {
-      return NextResponse.json(
-        { ok: false, error: "Valid skillName is required" },
-        { status: 400 }
-      );
+      return badRequest("Valid skillName is required");
     }
 
     // "main" is a mainKey alias, not an agent id: the RPC rejects it and the CLI
@@ -40,10 +42,7 @@ export async function POST(request: NextRequest) {
       "main",
     );
     if (!agentId) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid agentId" },
-        { status: 400 }
-      );
+      return badRequest("Invalid agentId");
     }
 
     const input = String(body.input || "").trim();
@@ -84,17 +83,11 @@ export async function POST(request: NextRequest) {
       durationMs: Date.now() - startedAt,
     });
   } catch (err) {
-    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
-    if (err instanceof SyntaxError) {
-      return NextResponse.json(
-        { ok: false, error: `Invalid JSON body: ${err.message}` },
-        { status: 400 },
-      );
-    }
+    // Malformed-JSON-body handling now lives in withRoute (readJsonBody +
+    // the bodySchema gate), so it never reaches this catch anymore.
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { ok: false, error: message || "Skill test failed" },
-      { status: 500 }
-    );
+    ctx.log.error({ err: message }, "Skill test failed");
+    return serverError(message || "Skill test failed");
   }
-}
+  },
+);
