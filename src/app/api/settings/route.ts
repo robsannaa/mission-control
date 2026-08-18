@@ -1,12 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { runCliCaptureBoth, gatewayCall } from "@/lib/openclaw";
 import { gatewayConfigPatch } from "@/lib/gateway-config";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { settingsPostSchema, type SettingsPostInput } from "@/lib/schemas/updates";
 
 export const dynamic = "force-dynamic";
 
 /* ── GET: read current settings ───────────────── */
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/settings" }, async (_request, ctx) => {
   try {
     // Fetch the full config to extract settings-relevant fields
     let timezone = "";
@@ -39,10 +42,10 @@ export async function GET() {
       configHash,
     });
   } catch (err) {
-    console.error("Settings GET error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? { message: err.message } : String(err) }, "Settings GET error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+});
 
 /* ── POST: perform settings actions ───────────── */
 
@@ -64,24 +67,26 @@ const SCOPE_DRY_RUN_MAP: Record<ResetScope, string[]> = {
   all: ["reset", "--dry-run"],
 };
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute<SettingsPostInput>(
+  { name: "/api/settings", bodySchema: settingsPostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
+    const body = ctx.body;
     const action = body.action as string;
 
     switch (action) {
       /* ── Set timezone ───────────────────────────── */
       case "set-timezone": {
-        const tz = body.timezone as string;
+        const tz = (body as Record<string, unknown>).timezone as string;
         if (!tz || typeof tz !== "string") {
-          return NextResponse.json({ error: "timezone required" }, { status: 400 });
+          return badRequest("timezone required");
         }
 
         // Validate timezone is a plausible IANA string
         try {
           Intl.DateTimeFormat(undefined, { timeZone: tz });
         } catch {
-          return NextResponse.json({ error: `Invalid timezone: ${tz}` }, { status: 400 });
+          return badRequest(`Invalid timezone: ${tz}`);
         }
 
         try {
@@ -105,18 +110,15 @@ export async function POST(request: NextRequest) {
           );
           return NextResponse.json({ ok: true, action, timezone: tz });
         } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+          return serverError(err instanceof Error ? err.message : String(err));
         }
       }
 
       /* ── Reset preview (dry-run) ────────────────── */
       case "reset-preview": {
-        const scope = body.scope as ResetScope;
+        const scope = (body as Record<string, unknown>).scope as ResetScope;
         if (!scope || !VALID_SCOPES.includes(scope)) {
-          return NextResponse.json(
-            { error: `Invalid scope. Must be one of: ${VALID_SCOPES.join(", ")}` },
-            { status: 400 },
-          );
+          return badRequest(`Invalid scope. Must be one of: ${VALID_SCOPES.join(", ")}`);
         }
 
         try {
@@ -142,12 +144,9 @@ export async function POST(request: NextRequest) {
 
       /* ── Reset execute ──────────────────────────── */
       case "reset-execute": {
-        const scope = body.scope as ResetScope;
+        const scope = (body as Record<string, unknown>).scope as ResetScope;
         if (!scope || !VALID_SCOPES.includes(scope)) {
-          return NextResponse.json(
-            { error: `Invalid scope. Must be one of: ${VALID_SCOPES.join(", ")}` },
-            { status: 400 },
-          );
+          return badRequest(`Invalid scope. Must be one of: ${VALID_SCOPES.join(", ")}`);
         }
 
         try {
@@ -175,18 +174,16 @@ export async function POST(request: NextRequest) {
           await gatewayCall("gateway.restart", undefined, 15000);
           return NextResponse.json({ ok: true, action });
         } catch (err) {
-          return NextResponse.json({ error: String(err) }, { status: 500 });
+          return serverError(err instanceof Error ? err.message : String(err));
         }
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 },
-        );
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    console.error("Settings POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? { message: err.message } : String(err) }, "Settings POST error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);

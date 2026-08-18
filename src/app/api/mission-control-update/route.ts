@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { access, readFile } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { withRoute } from "@/lib/api-route";
+import { apiError, conflict } from "@/lib/api-errors";
+import { missionControlUpdatePostSchema, type MissionControlUpdatePostInput } from "@/lib/schemas/updates";
 
 const execFileAsync = promisify(execFile);
 
@@ -287,35 +290,26 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/mission-control-update" }, async () => {
   try {
     const status = await buildStatus(true);
     return NextResponse.json(status);
   } catch (err) {
-    return NextResponse.json(
-      {
-        error: err instanceof Error ? err.message : String(err),
-      },
-      { status: 500 }
-    );
+    return apiError(err instanceof Error ? err.message : String(err), 500);
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute<MissionControlUpdatePostInput>(
+  { name: "/api/mission-control-update", bodySchema: missionControlUpdatePostSchema },
+  async (_request) => {
   try {
     if (updateInProgress) {
-      return NextResponse.json(
-        { ok: false, error: "An update is already in progress." },
-        { status: 409 }
-      );
+      return conflict("An update is already in progress.");
     }
 
-    const body = (await request.json().catch(() => ({}))) as { action?: string };
-    const action = String(body.action || "run-update");
-    if (action !== "run-update") {
-      return NextResponse.json({ ok: false, error: `Unknown action: ${action}` }, { status: 400 });
-    }
-
+    // Schema-enumerated (T-02-58): the body schema only accepts an omitted
+    // action or the literal "run-update" — any other value was already
+    // rejected before this handler ran, so there is no action to switch on.
     updateInProgress = true;
     const before = await buildStatus(true);
     if (before.installMode !== "git") {
@@ -432,14 +426,9 @@ export async function POST(request: NextRequest) {
       restartHint: after.restartHint || "Restart Mission Control to apply the updated build.",
     });
   } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      },
-      { status: 500 }
-    );
+    return apiError(err instanceof Error ? err.message : String(err), 500);
   } finally {
     updateInProgress = false;
   }
-}
+  },
+);

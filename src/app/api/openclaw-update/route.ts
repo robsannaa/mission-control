@@ -1,5 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { CONFIG_WRITE_TIMEOUT_MS, runCli, runCliJson } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { openclawUpdatePostSchema, type OpenClawUpdatePostInput } from "@/lib/schemas/updates";
 
 const GITHUB_RELEASES_URL =
   "https://api.github.com/repos/openclaw/openclaw/releases/latest";
@@ -63,7 +66,7 @@ type UpdateRunJson = {
  * Returns current OpenClaw version, latest release from GitHub, and whether an update is available.
  * Optionally includes changelog (release body) for the latest release.
  */
-export async function GET() {
+export const GET = withRoute({ name: "/api/openclaw-update" }, async (_request, ctx) => {
   try {
     let currentVersion = "";
     let statusInfo: UpdateStatusJson | null = null;
@@ -121,7 +124,7 @@ export async function GET() {
       releaseUrl: release.html_url || `https://github.com/openclaw/openclaw/releases/tag/${release.tag_name || "latest"}`,
     });
   } catch (err) {
-    console.error("OpenClaw update check error:", err);
+    ctx.log.error({ err: err instanceof Error ? { message: err.message } : String(err) }, "OpenClaw update check error");
     return NextResponse.json({
       currentVersion: null,
       latestVersion: null,
@@ -129,34 +132,33 @@ export async function GET() {
       error: String(err),
     });
   }
-}
+});
 
 /**
  * POST /api/openclaw-update
  * Runs `openclaw update --yes` (optionally channel/no-restart) directly from the browser.
+ *
+ * Schema-enumerated (T-02-58): `action` is validated to `"status" |
+ * "run-update"` (or omitted, defaulting to "run-update") before this handler
+ * runs, so the route's former `Unknown action: <value>` fallback branch is
+ * unreachable and has been removed.
  */
-export async function POST(request: NextRequest) {
+export const POST = withRoute<OpenClawUpdatePostInput>(
+  { name: "/api/openclaw-update", bodySchema: openclawUpdatePostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json().catch(() => ({}));
-    const action = String(body?.action || "run-update");
+    const action = ctx.body.action ?? "run-update";
 
     if (action === "status") {
       const status = await runCliJson<UpdateStatusJson>(["update", "status"], 10000);
       return NextResponse.json({ ok: true, status });
     }
 
-    if (action !== "run-update") {
-      return NextResponse.json({ ok: false, error: `Unknown action: ${action}` }, { status: 400 });
-    }
-
-    const requestedChannel = String(body?.channel || "").trim().toLowerCase();
-    const noRestart = body?.noRestart === true;
-    const dryRun = body?.dryRun === true;
+    const requestedChannel = String(ctx.body.channel || "").trim().toLowerCase();
+    const noRestart = ctx.body.noRestart === true;
+    const dryRun = ctx.body.dryRun === true;
     if (requestedChannel && !["stable", "beta", "dev"].includes(requestedChannel)) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid channel. Use stable, beta, or dev." },
-        { status: 400 },
-      );
+      return badRequest("Invalid channel. Use stable, beta, or dev.");
     }
 
     const args = ["update", "--yes", "--timeout", "1200"];
@@ -204,12 +206,7 @@ export async function POST(request: NextRequest) {
         : {}),
     });
   } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      },
-      { status: 500 },
-    );
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);

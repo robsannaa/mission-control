@@ -1,5 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { runCliJson, runCliCaptureBoth, type RunCliResult } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { secretsPostSchema, type SecretsPostInput } from "@/lib/schemas/updates";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +67,7 @@ function toCliResponse(result: RunCliResult): Record<string, unknown> {
   return response;
 }
 
-function buildConfigureCommand(body: Record<string, unknown>): string {
+function buildConfigureCommand(body: SecretsPostInput): string {
   const args = ["openclaw", "secrets", "configure"];
   if (body.providersOnly) args.push("--providers-only");
   if (body.skipProviderSetup) args.push("--skip-provider-setup");
@@ -75,7 +78,7 @@ function buildConfigureCommand(body: Record<string, unknown>): string {
 
 /* ── GET: run secrets audit ─────────────────────── */
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/secrets" }, async () => {
   try {
     const audit = await runCliJson<AuditResponse>(
       ["secrets", "audit"],
@@ -83,24 +86,33 @@ export async function GET() {
     );
     return NextResponse.json(audit);
   } catch (err) {
-    return NextResponse.json(
-      { error: String(err) },
-      { status: 500 }
-    );
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+});
 
-/* ── POST: configure, apply, reload ─────────────── */
-
-export async function POST(request: NextRequest) {
+/**
+ * POST: configure, apply, reload, audit.
+ *
+ * T-02-54 (Information Disclosure): `action` is a required, non-empty
+ * string in `secretsPostSchema` — a missing action is now rejected with a
+ * `details` tree naming `["action"]` before this handler runs. A *present*
+ * but unrecognized action still falls through to the `default` branch below
+ * with its original `Unknown action: <value>` message (D-06). `planPath` is
+ * bounded/traversal-checked in the schema (T-02-54) before it is ever
+ * appended to the `secrets apply --from` CLI argument list, and its
+ * rejection message never echoes the submitted value.
+ */
+export const POST = withRoute<SecretsPostInput>(
+  { name: "/api/secrets", bodySchema: secretsPostSchema },
+  async (_request, ctx) => {
   try {
-    const body = (await request.json()) as Record<string, unknown>;
-    const action = String(body.action || "");
+    const body = ctx.body;
+    const action = body.action;
     const providersOnly = Boolean(body.providersOnly);
     const skipProviderSetup = Boolean(body.skipProviderSetup);
     const apply = Boolean(body.apply);
     const dryRun = Boolean(body.dryRun);
-    const planPath = typeof body.planPath === "string" ? body.planPath.trim() : "";
+    const planPath = body.planPath?.trim() || "";
 
     switch (action) {
       case "configure": {
@@ -160,15 +172,10 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    return NextResponse.json(
-      { error: String(err) },
-      { status: 500 }
-    );
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);

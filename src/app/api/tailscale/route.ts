@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { withRoute } from "@/lib/api-route";
+import { tailscalePostSchema, type TailscalePostInput } from "@/lib/schemas/updates";
 
 const exec = promisify(execFile);
 
@@ -100,7 +102,7 @@ function formatExecError(err: unknown): string {
   return String(err);
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/tailscale" }, async () => {
   try {
     const ver = await runTailscale(["version"], 6000).catch(() => null);
     if (!ver) {
@@ -179,18 +181,24 @@ export async function GET() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
-}
+});
 
-export async function POST(req: Request) {
+/**
+ * Schema-enumerated (T-02-57): `action` is validated against the exact set
+ * of runtime actions this route recognizes (plus the free-form "run"
+ * action) before this handler runs, so the route's former "Action is
+ * required" / `Unknown action: <value>` fallback branches are unreachable
+ * and have been removed — an unrecognized action can no longer fall through
+ * to a branch that changes how reachable the instance is.
+ */
+export const POST = withRoute<TailscalePostInput>(
+  { name: "/api/tailscale", bodySchema: tailscalePostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await req.json().catch(() => ({}));
-    const action = String((body as { action?: string }).action || "");
-    if (!action) {
-      return NextResponse.json({ ok: false, error: "Action is required" }, { status: 400 });
-    }
+    const { action } = ctx.body;
 
     if (action === "run") {
-      const args = normalizeRunArgs((body as { args?: unknown }).args);
+      const args = normalizeRunArgs(ctx.body.args);
       if (args.length === 0) {
         return NextResponse.json(
           { ok: false, error: "args[] is required for action=run" },
@@ -225,12 +233,6 @@ export async function POST(req: Request) {
     }
 
     const args = RUNTIME_ACTIONS[action];
-    if (!args) {
-      return NextResponse.json(
-        { ok: false, error: `Unknown action: ${action}` },
-        { status: 400 }
-      );
-    }
 
     try {
       const timeout = action === "netcheck" ? 25000 : 15000;
@@ -262,4 +264,5 @@ export async function POST(req: Request) {
       { status }
     );
   }
-}
+  },
+);
