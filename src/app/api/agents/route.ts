@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { dirname, join, resolve } from "path";
 import { getOpenClawHome, getDefaultWorkspaceSync } from "@/lib/paths";
@@ -15,6 +15,10 @@ import {
   type AgentRouteBinding,
   type ConfiguredTopologyChannel,
 } from "@/lib/agent-topology";
+import { withRoute } from "@/lib/api-route";
+import { agentsPostSchema } from "@/lib/schemas/agents";
+import { badRequest, conflict, serverError } from "@/lib/api-errors";
+import { logger } from "@/lib/logger";
 
 const OPENCLAW_HOME = getOpenClawHome();
 export const dynamic = "force-dynamic";
@@ -340,7 +344,7 @@ async function createAgentViaCli(body: Record<string, unknown>) {
       await applyConfigPatchWithRetry(patch);
     }
   } catch (error) {
-    console.warn("Agent create: post-create config patch failed", error);
+    logger.warn({ route: "/api/agents", err: error instanceof Error ? error.message : String(error) }, "Agent create: post-create config patch failed");
   }
 
   return NextResponse.json({
@@ -370,7 +374,7 @@ function buildSyntheticMainAgent(
  * Rich agent discovery — configured agents are the source of truth.
  * Runtime sessions enrich known agents, but do not create new rows.
  */
-export async function GET() {
+export const GET = withRoute({ name: "/api/agents" }, async (_request, ctx) => {
   try {
     const now = Date.now();
     if (agentsCache && now < agentsCache.expiresAt) {
@@ -758,17 +762,17 @@ export async function GET() {
 
     return NextResponse.json({ ...payload, stale: false });
   } catch (err) {
-    console.error("Agents API error:", err);
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Agents API error");
 
     // Serve stale cache during gateway outages (up to maxStale window).
     const now = Date.now();
     if (agentsCache && now < agentsCache.fetchedAt + AGENTS_CACHE_MAX_STALE_MS) {
-      console.warn("Agents API: serving stale cache due to error:", String(err));
+      ctx.log.warn({ err: String(err) }, "Agents API: serving stale cache due to error");
       return NextResponse.json({ ...agentsCache.payload, stale: true });
     }
 
     // No cache at all — return a minimal empty response rather than 503.
-    console.warn("Agents API: no cache available, returning empty response:", String(err));
+    ctx.log.warn({ err: String(err) }, "Agents API: no cache available, returning empty response");
     return NextResponse.json({
       agents: [],
       owner: null,
@@ -779,38 +783,38 @@ export async function GET() {
       stale: true,
     });
   }
-}
+});
 
 /**
  * POST /api/agents - Create a new agent or perform agent actions.
  *
  * Body:
  *   { action: "create", name: "work", model?: "provider/model", workspace?: "/path", bindings?: ["whatsapp:biz"] }
+ *
+ * Every error path below returns through an `@/lib/api-errors` builder
+ * (`badRequest`, `conflict`, `serverError`), so every error body this route
+ * answers is `{ ok: false, error: string, details?: unknown }` (D-01) — the
+ * builders are the single envelope producer; this route never constructs
+ * `{ ok: false, ... }` inline.
  */
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/agents", bodySchema: agentsPostSchema },
+  async (_request, ctx) => {
+  // Invalidate GET cache for any mutation action.
+  agentsCache = null;
+
+  const body = ctx.body;
+  const action = body.action;
+
   try {
-    // Invalidate GET cache for any mutation action.
-    agentsCache = null;
-
-    const body = await request.json();
-    const action = body.action as string;
-
     switch (action) {
       case "create": {
-        const name = (body.name as string)?.trim();
+        // `name` was already validated by `agentsPostSchema` (required-ness
+        // is checked here to keep matching the original error body's shape
+        // — no `details` tree for a plain missing-field error).
+        const name = body.name;
         if (!name) {
-          return NextResponse.json(
-            { error: "Agent name is required" },
-            { status: 400 }
-          );
-        }
-
-        // Validate name: alphanumeric + hyphens only
-        if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name)) {
-          return NextResponse.json(
-            { error: "Agent name must start with a letter/number and contain only letters, numbers, hyphens, or underscores" },
-            { status: 400 }
-          );
+          return badRequest("Agent name is required");
         }
 
         const workspace =
@@ -886,7 +890,7 @@ export async function POST(request: NextRequest) {
             ...result,
           });
         } catch (error) {
-          console.warn("Agent create: gateway create failed, falling back to CLI", error);
+          ctx.log.warn({ err: error instanceof Error ? error.message : String(error) }, "Agent create: gateway create failed, falling back to CLI");
           return await createAgentViaCli(body as Record<string, unknown>);
         }
       }
@@ -894,10 +898,7 @@ export async function POST(request: NextRequest) {
       case "update": {
         const id = body.id as string;
         if (!id) {
-          return NextResponse.json(
-            { error: "Agent ID is required" },
-            { status: 400 }
-          );
+          return badRequest("Agent ID is required");
         }
 
         const configData = await gatewayCallWithRetry<Record<string, unknown>>(
@@ -1005,10 +1006,7 @@ export async function POST(request: NextRequest) {
           ? body.agentIds.map((v: unknown) => String(v || "").trim()).filter(Boolean)
           : [];
         if (nextOrder.length === 0) {
-          return NextResponse.json(
-            { error: "agentIds is required" },
-            { status: 400 }
-          );
+          return badRequest("agentIds is required");
         }
 
         const configData = await gatewayCallWithRetry<Record<string, unknown>>(
@@ -1020,10 +1018,7 @@ export async function POST(request: NextRequest) {
         const agentsSection = asRecord(parsed.agents);
         const agentsList = cloneConfigRows(agentsSection.list);
         if (agentsList.length === 0) {
-          return NextResponse.json(
-            { error: "No agents.list entries found in config to reorder." },
-            { status: 400 }
-          );
+          return badRequest("No agents.list entries found in config to reorder.");
         }
 
         const byId = new Map<string, Record<string, unknown>>();
@@ -1068,10 +1063,7 @@ export async function POST(request: NextRequest) {
       case "set-identity": {
         const id = String(body.id || "").trim();
         if (!id) {
-          return NextResponse.json(
-            { error: "Agent ID is required" },
-            { status: 400 }
-          );
+          return badRequest("Agent ID is required");
         }
 
         const fromIdentity = body.fromIdentity === true;
@@ -1095,9 +1087,8 @@ export async function POST(request: NextRequest) {
           const identityPath = identityFile || join(workspace, "IDENTITY.md");
           const markdown = await readTextSafe(identityPath);
           if (!markdown) {
-            return NextResponse.json(
-              { error: "No IDENTITY.md found in this agent's workspace. Create one first, or set identity fields manually above." },
-              { status: 400 },
+            return badRequest(
+              "No IDENTITY.md found in this agent's workspace. Create one first, or set identity fields manually above.",
             );
           }
           Object.assign(nextIdentity, extractIdentityFields(markdown));
@@ -1106,10 +1097,7 @@ export async function POST(request: NextRequest) {
         Object.assign(nextIdentity, explicitIdentity);
 
         if (Object.keys(nextIdentity).length === 0) {
-          return NextResponse.json(
-            { error: "Provide identity fields or enable fromIdentity." },
-            { status: 400 }
-          );
+          return badRequest("Provide identity fields or enable fromIdentity.");
         }
 
         const configData = await gatewayCallWithRetry<Record<string, unknown>>(
@@ -1144,23 +1132,14 @@ export async function POST(request: NextRequest) {
         const workspace = String(body.workspace || "").trim();
         const markdown = typeof body.markdown === "string" ? body.markdown : "";
         if (!id) {
-          return NextResponse.json(
-            { error: "Agent ID is required" },
-            { status: 400 }
-          );
+          return badRequest("Agent ID is required");
         }
         if (!workspace) {
-          return NextResponse.json(
-            { error: "Workspace is required" },
-            { status: 400 }
-          );
+          return badRequest("Workspace is required");
         }
         const resolvedWorkspace = resolve(workspace);
         if (!resolvedWorkspace.startsWith(OPENCLAW_HOME)) {
-          return NextResponse.json(
-            { error: "Workspace path is outside OPENCLAW_HOME" },
-            { status: 400 }
-          );
+          return badRequest("Workspace path is outside OPENCLAW_HOME");
         }
         const identityPath = join(resolvedWorkspace, "IDENTITY.md");
         await mkdir(dirname(identityPath), { recursive: true });
@@ -1177,10 +1156,7 @@ export async function POST(request: NextRequest) {
       case "delete": {
         const id = String(body.id || "").trim();
         if (!id) {
-          return NextResponse.json(
-            { error: "Agent ID is required" },
-            { status: 400 }
-          );
+          return badRequest("Agent ID is required");
         }
 
         try {
@@ -1191,7 +1167,7 @@ export async function POST(request: NextRequest) {
           );
           return NextResponse.json({ ok: true, action, id, ...result });
         } catch (error) {
-          console.warn("Agent delete: gateway delete failed, falling back to CLI", error);
+          ctx.log.warn({ err: error instanceof Error ? error.message : String(error) }, "Agent delete: gateway delete failed, falling back to CLI");
           const force = body.force !== false;
           const args = ["agents", "delete", id, "--json"];
           if (force) args.push("--force");
@@ -1210,29 +1186,19 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
+        // Unreachable in practice — `agentsPostSchema` already rejects any
+        // `action` outside the known literals before the handler runs.
+        // Kept as a defensive fallback so the switch stays exhaustive.
+        return badRequest(`Unknown action: ${String((body as { action?: string }).action)}`);
     }
   } catch (err) {
-    console.error("Agents API POST error:", err);
-    const msg = String(err);
-    // Bug fix 2026-08-16: a malformed JSON body throws a SyntaxError from
-    // `request.json()`. That is a client error, not an internal failure.
-    if (err instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: `Invalid JSON body: ${err.message}` },
-        { status: 400 },
-      );
-    }
+    const msg = err instanceof Error ? err.message : String(err);
+    ctx.log.error({ err: msg }, "Agents API POST error");
     // Make gateway errors user-friendly
     if (msg.includes("already exists") || msg.includes("Agent already")) {
-      return NextResponse.json(
-        { error: `An agent with this name already exists` },
-        { status: 409 }
-      );
+      return conflict("An agent with this name already exists");
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return serverError(msg);
   }
-}
+  },
+);
