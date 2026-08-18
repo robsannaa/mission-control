@@ -1,7 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readdir, readFile, stat, writeFile, unlink, rename, copyFile, mkdir } from "fs/promises";
 import { join, resolve, extname, dirname, basename } from "path";
 import { getOpenClawHome } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
+import {
+  docsDeleteQuerySchema,
+  docsGetQuerySchema,
+  docsPatchSchema,
+  docsPostSchema,
+  docsPutSchema,
+} from "@/lib/schemas/knowledge";
+import { badRequest, conflict, serverError } from "@/lib/api-errors";
 
 const OPENCLAW_HOME = getOpenClawHome();
 
@@ -121,13 +130,14 @@ function detectTag(relPath: string, name: string): string {
   return "Other";
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const filePath = searchParams.get("path");
+export const GET = withRoute(
+  { name: "/api/docs", querySchema: docsGetQuerySchema },
+  async (_request, ctx) => {
+  const filePath = ctx.query.path;
   try {
     if (filePath) {
       const fullPath = safePath(filePath);
-      if (!fullPath) return NextResponse.json({ error: "invalid path" }, { status: 400 });
+      if (!fullPath) return badRequest("invalid path");
       const content = await readFile(fullPath, "utf-8");
       const words = content.split(/\s+/).filter(Boolean).length;
       const size = Buffer.byteLength(content, "utf-8");
@@ -145,41 +155,39 @@ export async function GET(request: NextRequest) {
     const extensions = Array.from(new Set(allDocs.map((d) => d.ext)));
     return NextResponse.json({ docs: allDocs, tags, extensions });
   } catch (err) {
-    console.error("Docs API error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Docs API error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
 
 /** POST - create a new document */
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/docs", bodySchema: docsPostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
-    const { workspace, filename, content = "" } = body as {
-      workspace: string;
-      filename: string;
-      content?: string;
-    };
+    const { workspace, filename, content = "" } = ctx.body;
     if (!workspace || !filename) {
-      return NextResponse.json({ error: "workspace and filename required" }, { status: 400 });
+      return badRequest("workspace and filename required");
     }
     // Sanitize filename
     const sanitized = filename.replace(/[/\\:*?"<>|]/g, "").trim();
     if (!sanitized) {
-      return NextResponse.json({ error: "invalid filename" }, { status: 400 });
+      return badRequest("invalid filename");
     }
     if (!/\.(md|json|txt)$/i.test(sanitized)) {
-      return NextResponse.json({ error: "unsupported file type — use .md, .json, or .txt" }, { status: 400 });
+      return badRequest("unsupported file type — use .md, .json, or .txt");
     }
     // Build path: workspace/filename
     const logicalPath = `${workspace}/${sanitized}`;
     const fullPath = safePath(logicalPath);
     if (!fullPath) {
-      return NextResponse.json({ error: "invalid path" }, { status: 400 });
+      return badRequest("invalid path");
     }
     // Prevent overwriting
     try {
       await stat(fullPath);
-      return NextResponse.json({ error: "file already exists" }, { status: 409 });
+      return conflict("file already exists");
     } catch {
       // Good — file doesn't exist
     }
@@ -203,80 +211,82 @@ export async function POST(request: NextRequest) {
       words,
     });
   } catch (err) {
-    console.error("Docs POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Docs POST error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
 
-export async function PUT(request: NextRequest) {
+export const PUT = withRoute(
+  { name: "/api/docs", bodySchema: docsPutSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
-    const { path: filePath, content } = body;
+    const { path: filePath, content } = ctx.body;
     if (typeof filePath !== "string" || typeof content !== "string") {
-      return NextResponse.json({ error: "path and content required" }, { status: 400 });
+      return badRequest("path and content required");
     }
     if (!/\.(md|json|txt)$/i.test(filePath)) {
-      return NextResponse.json({ error: "unsupported file type" }, { status: 400 });
+      return badRequest("unsupported file type");
     }
     const fullPath = safePath(filePath);
-    if (!fullPath) return NextResponse.json({ error: "invalid path" }, { status: 400 });
+    if (!fullPath) return badRequest("invalid path");
     await writeFile(fullPath, content, "utf-8");
     const words = content.split(/\s+/).filter(Boolean).length;
     const size = Buffer.byteLength(content, "utf-8");
     return NextResponse.json({ ok: true, path: filePath.replace(/^\/+/, ""), words, size });
   } catch (err) {
-    console.error("Docs PUT error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Docs PUT error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
 
 /** DELETE - delete a file */
-export async function DELETE(request: NextRequest) {
+export const DELETE = withRoute(
+  { name: "/api/docs", querySchema: docsDeleteQuerySchema },
+  async (_request, ctx) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const filePath = searchParams.get("path");
+    const filePath = ctx.query.path;
     if (!filePath) {
-      return NextResponse.json({ error: "path required" }, { status: 400 });
+      return badRequest("path required");
     }
     const fullPath = safePath(filePath);
-    if (!fullPath) return NextResponse.json({ error: "invalid path" }, { status: 400 });
+    if (!fullPath) return badRequest("invalid path");
     // Verify it exists and is a file
     const s = await stat(fullPath);
     if (!s.isFile()) {
-      return NextResponse.json({ error: "not a file" }, { status: 400 });
+      return badRequest("not a file");
     }
     await unlink(fullPath);
     return NextResponse.json({ ok: true, path: filePath, deleted: true });
   } catch (err) {
-    console.error("Docs DELETE error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Docs DELETE error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
 
 /** PATCH - rename or duplicate a file */
-export async function PATCH(request: NextRequest) {
+export const PATCH = withRoute(
+  { name: "/api/docs", bodySchema: docsPatchSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
-    const { action, path: filePath, newName } = body as {
-      action: "rename" | "duplicate";
-      path: string;
-      newName?: string;
-    };
+    const { action, path: filePath, newName } = ctx.body;
     if (!filePath || !action) {
-      return NextResponse.json({ error: "action and path required" }, { status: 400 });
+      return badRequest("action and path required");
     }
     const fullPath = safePath(filePath);
-    if (!fullPath) return NextResponse.json({ error: "invalid path" }, { status: 400 });
+    if (!fullPath) return badRequest("invalid path");
     const logicalPath = filePath.replace(/^\/+/, "");
 
     if (action === "rename") {
       if (!newName) {
-        return NextResponse.json({ error: "newName required" }, { status: 400 });
+        return badRequest("newName required");
       }
       // Sanitize new name
       const sanitizedName = newName.replace(/[/\\:*?"<>|]/g, "").trim();
       if (!sanitizedName) {
-        return NextResponse.json({ error: "invalid name" }, { status: 400 });
+        return badRequest("invalid name");
       }
       const dir = dirname(fullPath);
       const newFullPath = join(dir, sanitizedName);
@@ -308,9 +318,10 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ ok: true, path: dupLogical, name: dupName });
     }
 
-    return NextResponse.json({ error: `unknown action: ${action}` }, { status: 400 });
+    return badRequest(`unknown action: ${action}`);
   } catch (err) {
-    console.error("Docs PATCH error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Docs PATCH error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);

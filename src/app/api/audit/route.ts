@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readAuditEvents, type AuditEventKind, type AuditEventStatus, type AuditFilters } from "@/lib/audit";
 import { pairingRequiredResponse } from "@/lib/gateway-errors";
+import { withRoute } from "@/lib/api-route";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,7 @@ function parseFilters(searchParams: URLSearchParams): AuditFilters {
   return filters;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute({ name: "/api/audit" }, async (request) => {
   const filters = parseFilters(request.nextUrl.searchParams);
   try {
     const result = await readAuditEvents(filters);
@@ -68,4 +69,4 @@ export async function GET(request: NextRequest) {
       { headers: { "cache-control": "no-store" } },
     );
   }
-}
+});

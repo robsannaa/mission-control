@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   addMemory,
   deleteMemory,
@@ -8,29 +8,30 @@ import {
   reindexMemory,
   updateMemory,
 } from "@/lib/memory-native";
+import { withRoute } from "@/lib/api-route";
+import { memoryPostSchema } from "@/lib/schemas/knowledge";
+import { apiError, badRequest, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
 /** GET — the whole memory snapshot: entries, reflections, promotion candidates, index status. */
-export async function GET() {
+export const GET = withRoute({ name: "/api/memory" }, async (_request, ctx) => {
   try {
     return NextResponse.json(await getMemorySnapshot());
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
+    ctx.log.error(
+      { err: error instanceof Error ? error.message : String(error) },
+      "Memory GET error",
     );
+    return serverError(error instanceof Error ? error.message : String(error));
   }
-}
+});
 
 /** POST — mutate memory: add / edit / delete an entry, promote candidates, reindex, explain. */
-export async function POST(request: NextRequest) {
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+export const POST = withRoute(
+  { name: "/api/memory", bodySchema: memoryPostSchema },
+  async (_request, ctx) => {
+  const body = ctx.body;
   const action = String(body.action || "");
   try {
     switch (action) {
@@ -54,12 +55,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true, explanation });
       }
       default:
-        return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+        return badRequest(`Unknown action: ${action}`);
     }
     return NextResponse.json({ ok: true, ...(await getMemorySnapshot()) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = /required|empty|no longer exists/i.test(message) ? 400 : 500;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiError(message, status);
   }
-}
+  },
+);

@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   detectGbrain,
   gbrainCommand,
   runGbrain,
   GBRAIN_COMMANDS,
 } from "@/lib/gbrain";
+import { withRoute } from "@/lib/api-route";
+import { gbrainPostSchema } from "@/lib/schemas/knowledge";
+import { badRequest } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +17,7 @@ export const dynamic = "force-dynamic";
  *   ?action=catalog → the full command catalog
  *   ?action=overview→ doctor + stats + jobs, aggregated for the tab's first screen
  */
-export async function GET(request: NextRequest) {
+export const GET = withRoute({ name: "/api/g-brain" }, async (request) => {
   const { searchParams } = new URL(request.url);
   const detection = detectGbrain();
 
@@ -48,7 +51,7 @@ export async function GET(request: NextRequest) {
 
   // Default and ?action=catalog both return the catalog.
   return NextResponse.json({ installed: true, detection, commands: GBRAIN_COMMANDS });
-}
+});
 
 /**
  * POST /api/g-brain — run one catalog command.
@@ -57,28 +60,18 @@ export async function GET(request: NextRequest) {
  * argv is assembled ONLY from the catalog entry + the user's structured values,
  * and passed to execFile as an array (no shell), so nothing arbitrary can run.
  */
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/g-brain", bodySchema: gbrainPostSchema },
+  async (_request, ctx) => {
   const detection = detectGbrain();
   if (!detection.installed) {
-    return NextResponse.json(
-      { ok: false, error: "G-Brain is not installed on this machine." },
-      { status: 400 },
-    );
+    return badRequest("G-Brain is not installed on this machine.");
   }
 
-  let body: { id?: string; values?: Record<string, string>; confirm?: boolean };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid request body" }, { status: 400 });
-  }
-
+  const body = ctx.body;
   const cmd = body.id ? gbrainCommand(body.id) : undefined;
   if (!cmd) {
-    return NextResponse.json(
-      { ok: false, error: `Unknown G-Brain command: ${body.id ?? "(none)"}` },
-      { status: 400 },
-    );
+    return badRequest(`Unknown G-Brain command: ${body.id ?? "(none)"}`);
   }
   if (cmd.dangerous && !body.confirm) {
     return NextResponse.json(
@@ -93,10 +86,7 @@ export async function POST(request: NextRequest) {
     const v = String(values[arg.name] ?? "").trim();
     if (!v) {
       if (arg.required) {
-        return NextResponse.json(
-          { ok: false, error: `Missing required value: ${arg.name}` },
-          { status: 400 },
-        );
+        return badRequest(`Missing required value: ${arg.name}`);
       }
       continue;
     }
@@ -110,4 +100,5 @@ export async function POST(request: NextRequest) {
     timeoutMs: cmd.mutates ? 180_000 : 30_000,
   });
   return NextResponse.json({ ...result, id: cmd.id, argv, mutates: Boolean(cmd.mutates) });
-}
+  },
+);

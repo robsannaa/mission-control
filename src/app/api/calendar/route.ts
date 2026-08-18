@@ -1,12 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   isCalendarProvider,
   isExternalCalendarProvider,
   removeCalendarAccount,
   upsertCalendarAccount,
   updateCalendarProviderSettings,
+  type CalendarAccountConnection,
 } from "@/lib/calendar-store";
 import { buildCalendarSnapshot, syncCalendarAccount } from "@/lib/calendar-sync";
+import { withRoute } from "@/lib/api-route";
+import { calendarGetQuerySchema, calendarPostSchema } from "@/lib/schemas/knowledge";
+import { badRequest, notFound, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,50 +22,43 @@ function isHostedCalendarDisabled(): boolean {
   );
 }
 
-function parseDays(value: string | null): number {
-  const parsed = Number(value || "14");
-  if (!Number.isFinite(parsed)) return 14;
-  return Math.max(1, Math.min(Math.round(parsed), 60));
-}
-
-export async function GET(request: NextRequest) {
+export const GET = withRoute(
+  { name: "/api/calendar", querySchema: calendarGetQuerySchema },
+  async (_request, ctx) => {
   if (isHostedCalendarDisabled()) {
-    return NextResponse.json({ error: "Calendar is unavailable in hosted mode" }, { status: 404 });
+    return notFound("Calendar is unavailable in hosted mode");
   }
   try {
-    const days = parseDays(request.nextUrl.searchParams.get("days"));
+    const days = ctx.query.days ?? 14;
     return NextResponse.json(await buildCalendarSnapshot(days), {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: `Invalid JSON body: ${error.message}` },
-        { status: 400 },
-      );
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
+    ctx.log.error(
+      { err: error instanceof Error ? error.message : String(error) },
+      "Calendar GET error",
     );
+    return serverError(error instanceof Error ? error.message : String(error));
   }
-}
+  },
+);
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/calendar", bodySchema: calendarPostSchema },
+  async (_request, ctx) => {
   if (isHostedCalendarDisabled()) {
-    return NextResponse.json({ error: "Calendar is unavailable in hosted mode" }, { status: 404 });
+    return notFound("Calendar is unavailable in hosted mode");
   }
+  const body = ctx.body;
   try {
-    const body = await request.json();
     const action = String(body?.action || "");
-    const days = parseDays(typeof body?.days === "number" ? String(body.days) : null);
+    const days = body.days ?? 14;
 
     switch (action) {
       case "save-provider-settings": {
         const provider = String(body?.provider || "");
         if (!isCalendarProvider(provider)) {
-          return NextResponse.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
+          return badRequest(`Unknown provider: ${provider}`);
         }
         await updateCalendarProviderSettings(provider, {
           enabled: typeof body?.enabled === "boolean" ? body.enabled : undefined,
@@ -81,17 +78,14 @@ export async function POST(request: NextRequest) {
       case "add-account": {
         const provider = String(body?.provider || "");
         if (!isExternalCalendarProvider(provider)) {
-          return NextResponse.json(
-            { error: "provider must be google, apple, or zoho" },
-            { status: 400 }
-          );
+          return badRequest("provider must be google, apple, or zoho");
         }
         await upsertCalendarAccount({
           id: typeof body?.id === "string" ? body.id : undefined,
           provider,
           label: String(body?.label || ""),
           providerAccountId: String(body?.providerAccountId || ""),
-          connection: body?.connection,
+          connection: body?.connection as CalendarAccountConnection | undefined,
           enabled: typeof body?.enabled === "boolean" ? body.enabled : undefined,
           readOnly: typeof body?.readOnly === "boolean" ? body.readOnly : undefined,
           importEvents:
@@ -108,7 +102,7 @@ export async function POST(request: NextRequest) {
       case "remove-account": {
         const accountId = String(body?.accountId || "");
         if (!accountId) {
-          return NextResponse.json({ error: "accountId is required" }, { status: 400 });
+          return badRequest("accountId is required");
         }
         await removeCalendarAccount(accountId);
         return NextResponse.json(await buildCalendarSnapshot(days));
@@ -117,7 +111,7 @@ export async function POST(request: NextRequest) {
       case "sync-account": {
         const accountId = String(body?.accountId || "");
         if (!accountId) {
-          return NextResponse.json({ error: "accountId is required" }, { status: 400 });
+          return badRequest("accountId is required");
         }
         const result = await syncCalendarAccount(accountId, days);
         return NextResponse.json({
@@ -128,22 +122,14 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (error) {
-    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: `Invalid JSON body: ${error.message}` },
-        { status: 400 },
-      );
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
+    ctx.log.error(
+      { err: error instanceof Error ? error.message : String(error) },
+      "Calendar POST error",
     );
+    return serverError(error instanceof Error ? error.message : String(error));
   }
-}
+  },
+);
