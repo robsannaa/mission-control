@@ -480,7 +480,7 @@ export function buildFailureGuide(error: string, delivery: CronJob["delivery"]):
 
 /* ── Run detail card ──────────────────────────────── */
 
-function RunCard({ run, timeFormat }: { run: RunEntry; timeFormat: TimeFormatPreference }) {
+export function RunCard({ run, timeFormat }: { run: RunEntry; timeFormat: TimeFormatPreference }) {
   const [showFull, setShowFull] = useState(false);
 
   return (
@@ -579,7 +579,7 @@ function RunCard({ run, timeFormat }: { run: RunEntry; timeFormat: TimeFormatPre
   );
 }
 
-function FailureGuideCard({
+export function FailureGuideCard({
   error,
   delivery,
   consecutiveErrors,

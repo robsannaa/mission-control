@@ -1,9 +1,9 @@
 /**
- * Vitest jsdom pin for the pure helpers in `cron-view.tsx` — the fragile,
- * 3,300-line monolithic cron view. Per D-03 (01-CONTEXT.md), the only
- * source change that made these importable is the mechanical addition of
- * the `export` keyword to ten pure helpers — no logic change, no
- * reformatting, no test-hook attributes added to the view.
+ * Vitest jsdom pin for `cron-view.tsx` — the fragile, 3,300-line monolithic
+ * cron view. Per D-03 (01-CONTEXT.md), the only source change that made
+ * these importable is the mechanical addition of the `export` keyword to
+ * ten pure helpers and two prop-only presentational components — no logic
+ * change, no reformatting, no test-hook attributes added to the view.
  *
  * These are pinning tests: they encode current behavior exactly as it is
  * today. A failure here means behavior moved — someone must decide whether
@@ -18,9 +18,13 @@
  *   - buildFailureGuide — the plain-language failure explanations shown to
  *     a non-technical user when a cron job fails; this is the highest
  *     user-visible-consequence helper in this file
+ *   - RunCard, FailureGuideCard (Task 3) — render pins against a real run
+ *     payload captured from the live dev instance's `/api/cron?action=runs`
+ *     endpoint, scrubbed of instance-specific identifiers
  */
 
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
 import {
   fmtDuration,
   fmtAgo,
@@ -32,7 +36,20 @@ import {
   normalizeDeliveryMode,
   isValidWebhookUrl,
   buildFailureGuide,
+  RunCard,
+  FailureGuideCard,
 } from "@/components/cron-view";
+
+// No @testing-library/jest-dom is installed in this repo (Rule 3's
+// package-legitimacy checkpoint would gate a new dependency for a single
+// pinning plan) — render assertions below rely on `getByText`/`getByRole`
+// throwing when an element is absent, and `queryBy*` returning null, rather
+// than the `.toBeInTheDocument()` jest-dom matcher.
+//
+// `@testing-library/react` does not auto-cleanup between tests unless a
+// setup file registers it; this file renders multiple times, so cleanup()
+// runs after every test to avoid cross-test DOM pollution.
+afterEach(cleanup);
 
 /* ── fmtDuration ──────────────────────────────────── */
 
@@ -231,7 +248,7 @@ describe("cron-view: scheduleOptionLabel", () => {
   // Real entries from the module-private SCHEDULE_SIMPLE_OPTIONS table
   // (cron-view.tsx ~line 1302-1315), reconstructed as literals here since
   // the const itself is not exported and D-03 forbids exporting anything
-  // beyond the ten named pure helpers.
+  // beyond the ten named helpers plus RunCard/FailureGuideCard.
 
   test("cron kind: cronToHuman's translation wins over the option's own label whenever it differs from the raw expr — this makes the id-keyed 24h labels below effectively unreachable for every cron entry in the real table", () => {
     // daily-8am: cronToHuman("0 8 * * *") = "Daily at 08:00" (!= raw expr),
@@ -380,5 +397,105 @@ describe("cron-view: buildFailureGuide", () => {
     const guide = buildFailureGuide("Cannot find module '/some/path/run-dream.mjs'", { mode: "none" });
     expect(guide.headline).toBe("The run failed");
     expect(guide.steps).toHaveLength(3);
+  });
+});
+
+/* ── RunCard (Task 3) ─────────────────────────────── */
+//
+// Render pins against a real run entry captured from the live dev instance:
+//   GET /api/cron?action=runs&id=<jobId>&limit=20  (2026-08-18)
+//
+// The two source entries below are real "Mail & calendar sync" (ok) and
+// "Brain maintenance (dream)" (error) job runs on this machine's dev
+// instance. Scrubbed: none of the observed fields on this instance
+// contained a `sessionId`/`sessionKey` (both command-kind jobs; those
+// fields are only populated for agent-message-kind jobs, none of which
+// exist in this instance's job list) — so the sessionId-truncation render
+// path is not exercised here; documented, not invented. `jobName` is not
+// part of the `RunEntry` type the component consumes and is dropped.
+// summary/error text below is the real text observed, unmodified (neither
+// contained a workspace path or credential).
+
+const REAL_OK_RUN = {
+  ts: 1787062479159,
+  jobId: "5937405b-56d1-4e37-8a1d-3bdfac1b2548",
+  action: "finished",
+  status: "ok" as const,
+  summary:
+    '{"at":"2026-08-18T14:14:38.287Z","mail":{"newMessages":2},"calendar":{"events":0},"brain":{"pagesWritten":0,"days":16,"skipped":"no changes"}}',
+  runAtMs: 1787062478241,
+  durationMs: 916,
+  nextRunAtMs: 1787064278241,
+};
+
+// Same real run, with summary/error/sessionKey stripped to exercise the
+// "no details toggle" branch (ts and durationMs are the real captured
+// values; RunEntry.sessionId/sessionKey/summary/error are all optional).
+const REAL_RUN_NO_DETAILS = {
+  ts: 1787062479159,
+  jobId: "5937405b-56d1-4e37-8a1d-3bdfac1b2548",
+  action: "finished",
+  status: "ok" as const,
+  durationMs: 916,
+};
+
+const REAL_ERROR_RUN = {
+  ts: 1787055920548,
+  jobId: "3ee31942-b2ea-4e0c-888d-429da744493a",
+  action: "finished",
+  status: "error" as const,
+  error: "command exited with code 1",
+  durationMs: 30,
+};
+
+describe("cron-view: RunCard", () => {
+  test("successful run: formatted full date, formatted duration, and details toggle (has summary) all render", () => {
+    render(<RunCard run={REAL_OK_RUN} timeFormat="24h" />);
+    // getByText/getByRole throw when the element is absent, so a passing
+    // assertion below is itself proof of presence.
+    expect(screen.getByText(fmtFullDate(REAL_OK_RUN.ts, "24h"))).toBeTruthy();
+    expect(screen.getByText(fmtDuration(REAL_OK_RUN.durationMs))).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Details" })).toBeTruthy();
+  });
+
+  test("failed run: error text renders with danger styling", () => {
+    const { container } = render(<RunCard run={REAL_ERROR_RUN} timeFormat="24h" />);
+    expect(screen.getByText(REAL_ERROR_RUN.error)).toBeTruthy();
+    expect(container.querySelector(".border-danger-border")).not.toBeNull();
+    expect(container.querySelector(".bg-danger-bg")).not.toBeNull();
+  });
+
+  test("run with no summary, error or session key: no details toggle renders", () => {
+    render(<RunCard run={REAL_RUN_NO_DETAILS} timeFormat="24h" />);
+    expect(screen.queryByRole("button", { name: "Details" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse" })).toBeNull();
+  });
+});
+
+/* ── FailureGuideCard (Task 3) ────────────────────── */
+
+describe("cron-view: FailureGuideCard", () => {
+  test("delivery-target-missing error: rendered headline matches buildFailureGuide's headline for that branch", () => {
+    const error = "Delivery target is missing";
+    const delivery = { mode: "announce" as const, channel: "telegram" };
+    const expectedHeadline = buildFailureGuide(error, delivery).headline;
+
+    render(<FailureGuideCard error={error} delivery={delivery} onFix={() => {}} />);
+    expect(screen.getByText(expectedHeadline)).toBeTruthy();
+  });
+
+  test("compact=true renders only the first two steps", () => {
+    const error = "Delivery target is missing";
+    const delivery = { mode: "announce" as const, channel: "telegram" };
+    const fullGuide = buildFailureGuide(error, delivery);
+
+    render(<FailureGuideCard error={error} delivery={delivery} onFix={() => {}} compact />);
+    for (const step of fullGuide.steps.slice(0, 2)) {
+      expect(screen.getByText(new RegExp(step.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))).toBeTruthy();
+    }
+    const lastStep = fullGuide.steps[fullGuide.steps.length - 1];
+    expect(
+      screen.queryByText(new RegExp(lastStep.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+    ).toBeNull();
   });
 });
