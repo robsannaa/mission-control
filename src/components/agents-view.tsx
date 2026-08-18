@@ -192,19 +192,19 @@ type GbrainDetection = {
    Helpers
    ================================================================ */
 
-function formatTokens(n: number): string {
+export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
   return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
-function formatBytes(n: number): string {
+export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatAgo(ms: number | null): string {
+export function formatAgo(ms: number | null): string {
   if (!ms) return "Never";
   const diff = Date.now() - ms;
   if (diff < 60_000) return "Just now";
@@ -213,12 +213,12 @@ function formatAgo(ms: number | null): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
-function shortModel(m: string): string {
+export function shortModel(m: string): string {
   const parts = m.split("/");
   return parts[parts.length - 1];
 }
 
-function channelIcon(ch: string): string {
+export function channelIcon(ch: string): string {
   switch (ch) {
     case "telegram": return "✈️";
     case "whatsapp": return "💬";
@@ -230,7 +230,7 @@ function channelIcon(ch: string): string {
   }
 }
 
-function shortPath(p: string): string {
+export function shortPath(p: string): string {
   const parts = p.split("/");
   return parts[parts.length - 1] || parts[parts.length - 2] || p;
 }
