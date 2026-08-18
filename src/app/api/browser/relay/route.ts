@@ -5,6 +5,13 @@ import { homedir } from "os";
 import { join } from "path";
 import { getGatewayPort, getOpenClawHome } from "@/lib/paths";
 import { runCliJson } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
+import { apiError, badRequest } from "@/lib/api-errors";
+import {
+  BROWSER_RELAY_DEFAULT_TEST_URL,
+  browserRelayGetQuerySchema,
+  browserRelayPostSchema,
+} from "@/lib/schemas/system";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -24,10 +31,9 @@ function checkRateLimit(request: NextRequest): NextResponse | null {
   }
   entry.count++;
   if (entry.count > RATE_LIMIT_MAX) {
-    return NextResponse.json(
-      { ok: false, error: "Too many requests. Please wait a moment and try again." },
-      { status: 429, headers: { "Retry-After": String(Math.ceil((entry.resetAt - now) / 1000)) } }
-    );
+    const response = apiError("Too many requests. Please wait a moment and try again.", 429);
+    response.headers.set("Retry-After", String(Math.ceil((entry.resetAt - now) / 1000)));
+    return response;
   }
   return null;
 }
@@ -323,12 +329,12 @@ async function buildSnapshot(profile: string | null): Promise<RelaySnapshot> {
   };
 }
 
-export async function GET(request: NextRequest) {
-  const rateLimited = checkRateLimit(request);
-  if (rateLimited) return rateLimited;
-  try {
-    const { searchParams } = new URL(request.url);
-    const profile = sanitizeProfile(searchParams.get("profile"));
+export const GET = withRoute(
+  { name: "/api/browser/relay", querySchema: browserRelayGetQuerySchema },
+  async (request, { query }) => {
+    const rateLimited = checkRateLimit(request);
+    if (rateLimited) return rateLimited;
+    const profile = sanitizeProfile(query.profile ?? null);
     const snapshot = await buildSnapshot(profile);
     return NextResponse.json({
       ok: true,
@@ -336,138 +342,129 @@ export async function GET(request: NextRequest) {
       snapshot,
       docsUrl: "https://docs.openclaw.ai/tools/browser#chrome-extension-relay-use-your-existing-chrome",
     });
-  } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: parseError(err) },
-      { status: 500 }
-    );
-  }
-}
+  },
+);
 
-export async function POST(request: NextRequest) {
-  const rateLimited = checkRateLimit(request);
-  if (rateLimited) return rateLimited;
-  let profile: string | null = null;
-  try {
-    const body = (await request.json().catch(() => ({}))) as {
-      action?: string;
-      profile?: string | null;
-      url?: string;
-    };
+/**
+ * POST /api/browser/relay — browser control actions (start/stop/restart,
+ * extension install, test navigation, screenshot).
+ *
+ * `browserRelayPostSchema` rejects a caller-supplied "open-test-tab"
+ * forwarding target that isn't an absolute http(s) URL before this handler
+ * ever runs (T-02-45), so no outbound request is attempted for a bad
+ * target — the format/protocol checks that used to live inline in that case
+ * arm now live in the schema (byte-identical messages).
+ *
+ * The generic catch below builds its error body by hand (not through an
+ * `@/lib/api-errors` builder) because it enriches the response with a
+ * best-effort `snapshot` alongside `error` — the same extra-top-level-field
+ * exception already accepted in this phase for response shapes the builders
+ * have no slot for (see 02-04-SUMMARY.md). The body still carries
+ * `ok: false`, satisfying D-01.
+ */
+export const POST = withRoute(
+  { name: "/api/browser/relay", bodySchema: browserRelayPostSchema },
+  async (request, { body }) => {
+    const rateLimited = checkRateLimit(request);
+    if (rateLimited) return rateLimited;
+
     const action = String(body.action || "").trim();
-    profile = sanitizeProfile(body.profile || null);
+    const profile = sanitizeProfile(body.profile || null);
     if (!action) {
-      return NextResponse.json(
-        { ok: false, error: "Action is required" },
-        { status: 400 }
-      );
+      return badRequest("Action is required");
     }
 
-    let result: Record<string, unknown> = {};
-    switch (action) {
-      case "start": {
-        result = await browserPost<Record<string, unknown>>("/browser/start", { profile });
-        break;
-      }
-      case "stop": {
-        result = await browserPost<Record<string, unknown>>("/browser/stop", { profile });
-        break;
-      }
-      case "restart": {
-        await browserPost("/browser/stop", { profile }).catch(() => ({}));
-        result = await browserPost<Record<string, unknown>>("/browser/start", { profile }, 20000);
-        break;
-      }
-      case "install-extension": {
-        // Extension install is CLI-only (not on browser control server)
-        const installArgs = ["browser", "extension", "install"];
-        result = await runCliJson<Record<string, unknown>>(installArgs, 15000);
-        break;
-      }
-      case "open-test-tab": {
-        const targetUrl = (body.url || "").trim() || "https://docs.openclaw.ai/tools/browser";
-        try {
-          const parsed = new URL(targetUrl);
-          if (!["http:", "https:"].includes(parsed.protocol)) {
-            return NextResponse.json(
-              { ok: false, error: "Invalid URL protocol. Only http:// and https:// URLs are allowed." },
-              { status: 400 }
-            );
-          }
-        } catch {
-          return NextResponse.json(
-            { ok: false, error: "Invalid URL format." },
-            { status: 400 }
+    try {
+      let result: Record<string, unknown> = {};
+      switch (action) {
+        case "start": {
+          result = await browserPost<Record<string, unknown>>("/browser/start", { profile });
+          break;
+        }
+        case "stop": {
+          result = await browserPost<Record<string, unknown>>("/browser/stop", { profile });
+          break;
+        }
+        case "restart": {
+          await browserPost("/browser/stop", { profile }).catch(() => ({}));
+          result = await browserPost<Record<string, unknown>>("/browser/start", { profile }, 20000);
+          break;
+        }
+        case "install-extension": {
+          // Extension install is CLI-only (not on browser control server)
+          const installArgs = ["browser", "extension", "install"];
+          result = await runCliJson<Record<string, unknown>>(installArgs, 15000);
+          break;
+        }
+        case "open-test-tab": {
+          // URL format/protocol already validated by browserRelayPostSchema.
+          const targetUrl = (body.url || "").trim() || BROWSER_RELAY_DEFAULT_TEST_URL;
+          // 'open' is CLI-only (not on browser control server)
+          const openArgs = ["browser", "open", targetUrl];
+          if (profile) openArgs.push("--browser-profile", profile);
+          result = await runCliJson<Record<string, unknown>>(openArgs, 20000);
+          break;
+        }
+        case "snapshot-test": {
+          // Snapshot is GET-only on the browser control server
+          result = await browserGet<Record<string, unknown>>(
+            "/browser/snapshot",
+            profile,
+            25000
           );
+          break;
         }
-        // 'open' is CLI-only (not on browser control server)
-        const openArgs = ["browser", "open", targetUrl];
-        if (profile) openArgs.push("--browser-profile", profile);
-        result = await runCliJson<Record<string, unknown>>(openArgs, 20000);
-        break;
-      }
-      case "snapshot-test": {
-        // Snapshot is GET-only on the browser control server
-        result = await browserGet<Record<string, unknown>>(
-          "/browser/snapshot",
-          profile,
-          25000
-        );
-        break;
-      }
-      case "screenshot": {
-        const baseUrl = await getBrowserControlUrl();
-        const authHeaders = await getBrowserAuthHeaders();
-        const screenshotRes = await fetch(`${baseUrl}/screenshot`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          body: JSON.stringify({ profile, format: "png", fullPage: false }),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!screenshotRes.ok) {
-          throw new Error(`Screenshot failed: ${screenshotRes.status}`);
-        }
-        const contentType = screenshotRes.headers.get("content-type") || "";
-        if (contentType.includes("image/")) {
-          const buffer = Buffer.from(await screenshotRes.arrayBuffer());
-          const base64 = buffer.toString("base64");
-          result = { image: `data:image/png;base64,${base64}` };
-        } else {
-          const data = await screenshotRes.json() as Record<string, unknown>;
-          if (data.image && typeof data.image === "string") {
-            result = { image: data.image.startsWith("data:") ? data.image : `data:image/png;base64,${data.image}` };
+        case "screenshot": {
+          const baseUrl = await getBrowserControlUrl();
+          const authHeaders = await getBrowserAuthHeaders();
+          const screenshotRes = await fetch(`${baseUrl}/screenshot`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders },
+            body: JSON.stringify({ profile, format: "png", fullPage: false }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!screenshotRes.ok) {
+            throw new Error(`Screenshot failed: ${screenshotRes.status}`);
+          }
+          const contentType = screenshotRes.headers.get("content-type") || "";
+          if (contentType.includes("image/")) {
+            const buffer = Buffer.from(await screenshotRes.arrayBuffer());
+            const base64 = buffer.toString("base64");
+            result = { image: `data:image/png;base64,${base64}` };
           } else {
-            // Gateway returns {ok, path, targetId, url} — read the image from disk
-            const imgPath = typeof data.path === "string" ? data.path : null;
-            if (imgPath) {
-              try {
-                const imgBuffer = await readFile(imgPath);
-                result = { image: `data:image/png;base64,${imgBuffer.toString("base64")}` };
-              } catch {
+            const data = await screenshotRes.json() as Record<string, unknown>;
+            if (data.image && typeof data.image === "string") {
+              result = { image: data.image.startsWith("data:") ? data.image : `data:image/png;base64,${data.image}` };
+            } else {
+              // Gateway returns {ok, path, targetId, url} — read the image from disk
+              const imgPath = typeof data.path === "string" ? data.path : null;
+              if (imgPath) {
+                try {
+                  const imgBuffer = await readFile(imgPath);
+                  result = { image: `data:image/png;base64,${imgBuffer.toString("base64")}` };
+                } catch {
+                  result = data;
+                }
+              } else {
                 result = data;
               }
-            } else {
-              result = data;
             }
           }
+          break;
         }
-        break;
+        default:
+          return badRequest(`Unknown action: ${action}`);
       }
-      default:
-        return NextResponse.json(
-          { ok: false, error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
-    }
 
-    const snapshot = await buildSnapshot(profile);
-    return NextResponse.json({ ok: true, action, result, snapshot });
-  } catch (err) {
-    const snapshot = await buildSnapshot(profile).catch(() => null);
-    return NextResponse.json(
-      { ok: false, error: parseError(err), snapshot },
-      { status: 500 }
-    );
-  }
-}
+      const snapshot = await buildSnapshot(profile);
+      return NextResponse.json({ ok: true, action, result, snapshot });
+    } catch (err) {
+      const snapshot = await buildSnapshot(profile).catch(() => null);
+      return NextResponse.json(
+        { ok: false, error: parseError(err), snapshot },
+        { status: 500 }
+      );
+    }
+  },
+);
 

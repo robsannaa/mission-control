@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runCliJson } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -47,7 +48,7 @@ async function fetchLastHeartbeatEvent(): Promise<LastHeartbeatEvent> {
   }
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/heartbeat/last-event" }, async () => {
   const now = Date.now();
   if (cache && cache.expiresAt > now) {
     return NextResponse.json(
@@ -66,4 +67,4 @@ export async function GET() {
     { ok: true, lastEvent: value },
     { headers: { "Cache-Control": "no-store" } }
   );
-}
+});

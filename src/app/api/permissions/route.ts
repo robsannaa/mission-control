@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { gatewayCall, runCli, runCliJson } from "@/lib/openclaw";
 import { gatewayConfigPatch } from "@/lib/gateway-config";
+import { withRoute } from "@/lib/api-route";
+import { badRequest } from "@/lib/api-errors";
+import { permissionsPostSchema } from "@/lib/schemas/system";
 
 export const dynamic = "force-dynamic";
 
@@ -420,11 +423,21 @@ async function setApprovalsDefaults(updates: { security?: string; ask?: string; 
   }
 }
 
-export async function GET() {
+/**
+ * GET /api/permissions — exec-approval and elevated-tool policy snapshot.
+ *
+ * Deliberately never returns an error status: on a CLI/gateway failure it
+ * serves a minimal, explicitly-degraded snapshot instead (`degraded: true`),
+ * so the dashboard stays usable while the instance is unreachable. Kept as
+ * an internal try/catch (not thrown) so `withRoute`'s own catch never sees
+ * this failure and never converts it into a 500.
+ */
+export const GET = withRoute({ name: "/api/permissions" }, async (_request, { log }) => {
   try {
     const snapshot = await readSnapshot();
     return NextResponse.json(snapshot);
   } catch (err) {
+    log.warn({ err: cliError(err) }, "Permissions snapshot unavailable — returning degraded payload");
     return NextResponse.json({
       ts: Date.now(),
       approvals: {},
@@ -454,25 +467,37 @@ export async function GET() {
       degraded: true,
     });
   }
-}
+});
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const action = String(body.action || "");
-
-    if (action === "allow-pattern" || action === "revoke-pattern") {
+/**
+ * POST /api/permissions — exec-approval and elevated-tool policy writes.
+ *
+ * `permissionsPostSchema` rejects an unrecognized `action` (and any known
+ * action's malformed shape) before this handler ever runs, so no policy
+ * write is reached on a bad payload (T-02-44). Every error path below
+ * returns through an `@/lib/api-errors` builder, so every error body
+ * carries `ok: false` (D-01). A thrown error from `mutateAllowlist` /
+ * `gatewayConfigPatch` / `setApprovalsDefaults` (e.g. an invalid
+ * security/ask/askFallback enum value) is left to `withRoute`'s own catch,
+ * which preserves the pre-migration 500 status and message text exactly
+ * (D-06 — existing status codes are preserved as-is in this phase, even
+ * though a 400 would arguably fit an invalid-enum-value case better).
+ */
+export const POST = withRoute(
+  { name: "/api/permissions", bodySchema: permissionsPostSchema },
+  async (_request, { body }) => {
+    if (body.action === "allow-pattern" || body.action === "revoke-pattern") {
       const pattern = String(body.pattern || "").trim();
       const agentId = String(body.agentId || "*").trim() || "*";
       if (!pattern) {
-        return NextResponse.json({ error: "pattern is required" }, { status: 400 });
+        return badRequest("pattern is required");
       }
-      await mutateAllowlist(action === "allow-pattern" ? "add" : "remove", agentId, pattern);
+      await mutateAllowlist(body.action === "allow-pattern" ? "add" : "remove", agentId, pattern);
       const snapshot = await readSnapshot();
-      return NextResponse.json({ ok: true, action, snapshot });
+      return NextResponse.json({ ok: true, action: body.action, snapshot });
     }
 
-    if (action === "set-elevated") {
+    if (body.action === "set-elevated") {
       const enabled = Boolean(body.enabled);
       const cfg = await gatewayCall<{ hash?: string }>("config.get", undefined, 12000);
       const baseHash = String(cfg.hash || "");
@@ -486,35 +511,23 @@ export async function POST(request: NextRequest) {
       const snapshot = await readSnapshot();
       return NextResponse.json({
         ok: true,
-        action,
+        action: body.action,
         enabled,
         restartRecommended: true,
         snapshot,
       });
     }
 
-    if (action === "set-approvals-defaults") {
-      const security = body.security !== undefined ? String(body.security).trim() : undefined;
-      const ask = body.ask !== undefined ? String(body.ask).trim() : undefined;
-      const askFallback = body.askFallback !== undefined ? String(body.askFallback).trim() : undefined;
-      if (!security && !ask && !askFallback) {
-        return NextResponse.json({ error: "At least one of security, ask, askFallback is required" }, { status: 400 });
-      }
-      await setApprovalsDefaults({ security, ask, askFallback });
-      const snapshot = await readSnapshot();
-      return NextResponse.json({ ok: true, action, snapshot });
+    // action === "set-approvals-defaults" — the only remaining variant of
+    // `permissionsPostSchema`'s discriminated union.
+    const security = body.security !== undefined ? String(body.security).trim() : undefined;
+    const ask = body.ask !== undefined ? String(body.ask).trim() : undefined;
+    const askFallback = body.askFallback !== undefined ? String(body.askFallback).trim() : undefined;
+    if (!security && !ask && !askFallback) {
+      return badRequest("At least one of security, ask, askFallback is required");
     }
-
-    return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
-  } catch (err) {
-    // Bug fix 2026-08-16: a malformed JSON body throws a SyntaxError from
-    // `request.json()`. That is a client error, not an internal failure.
-    if (err instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: `Invalid JSON body: ${err.message}` },
-        { status: 400 },
-      );
-    }
-    return NextResponse.json({ error: cliError(err) }, { status: 500 });
-  }
-}
+    await setApprovalsDefaults({ security, ask, askFallback });
+    const snapshot = await readSnapshot();
+    return NextResponse.json({ ok: true, action: body.action, snapshot });
+  },
+);

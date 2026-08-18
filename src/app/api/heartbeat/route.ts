@@ -1,6 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayWakeAgent } from "@/lib/gateway-tools";
 import { gatewayCallWithRetry, patchConfig } from "@/lib/gateway-config";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, notFound } from "@/lib/api-errors";
+import { heartbeatPostSchema } from "@/lib/schemas/system";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -189,7 +192,14 @@ function buildHeartbeatResponse(configData: Record<string, unknown>) {
   };
 }
 
-export async function GET() {
+/**
+ * GET /api/heartbeat — deliberately never returns an error status: on a
+ * gateway failure it serves a minimal, explicitly-degraded payload
+ * (`degraded: true`) instead. Kept as an internal try/catch (not thrown) so
+ * `withRoute`'s own catch never sees this failure and never converts it
+ * into a 500.
+ */
+export const GET = withRoute({ name: "/api/heartbeat" }, async (_request, { log }) => {
   try {
     const configData = await gatewayConfigGet();
     return jsonNoStore({
@@ -197,7 +207,7 @@ export async function GET() {
       ...buildHeartbeatResponse(configData),
     });
   } catch (err) {
-    console.error("Heartbeat GET error:", err);
+    log.warn({ err: String(err) }, "Heartbeat GET error — returning degraded payload");
     return jsonNoStore({
       ok: true,
       docsUrl: "https://docs.openclaw.ai/gateway/heartbeat#heartbeat",
@@ -215,7 +225,7 @@ export async function GET() {
       degraded: true,
     });
   }
-}
+});
 
 type VisibilityPatch = {
   defaults?: JsonObject | null;
@@ -291,20 +301,25 @@ function parseVisibilityPatch(input: unknown): VisibilityPatch | null {
   return out;
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const action = String(body?.action || "");
+/**
+ * POST /api/heartbeat — heartbeat configuration writes. Every error path
+ * below returns through an `@/lib/api-errors` builder, so every error body
+ * carries `ok: false` (D-01). Success payloads keep using `jsonNoStore` —
+ * success shapes are out of scope for this phase (docs/API-CONTRACT.md §5).
+ */
+export const POST = withRoute(
+  { name: "/api/heartbeat", bodySchema: heartbeatPostSchema },
+  async (_request, { body }) => {
+    const action = String(body.action || "");
 
     if (!action) {
-      return jsonNoStore({ ok: false, error: "action required" }, { status: 400 });
+      return badRequest("action required");
     }
 
     if (action === "wake-now") {
-      const mode =
-        body?.mode === "next-heartbeat" ? "next-heartbeat" : "now";
+      const mode = body.mode === "next-heartbeat" ? "next-heartbeat" : "now";
       const text =
-        typeof body?.text === "string" && body.text.trim()
+        typeof body.text === "string" && body.text.trim()
           ? body.text.trim()
           : "Check for urgent follow-ups";
       const output = await gatewayWakeAgent({ text, mode });
@@ -315,14 +330,11 @@ export async function POST(request: NextRequest) {
     const parsed = isRecord(configData.parsed) ? configData.parsed : {};
 
     if (action === "save-defaults") {
-      const heartbeatRaw = body?.heartbeat;
+      const heartbeatRaw = body.heartbeat;
       const heartbeat =
         heartbeatRaw === null ? null : sanitizeJsonObject(heartbeatRaw);
       if (heartbeatRaw !== null && !heartbeat) {
-        return jsonNoStore(
-          { ok: false, error: "heartbeat must be an object or null" },
-          { status: 400 }
-        );
+        return badRequest("heartbeat must be an object or null");
       }
 
       const agentsBlock = isRecord(parsed.agents) ? { ...parsed.agents } : {};
@@ -347,18 +359,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "save-agent") {
-      const agentId = String(body?.agentId || "").trim();
+      const agentId = String(body.agentId || "").trim();
       if (!agentId) {
-        return jsonNoStore({ ok: false, error: "agentId required" }, { status: 400 });
+        return badRequest("agentId required");
       }
-      const heartbeatRaw = body?.heartbeat;
+      const heartbeatRaw = body.heartbeat;
       const heartbeat =
         heartbeatRaw === null ? null : sanitizeJsonObject(heartbeatRaw);
       if (heartbeatRaw !== null && !heartbeat) {
-        return jsonNoStore(
-          { ok: false, error: "heartbeat must be an object or null" },
-          { status: 400 }
-        );
+        return badRequest("heartbeat must be an object or null");
       }
 
       const agentsBlock = isRecord(parsed.agents) ? { ...parsed.agents } : {};
@@ -376,10 +385,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (!found) {
-        return jsonNoStore(
-          { ok: false, error: `Agent ${agentId} not found` },
-          { status: 404 }
-        );
+        return notFound(`Agent ${agentId} not found`);
       }
 
       await patchConfig({
@@ -394,12 +400,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "save-visibility") {
-      const patch = parseVisibilityPatch(body?.visibility);
+      const patch = parseVisibilityPatch(body.visibility);
       if (!patch) {
-        return jsonNoStore(
-          { ok: false, error: "visibility payload is invalid" },
-          { status: 400 }
-        );
+        return badRequest("visibility payload is invalid");
       }
 
       const channelsBlock = isRecord(parsed.channels) ? { ...parsed.channels } : {};
@@ -461,19 +464,6 @@ export async function POST(request: NextRequest) {
       return jsonNoStore({ ok: true, action, ...buildHeartbeatResponse(next) });
     }
 
-    return jsonNoStore(
-      { ok: false, error: `Unknown action: ${action}` },
-      { status: 400 }
-    );
-  } catch (err) {
-    console.error("Heartbeat POST error:", err);
-    // Bug fix 2026-08-16: malformed JSON body throws SyntaxError from `request.json()`.
-    if (err instanceof SyntaxError) {
-      return jsonNoStore(
-        { ok: false, error: `Invalid JSON body: ${err.message}` },
-        { status: 400 },
-      );
-    }
-    return jsonNoStore({ ok: false, error: String(err) }, { status: 500 });
-  }
-}
+    return badRequest(`Unknown action: ${action}`);
+  },
+);
