@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   getAuthMode,
   getAuthToken,
@@ -9,10 +9,11 @@ import {
   PROXY_USER_HEADER,
   SESSION_COOKIE,
 } from "@/lib/auth";
+import { withRoute } from "@/lib/api-route";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute({ name: "/api/auth/status" }, async (request) => {
   const mode = getAuthMode();
 
   if (mode === "token") {
@@ -40,4 +41,4 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, mode, configured: true, authenticated: true, user: null });
-}
+});

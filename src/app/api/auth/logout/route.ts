@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth";
+import { withRoute } from "@/lib/api-route";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export const POST = withRoute({ name: "/api/auth/logout" }, async () => {
   const response = NextResponse.json({ ok: true });
   response.cookies.set({
     name: SESSION_COOKIE,
@@ -14,4 +15,4 @@ export async function POST() {
     maxAge: 0,
   });
   return response;
-}
+});

@@ -1,7 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
 import { patchConfig } from "@/lib/gateway-config";
 import { readConfigFile } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
+import { onboardingChannelPostSchema } from "@/lib/schemas/onboarding";
+import { badRequest, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +77,7 @@ async function readTelegramTokenFromConfig(): Promise<string | null> {
  * configured / running / connected / lastInboundAt plus the bot identity
  * (username + t.me deep link) when a token is on disk. */
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/onboarding/channel" }, async () => {
   try {
     let statusResult: Record<string, unknown> = {};
     try {
@@ -141,9 +144,9 @@ export async function GET() {
       deepLink: botUsername ? `https://t.me/${botUsername}` : null,
     });
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return serverError(String(err));
   }
-}
+});
 
 /* ── POST /api/onboarding/channel ──
  * Actions (dryRun: true validates input shape only — no config writes, no
@@ -151,9 +154,11 @@ export async function GET() {
  *   connect  { token }  — verify token via getMe, patch channels.telegram, restart
  *   bot-info { token }  — look up the bot identity for a pasted token */
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/onboarding/channel", bodySchema: onboardingChannelPostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
+    const body = ctx.body;
     const action = String(body.action || "").trim();
     const dryRun = body.dryRun === true;
 
@@ -161,13 +166,10 @@ export async function POST(request: NextRequest) {
       case "connect": {
         const token = String(body.token || "").trim();
         if (!token) {
-          return json({ error: "Bot token is required" }, 400);
+          return badRequest("Bot token is required");
         }
         if (!TELEGRAM_TOKEN_RE.test(token)) {
-          return json(
-            { error: "That does not look like a Telegram bot token (expected 123456789:ABC...)" },
-            400,
-          );
+          return badRequest("That does not look like a Telegram bot token (expected 123456789:ABC...)");
         }
         if (dryRun) {
           return json({
@@ -184,10 +186,7 @@ export async function POST(request: NextRequest) {
         // otherwise put the channel into a crash loop.
         const info = await telegramGetMe(token);
         if (!info) {
-          return json(
-            { ok: false, error: "Telegram rejected this token. Double-check it with @BotFather." },
-            400,
-          );
+          return badRequest("Telegram rejected this token. Double-check it with @BotFather.");
         }
 
         await patchConfig(
@@ -216,14 +215,14 @@ export async function POST(request: NextRequest) {
       case "bot-info": {
         const token = String(body.token || "").trim();
         if (!token || !TELEGRAM_TOKEN_RE.test(token)) {
-          return json({ error: "A valid bot token is required" }, 400);
+          return badRequest("A valid bot token is required");
         }
         if (dryRun) {
           return json({ ok: true, dryRun: true, action });
         }
         const info = await telegramGetMe(token);
         if (!info) {
-          return json({ ok: false, error: "Telegram rejected this token" }, 400);
+          return badRequest("Telegram rejected this token");
         }
         return json({
           ok: true,
@@ -234,9 +233,10 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return json({ error: `Unknown action: ${action}` }, 400);
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return serverError(String(err));
   }
-}
+  },
+);

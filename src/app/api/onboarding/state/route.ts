@@ -1,7 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readFile, writeFile, mkdir, rm } from "fs/promises";
 import { join, dirname } from "path";
 import { getOpenClawHome } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
+import { onboardingStatePostSchema } from "@/lib/schemas/onboarding";
+import { badRequest, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -93,7 +96,7 @@ async function writeState(state: OnboardingState): Promise<void> {
 
 /* ── GET /api/onboarding/state ── */
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/onboarding/state" }, async () => {
   try {
     const state = await readState();
     return NextResponse.json(
@@ -101,30 +104,28 @@ export async function GET() {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return serverError(String(err));
   }
-}
+});
 
 /* ── POST /api/onboarding/state ──
  * Body: { patch: Partial<OnboardingState> } — merged onto the stored state.
  * Step entries are merged individually; unknown step ids are rejected. */
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/onboarding/state", bodySchema: onboardingStatePostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
-    const patch = body?.patch;
+    const patch = ctx.body?.patch;
     if (!isRecord(patch)) {
-      return NextResponse.json({ error: "patch object is required" }, { status: 400 });
+      return badRequest("patch object is required");
     }
 
     const state = await readState();
 
     if (patch.currentStep !== undefined) {
       if (!ONBOARDING_STEP_IDS.includes(patch.currentStep as OnboardingStepId)) {
-        return NextResponse.json(
-          { error: `Invalid currentStep. Must be one of: ${ONBOARDING_STEP_IDS.join(", ")}` },
-          { status: 400 },
-        );
+        return badRequest(`Invalid currentStep. Must be one of: ${ONBOARDING_STEP_IDS.join(", ")}`);
       }
       state.currentStep = patch.currentStep as OnboardingStepId;
     }
@@ -141,22 +142,19 @@ export async function POST(request: NextRequest) {
 
     if (patch.steps !== undefined) {
       if (!isRecord(patch.steps)) {
-        return NextResponse.json({ error: "steps must be an object" }, { status: 400 });
+        return badRequest("steps must be an object");
       }
       for (const [id, step] of Object.entries(patch.steps)) {
         if (!ONBOARDING_STEP_IDS.includes(id as OnboardingStepId)) {
-          return NextResponse.json({ error: `Unknown step: ${id}` }, { status: 400 });
+          return badRequest(`Unknown step: ${id}`);
         }
         if (!isRecord(step)) {
-          return NextResponse.json({ error: `Step ${id} must be an object` }, { status: 400 });
+          return badRequest(`Step ${id} must be an object`);
         }
         const target = state.steps[id as OnboardingStepId];
         if (step.status !== undefined) {
           if (!STEP_STATUSES.has(String(step.status))) {
-            return NextResponse.json(
-              { error: `Invalid status for step ${id}. Must be one of: pending, done, skipped` },
-              { status: 400 },
-            );
+            return badRequest(`Invalid status for step ${id}. Must be one of: pending, done, skipped`);
           }
           target.status = step.status as OnboardingStepState["status"];
         }
@@ -178,17 +176,18 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return serverError(String(err));
   }
-}
+  },
+);
 
 /* ── DELETE /api/onboarding/state — reset progress (safe to re-run wizard) ── */
 
-export async function DELETE() {
+export const DELETE = withRoute({ name: "/api/onboarding/state" }, async () => {
   try {
     await rm(statePath(), { force: true });
     return NextResponse.json({ ok: true, state: defaultState() });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return serverError(String(err));
   }
-}
+});

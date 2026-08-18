@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { gatewayCall } from "@/lib/openclaw";
 import { getOpenClawBin, getGatewayUrl } from "@/lib/paths";
 import { probeGatewayLiveness } from "@/lib/gateway-liveness";
 import { bootstrapFreshMachine, configFileExists } from "../_lib/bootstrap";
+import { withRoute } from "@/lib/api-route";
+import { onboardingDetectPostSchema } from "@/lib/schemas/onboarding";
+import { badRequest, conflict, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -94,14 +97,14 @@ async function buildDetectPayload(): Promise<DetectPayload> {
 
 /* ── GET /api/onboarding/detect ── */
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/onboarding/detect" }, async () => {
   try {
     const payload = await buildDetectPayload();
     return json(payload);
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return serverError(String(err));
   }
-}
+});
 
 /* ── POST /api/onboarding/detect ──
  * Actions:
@@ -114,13 +117,15 @@ export async function GET() {
  *       (openclaw gateway start), same as before.
  *           Pass dryRun: true to preview the command without executing it. */
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/onboarding/detect", bodySchema: onboardingDetectPostSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
+    const body = ctx.body;
     const action = String(body.action || "").trim();
 
     if (action !== "start") {
-      return json({ error: `Unknown action: ${action}` }, 400);
+      return badRequest(`Unknown action: ${action}`);
     }
 
     let binPath: string | null = null;
@@ -130,7 +135,7 @@ export async function POST(request: NextRequest) {
       binPath = null;
     }
     if (!binPath) {
-      return json({ error: "OpenClaw CLI not found on this machine" }, 409);
+      return conflict("OpenClaw CLI not found on this machine");
     }
 
     if (body.dryRun === true) {
@@ -147,7 +152,7 @@ export async function POST(request: NextRequest) {
     if (!hadConfig) {
       const bootstrap = await bootstrapFreshMachine();
       if (!bootstrap.ok) {
-        return json({ ok: false, error: `Could not set up OpenClaw: ${bootstrap.error}` }, 500);
+        return serverError(`Could not set up OpenClaw: ${bootstrap.error}`);
       }
     }
 
@@ -175,9 +180,10 @@ export async function POST(request: NextRequest) {
 
       return json({ ok: true, action: "start", running });
     } catch (err) {
-      return json({ ok: false, error: `Gateway start failed: ${String(err)}` }, 500);
+      return serverError(`Gateway start failed: ${String(err)}`);
     }
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return serverError(String(err));
   }
-}
+  },
+);
