@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { pairingRequiredResponse } from "@/lib/gateway-errors";
 import { gatewayCall } from "@/lib/openclaw";
 import { redact } from "@/lib/doctor-redact";
@@ -8,13 +8,16 @@ import {
   sessionKindOf,
   sessionTitleOf,
 } from "@/lib/session-kinds";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, notFound, forbidden, apiError } from "@/lib/api-errors";
+import {
+  activitySessionGetQuerySchema,
+  DEFAULT_ACTIVITY_SESSION_LIMIT,
+} from "@/lib/schemas/activity";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_LIMIT = 160;
-const MAX_LIMIT = 300;
 const MAX_ITEM_CHARS = 12_000;
-const SESSION_KEY_RE = /^[A-Za-z0-9_.:-]{1,256}$/;
 const SENSITIVE_KEY_RE =
   /(api[\s_-]?key|token|secret|password|credential|authorization|cookie|private[\s_-]?key)/i;
 
@@ -321,20 +324,15 @@ function aggregateUsage(messages: RawMessage[]) {
   };
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const sessionKey = searchParams.get("sessionKey")?.trim();
+export const GET = withRoute(
+  { name: "/api/activity/session", querySchema: activitySessionGetQuerySchema },
+  async (_request, ctx) => {
+  const sessionKey = ctx.query.sessionKey;
   if (!sessionKey) {
-    return NextResponse.json({ error: "sessionKey is required" }, { status: 400 });
-  }
-  if (!SESSION_KEY_RE.test(sessionKey)) {
-    return NextResponse.json({ error: "invalid sessionKey" }, { status: 400 });
+    return badRequest("sessionKey is required");
   }
 
-  const requestedLimit = Number(searchParams.get("limit") ?? DEFAULT_LIMIT);
-  const limit = Number.isFinite(requestedLimit)
-    ? Math.min(Math.max(Math.trunc(requestedLimit), 1), MAX_LIMIT)
-    : DEFAULT_LIMIT;
+  const limit = ctx.query.limit ?? DEFAULT_ACTIVITY_SESSION_LIMIT;
 
   try {
     const listing = await gatewayCall<{ sessions?: SessionSummary[] }>(
@@ -345,16 +343,13 @@ export async function GET(request: NextRequest) {
     const sessions = Array.isArray(listing.sessions) ? listing.sessions : [];
     const match = sessions.find((session) => session.key === sessionKey);
     if (!match) {
-      return NextResponse.json({ error: "session not found" }, { status: 404 });
+      return notFound("session not found");
     }
 
     const kind = sessionKindOf(match);
     const classification = classifySessionKind(kind);
     if (!classification.isInspectable) {
-      return NextResponse.json(
-        { error: "This session is private and cannot be inspected from Activity." },
-        { status: 403 },
-      );
+      return forbidden("This session is private and cannot be inspected from Activity.");
     }
 
     const agentId = sessionAgentIdOf(match);
@@ -429,10 +424,8 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const pairing = pairingRequiredResponse(error);
     if (pairing) return pairing;
-    console.error("activity/session failed:", error);
-    return NextResponse.json(
-      { error: "Could not load this session from the gateway." },
-      { status: 502 },
-    );
+    ctx.log.error({ err: error }, "activity/session failed");
+    return apiError("Could not load this session from the gateway.", 502);
   }
-}
+  },
+);

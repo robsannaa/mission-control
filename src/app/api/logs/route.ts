@@ -1,8 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
 import { open, readdir, readFile, stat } from "fs/promises";
 import { join } from "path";
+import { NextResponse } from "next/server";
 import { getOpenClawHome } from "@/lib/paths";
 import { createLogAnchor } from "@/lib/log-anchor";
+import { withRoute } from "@/lib/api-route";
+import { serverError } from "@/lib/api-errors";
+import { logsGetQuerySchema, DEFAULT_LOGS_LIMIT } from "@/lib/schemas/activity";
 
 const OPENCLAW_HOME = getOpenClawHome();
 const LOGS_DIR = join(OPENCLAW_HOME, "logs");
@@ -219,16 +222,14 @@ function detectLevel(
   return "info";
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const type = searchParams.get("type") || "all";
-  const limit = Math.min(
-    parseInt(searchParams.get("limit") || "200", 10),
-    1000
-  );
-  const searchFilter = searchParams.get("search")?.toLowerCase() || "";
-  const sourceFilter = searchParams.get("source")?.toLowerCase() || "";
-  const levelFilter = searchParams.get("level") || "";
+export const GET = withRoute(
+  { name: "/api/logs", querySchema: logsGetQuerySchema },
+  async (_request, ctx) => {
+  const type = ctx.query.type ?? "all";
+  const limit = ctx.query.limit ?? DEFAULT_LOGS_LIMIT;
+  const searchFilter = ctx.query.search?.toLowerCase() || "";
+  const sourceFilter = ctx.query.source?.toLowerCase() || "";
+  const levelFilter = ctx.query.level || "";
 
   try {
     const files: { path: string; level: "info" | "error" }[] = [];
@@ -348,7 +349,8 @@ export async function GET(request: NextRequest) {
       stats,
     });
   } catch (err) {
-    console.error("Logs API error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err }, "Logs API error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);

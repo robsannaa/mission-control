@@ -1,12 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
 import { readdir, stat, open, readFile } from "fs/promises";
 import { join } from "path";
+import { NextResponse } from "next/server";
 import { getOpenClawHome } from "@/lib/paths";
 import { fetchGatewaySessions } from "@/lib/gateway-sessions";
 import { gatewayCall } from "@/lib/openclaw";
 import { isPairingRequiredError, pairingRequiredResponse } from "@/lib/gateway-errors";
 import { classifySessionKind, sessionKindOf } from "@/lib/session-kinds";
 import { createLogAnchor } from "@/lib/log-anchor";
+import { withRoute } from "@/lib/api-route";
+import { serverError } from "@/lib/api-errors";
+import { activityGetQuerySchema } from "@/lib/schemas/activity";
 
 // OpenClaw v2026.3.23+ writes tslog JSON to /tmp/openclaw/openclaw-YYYY-MM-DD.log.
 const TMP_LOG_CANDIDATES = [
@@ -371,10 +374,11 @@ async function aggregateSessionEvents(): Promise<{
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(
+  { name: "/api/activity", querySchema: activityGetQuerySchema },
+  async (_request, ctx) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const typeFilter = searchParams.get("type") as ActivityEventType | null;
+    const typeFilter = ctx.query.type ?? null;
 
     // Gather all sources in parallel.
     const [cronResult, logEvents, sessionResult] = await Promise.all([
@@ -411,7 +415,8 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const pairing = pairingRequiredResponse(err);
     if (pairing) return pairing;
-    console.error("Activity API error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err }, "Activity API error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
