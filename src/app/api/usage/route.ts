@@ -12,6 +12,7 @@ import { ensureProviderBillingFreshness, getAllProviderSnapshots } from "@/lib/p
 import { readReconciliationSnapshot, runUsageReconciliation } from "@/lib/reconciliation";
 import { ensureUsageScheduler } from "@/lib/usage-scheduler";
 import type { UsageApiResponse } from "@/lib/usage-types";
+import { withRoute } from "@/lib/api-route";
 
 const OPENCLAW_HOME = getOpenClawHome();
 export const dynamic = "force-dynamic";
@@ -188,7 +189,7 @@ function emptyReconciliationSnapshot(): Awaited<ReturnType<typeof readReconcilia
   };
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute({ name: "/api/usage" }, async (request: NextRequest, ctx) => {
   try {
     const configPath = join(OPENCLAW_HOME, "openclaw.json");
     const config = await readJsonSafe<Record<string, unknown>>(configPath, {});
@@ -732,9 +733,14 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (err) {
-    console.error("Usage API error:", err);
     const message = err instanceof Error ? err.message : String(err);
+    ctx.log.error({ err: message }, "Usage API error");
     const stack = err instanceof Error ? err.stack?.split("\n").slice(0, 4).join("\n") : undefined;
+    // Manually constructed (not through an api-errors.ts builder): this
+    // response carries `hint`/`stack` fields the builders have no slot for,
+    // alongside the canonical `ok: false, error` pair — same precedent as
+    // `/api/config`'s and `/api/gateway`'s extra-field error bodies
+    // (.planning/phases/02-server-contract-hardening/02-04-SUMMARY.md).
     return NextResponse.json(
       {
         ok: false,
@@ -749,4 +755,4 @@ export async function GET(request: NextRequest) {
       { status: 500 },
     );
   }
-}
+});

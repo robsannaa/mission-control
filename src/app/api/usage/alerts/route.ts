@@ -15,12 +15,11 @@ import {
   setAlertMonitorEnabled,
   updateUsageAlertRule,
 } from "@/lib/usage-alerts";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { usageAlertsPollQuerySchema, usageAlertsPostSchema } from "@/lib/schemas/usage";
 
 export const dynamic = "force-dynamic";
-
-function badRequest(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 400 });
-}
 
 function toPositiveNumber(value: unknown): number | null {
   const n = Number(value);
@@ -67,17 +66,22 @@ async function buildStatusPayload() {
   });
 }
 
-export async function GET(request: NextRequest) {
-  if (request.nextUrl.searchParams.get("poll") === "1") {
-    const alerts = await pollPendingAlertFirings(20);
-    return NextResponse.json({ ok: true, alerts, timestamp: Date.now() });
-  }
-  return buildStatusPayload();
-}
+export const GET = withRoute(
+  { name: "/api/usage/alerts", querySchema: usageAlertsPollQuerySchema },
+  async (_request: NextRequest, ctx) => {
+    if (ctx.query.poll === "1") {
+      const alerts = await pollPendingAlertFirings(20);
+      return NextResponse.json({ ok: true, alerts, timestamp: Date.now() });
+    }
+    return buildStatusPayload();
+  },
+);
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/usage/alerts", bodySchema: usageAlertsPostSchema },
+  async (_request: NextRequest, ctx) => {
   try {
-    const body = (await request.json()) as Record<string, unknown>;
+    const body = ctx.body as Record<string, unknown>;
     const action = String(body.action || "").trim().toLowerCase();
 
     if (action === "status") {
@@ -200,6 +204,7 @@ export async function POST(request: NextRequest) {
 
     return badRequest(`Unknown action: ${action}`);
   } catch (err) {
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
+    return serverError(String(err));
   }
-}
+  },
+);

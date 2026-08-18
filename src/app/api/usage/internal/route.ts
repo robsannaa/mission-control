@@ -6,12 +6,11 @@ import { maybeCollectProvider } from "@/lib/provider-billing/shared";
 import { runUsageReconciliation } from "@/lib/reconciliation";
 import { evaluateAndStoreUsageAlerts } from "@/lib/usage-alerts";
 import { ensureUsageScheduler } from "@/lib/usage-scheduler";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, unauthorized } from "@/lib/api-errors";
+import { usageInternalQuerySchema } from "@/lib/schemas/usage";
 
 export const dynamic = "force-dynamic";
-
-function unauthorized() {
-  return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-}
 
 async function handleTask(task: string, request: NextRequest) {
   if (task === "ingest") {
@@ -24,7 +23,7 @@ async function handleTask(task: string, request: NextRequest) {
     const supportedProviders = ["openrouter", "openai", "anthropic"] as const;
     type SupportedProvider = (typeof supportedProviders)[number];
     if (!supportedProviders.includes(provider as SupportedProvider)) {
-      return NextResponse.json({ ok: false, error: "Unsupported provider" }, { status: 400 });
+      return badRequest("Unsupported provider");
     }
     const result = await maybeCollectProvider(provider as SupportedProvider);
     return NextResponse.json({ ok: true, task, result });
@@ -41,7 +40,7 @@ async function handleTask(task: string, request: NextRequest) {
     const result = await ensureUsageScheduler(request.nextUrl.origin);
     return NextResponse.json({ ok: true, task, result });
   }
-  return NextResponse.json({ ok: false, error: "Unknown task" }, { status: 400 });
+  return badRequest("Unknown task");
 }
 
 function isAuthorized(request: NextRequest): boolean {
@@ -54,14 +53,20 @@ function isAuthorized(request: NextRequest): boolean {
   return token === expected;
 }
 
-export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) return unauthorized();
-  const task = String(request.nextUrl.searchParams.get("task") || "").trim();
-  return handleTask(task, request);
-}
+export const GET = withRoute(
+  { name: "/api/usage/internal", querySchema: usageInternalQuerySchema },
+  async (request: NextRequest, ctx) => {
+    if (!isAuthorized(request)) return unauthorized();
+    const task = (ctx.query.task || "").trim();
+    return handleTask(task, request);
+  },
+);
 
-export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) return unauthorized();
-  const task = String(request.nextUrl.searchParams.get("task") || "").trim();
-  return handleTask(task, request);
-}
+export const POST = withRoute(
+  { name: "/api/usage/internal", querySchema: usageInternalQuerySchema },
+  async (request: NextRequest, ctx) => {
+    if (!isAuthorized(request)) return unauthorized();
+    const task = (ctx.query.task || "").trim();
+    return handleTask(task, request);
+  },
+);

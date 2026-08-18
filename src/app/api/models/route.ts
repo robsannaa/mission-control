@@ -25,6 +25,9 @@ import {
   shouldSetPrimary,
 } from "@/lib/gateway-config";
 import { CONFIG_WRITE_TIMEOUT_MS, gatewayCall, runCliCaptureBoth } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { modelsPostSchema } from "@/lib/schemas/usage";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +92,7 @@ function modelKeyFor(provider: string, id: string): string {
   return id === provider || id.startsWith(`${provider}/`) ? id : `${provider}/${id}`;
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/models" }, async () => {
   try {
     const summary = await buildModelsSummary();
 
@@ -153,17 +156,19 @@ export async function GET() {
       degraded: Boolean(summary.degraded) || gatewayOffline,
     });
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return serverError(String(err));
   }
-}
+});
 
 // ── POST /api/models ────────────────────────────
 // Actions: auth-provider, remove-provider, set-primary, set-model-chain, set-fallbacks,
 // list-models, test-key, probe-local, connect-local
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(
+  { name: "/api/models", bodySchema: modelsPostSchema },
+  async (_request: NextRequest, ctx) => {
   try {
-    const body = await request.json();
+    const body = ctx.body as Record<string, unknown>;
     const action = String(body.action || "");
 
     switch (action) {
@@ -183,13 +188,13 @@ export async function POST(request: NextRequest) {
         const makePrimary = body.makePrimary === true;
 
         if (!provider || !token) {
-          return json({ error: "Provider and API key are required" }, 400);
+          return badRequest("Provider and API key are required");
         }
 
         // Validate the key against the provider's API
         const validation = await validateProviderToken(provider, token);
         if (!validation.ok) {
-          return json({ error: validation.error || "Invalid API key" }, 400);
+          return badRequest(validation.error || "Invalid API key");
         }
 
         const envKey = PROVIDER_ENV_KEYS[provider];
@@ -218,7 +223,10 @@ export async function POST(request: NextRequest) {
             // Surface why the live path failed instead of silently degrading —
             // the disk fallback works, but the gateway won't hot-reload it.
             gatewayError = err instanceof Error ? err.message : String(err);
-            console.error("[auth-provider] gateway config patch failed, using disk fallback:", err);
+            ctx.log.warn(
+              { err: gatewayError },
+              "[auth-provider] gateway config patch failed, using disk fallback",
+            );
           }
         }
 
@@ -273,7 +281,7 @@ export async function POST(request: NextRequest) {
 
             method = "disk";
           } catch (err) {
-            return json({ error: `Failed to save credentials: ${err}` }, 500);
+            return serverError(`Failed to save credentials: ${err}`);
           }
         }
 
@@ -295,9 +303,9 @@ export async function POST(request: NextRequest) {
         const kind = String(body.kind || "").trim().toLowerCase() as LocalProviderKind;
         const baseUrl = String(body.baseUrl || "").trim();
         if (!["ollama", "lmstudio", "custom"].includes(kind)) {
-          return json({ error: "kind must be one of: ollama, lmstudio, custom" }, 400);
+          return badRequest("kind must be one of: ollama, lmstudio, custom");
         }
-        if (!baseUrl) return json({ error: "baseUrl is required" }, 400);
+        if (!baseUrl) return badRequest("baseUrl is required");
 
         const result = await probeLocalProvider(protocolForLocalKind(kind), baseUrl);
         if (!result.ok) return json(result, 200);
@@ -332,10 +340,10 @@ export async function POST(request: NextRequest) {
             : undefined;
 
         if (!["ollama", "lmstudio", "custom"].includes(kind)) {
-          return json({ error: "kind must be one of: ollama, lmstudio, custom" }, 400);
+          return badRequest("kind must be one of: ollama, lmstudio, custom");
         }
         if (!baseUrl || !providerId) {
-          return json({ error: "baseUrl and providerId are required" }, 400);
+          return badRequest("baseUrl and providerId are required");
         }
 
         const patch = buildLocalProviderConfig(kind, providerId, baseUrl, {
@@ -346,12 +354,11 @@ export async function POST(request: NextRequest) {
           declareModel: kind === "custom" && modelToSet ? { ref: modelToSet } : undefined,
         });
         if (!Object.keys(patch).length) {
-          return json({ error: "Could not build a config patch for this provider" }, 400);
+          return badRequest("Could not build a config patch for this provider");
         }
         if (kind === "custom" && !modelToSet) {
-          return json(
-            { error: "Pick a model before connecting a custom provider — the gateway requires at least one." },
-            400,
+          return badRequest(
+            "Pick a model before connecting a custom provider — the gateway requires at least one.",
           );
         }
 
@@ -368,7 +375,7 @@ export async function POST(request: NextRequest) {
         try {
           await patchConfig(patch);
         } catch (err) {
-          return json({ error: `Failed to save local provider: ${err instanceof Error ? err.message : err}` }, 500);
+          return serverError(`Failed to save local provider: ${err instanceof Error ? err.message : err}`);
         }
 
         return json({
@@ -383,7 +390,7 @@ export async function POST(request: NextRequest) {
       // ── Remove a provider's credentials ──
       case "remove-provider": {
         const provider = String(body.provider || "").trim().toLowerCase();
-        if (!provider) return json({ error: "Provider is required" }, 400);
+        if (!provider) return badRequest("Provider is required");
 
         const envKey = PROVIDER_ENV_KEYS[provider];
 
@@ -428,20 +435,23 @@ export async function POST(request: NextRequest) {
 
           return json({ ok: true, provider });
         } catch (err) {
-          return json({ error: `Failed to remove provider: ${err}` }, 500);
+          return serverError(`Failed to remove provider: ${err}`);
         }
       }
 
       // ── Set the default model ──
       case "set-primary": {
         const model = String(body.model || "").trim();
-        if (!model) return json({ error: "Model is required" }, 400);
+        if (!model) return badRequest("Model is required");
 
         try {
           await patchConfig({ agents: { defaults: { model: { primary: model } } } });
           return json({ ok: true, model });
         } catch (patchErr) {
-          console.error("[set-primary] patchConfig failed, trying disk fallback:", patchErr);
+          ctx.log.warn(
+            { err: patchErr instanceof Error ? patchErr.message : String(patchErr) },
+            "[set-primary] patchConfig failed, trying disk fallback",
+          );
           // Disk fallback — write to the main config file
           try {
             const configPath = join(OPENCLAW_HOME, "openclaw.json");
@@ -458,7 +468,7 @@ export async function POST(request: NextRequest) {
             await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
             return json({ ok: true, model });
           } catch (err) {
-            return json({ error: `Failed to set model: ${err}` }, 500);
+            return serverError(`Failed to set model: ${err}`);
           }
         }
       }
@@ -472,7 +482,7 @@ export async function POST(request: NextRequest) {
           Array.isArray(body.models) ? (body.models as unknown[]) : []
         );
         if (models.length === 0) {
-          return json({ error: "At least one model is required" }, 400);
+          return badRequest("At least one model is required");
         }
         const primary = models[0];
         const fallbacks = models.slice(1);
@@ -484,14 +494,17 @@ export async function POST(request: NextRequest) {
           );
           return json({ ok: true, primary, fallbacks });
         } catch (patchErr) {
-          console.error("[set-model-chain] patchConfig failed, trying OpenClaw CLI fallback:", patchErr);
+          ctx.log.warn(
+            { err: patchErr instanceof Error ? patchErr.message : String(patchErr) },
+            "[set-model-chain] patchConfig failed, trying OpenClaw CLI fallback",
+          );
           try {
             // Use OpenClaw's own config command so unknown refs are rejected
             // and schema validation still runs while the Gateway is offline.
             await setModelPriorityWithCli(models);
             return json({ ok: true, primary, fallbacks });
           } catch (err) {
-            return json({ error: `Failed to set model priority: ${err}` }, 500);
+            return serverError(`Failed to set model priority: ${err}`);
           }
         }
       }
@@ -509,7 +522,10 @@ export async function POST(request: NextRequest) {
           );
           return json({ ok: true, fallbacks });
         } catch (patchErr) {
-          console.error("[set-fallbacks] patchConfig failed, trying disk fallback:", patchErr);
+          ctx.log.warn(
+            { err: patchErr instanceof Error ? patchErr.message : String(patchErr) },
+            "[set-fallbacks] patchConfig failed, trying disk fallback",
+          );
           try {
             const configPath = join(OPENCLAW_HOME, "openclaw.json");
             let config: Record<string, unknown> = {};
@@ -526,7 +542,7 @@ export async function POST(request: NextRequest) {
             await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
             return json({ ok: true, fallbacks });
           } catch (err) {
-            return json({ error: `Failed to set fallbacks: ${err}` }, 500);
+            return serverError(`Failed to set fallbacks: ${err}`);
           }
         }
       }
@@ -536,7 +552,7 @@ export async function POST(request: NextRequest) {
       case "list-models": {
         const provider = String(body.provider || "").trim().toLowerCase();
         let token = String(body.token || "").trim();
-        if (!provider) return json({ error: "Provider is required" }, 400);
+        if (!provider) return badRequest("Provider is required");
 
         // Local/loopback providers have no token to fetch — their catalog
         // comes straight from the server itself, keyed off the `baseUrl`
@@ -574,13 +590,13 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        if (!token) return json({ error: "No API key found for this provider" }, 400);
+        if (!token) return badRequest("No API key found for this provider");
 
         try {
           const models = await fetchModelsFromProvider(provider, token);
           return json({ ok: true, models });
         } catch (err) {
-          return json({ error: `Failed to fetch models: ${err}` }, 500);
+          return serverError(`Failed to fetch models: ${err}`);
         }
       }
 
@@ -588,16 +604,21 @@ export async function POST(request: NextRequest) {
       case "test-key": {
         const provider = String(body.provider || "").trim().toLowerCase();
         const token = String(body.token || "").trim();
-        if (!provider || !token) return json({ error: "Provider and token required" }, 400);
+        if (!provider || !token) return badRequest("Provider and token required");
 
         const result = await validateProviderToken(provider, token);
         return json(result);
       }
 
       default:
-        return json({ error: `Unknown action: ${action}` }, 400);
+        // Unreachable in practice — `modelsPostSchema` (a discriminated
+        // union keyed on `action`) already rejects an unrecognized action
+        // before this handler runs (400, Zod `details` tree). Kept as a
+        // defensive fallback for a body that reached here some other way.
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return serverError(String(err));
   }
-}
+  },
+);
