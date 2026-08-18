@@ -13,16 +13,27 @@ import pino from "pino";
 
 /**
  * Redaction paths. Covers the gateway auth token, the mission-control proxy
- * secret, common header locations for credentials, and wildcard key names
- * (`token`, `secret`, `password`, `apiKey`, `api_key`) so a credential-shaped
- * field logged from any call site is censored regardless of where it lives
- * in the payload shape.
+ * secret, common header locations for credentials, and credential-shaped key
+ * names (`token`, `secret`, `password`, `apiKey`, `api_key`) so a payload
+ * logged from any call site is censored regardless of where it lives in the
+ * shape.
+ *
+ * Both the bare key (`token`) and the one-level-nested wildcard (`*.token`)
+ * are listed: pino/fast-redact's `*` wildcard matches exactly one level, so
+ * `*.token` alone redacts `someObj.token` but NOT a `token` key sitting at
+ * the payload's own root (`logger.info({ token: "..." })` is a very common
+ * call shape — the bare path is required to cover it too).
  */
 const REDACT_PATHS = [
   "gateway.auth.token",
   "req.headers.authorization",
   "req.headers.cookie",
   'res.headers["set-cookie"]',
+  "token",
+  "secret",
+  "password",
+  "apiKey",
+  "api_key",
   "*.token",
   "*.secret",
   "*.password",
