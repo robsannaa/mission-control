@@ -33,6 +33,8 @@ import { getSnapshot, peekSnapshot, DEFAULT_MAX_AGE_MS } from "@/lib/doctor-snap
 import { diffAgainstHistory, getTrend } from "@/lib/doctor-history";
 import { REGISTERED_CHECK_COUNT } from "@/lib/doctor-score";
 import type { DoctorSnapshot } from "@/lib/doctor-types";
+import { withRoute } from "@/lib/api-route";
+import { doctorStatusGetQuerySchema, type DoctorStatusGetQuery } from "@/lib/schemas/workspace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
@@ -90,17 +92,18 @@ function neverChecked(): DoctorSnapshot {
   };
 }
 
-export async function GET(request: NextRequest) {
-  const params = new URL(request.url).searchParams;
-  const peek = params.get("peek") === "1";
-  const force = params.get("refresh") === "1";
-  const withHistory = params.get("history") !== "0";
+export const GET = withRoute<unknown, DoctorStatusGetQuery>(
+  { name: "/api/doctor/status", querySchema: doctorStatusGetQuerySchema },
+  async (_request: NextRequest, ctx) => {
+  const peek = ctx.query.peek === "1";
+  const force = ctx.query.refresh === "1";
+  const withHistory = ctx.query.history !== "0";
   // `Number(null)` is 0, not NaN — reading the parameter without checking for
   // its absence first made every unparameterised call look like `maxAgeMs=0`
   // and bypass the cache, which is precisely the "one subprocess per poll"
   // behaviour this route exists to avoid.
-  const rawMaxAge = params.get("maxAgeMs");
-  const parsedMaxAge = rawMaxAge === null ? NaN : Number(rawMaxAge);
+  const rawMaxAge = ctx.query.maxAgeMs;
+  const parsedMaxAge = rawMaxAge === undefined ? NaN : Number(rawMaxAge);
   const maxAgeMs =
     Number.isFinite(parsedMaxAge) && parsedMaxAge >= 0 ? parsedMaxAge : DEFAULT_MAX_AGE_MS;
 
@@ -128,4 +131,5 @@ export async function GET(request: NextRequest) {
   ]);
 
   return NextResponse.json({ ...snapshot, diff, trend });
-}
+  },
+);

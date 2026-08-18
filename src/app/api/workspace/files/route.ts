@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readdir, realpath, stat } from "fs/promises";
 import { extname, join, relative } from "path";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, notFound } from "@/lib/api-errors";
+import { workspaceFilesGetQuerySchema, type WorkspaceFilesGetQuery } from "@/lib/schemas/workspace";
 
 type WorkspaceFileRow = {
   relativePath: string;
@@ -73,14 +76,20 @@ async function walkFiles(
   return out.length >= MAX_FILES;
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const rawPath = (searchParams.get("path") || "").trim();
+/**
+ * `path` here is deliberately not workspace-relative or root-confined — this
+ * route browses whatever absolute directory an agent reports as its own
+ * workspace (`src/components/agents-view.tsx` passes each agent's
+ * server-reported `workspace` path straight through), so
+ * `workspaceFilesGetQuerySchema` only bounds length and rejects a null byte
+ * (see `src/lib/schemas/workspace.ts`).
+ */
+export const GET = withRoute<unknown, WorkspaceFilesGetQuery>(
+  { name: "/api/workspace/files", querySchema: workspaceFilesGetQuerySchema },
+  async (_request: NextRequest, ctx) => {
+  const rawPath = (ctx.query.path || "").trim();
   if (!rawPath) {
-    return NextResponse.json(
-      { error: "Missing required query param: path" },
-      { status: 400 }
-    );
+    return badRequest("Missing required query param: path");
   }
 
   let workspacePath = rawPath;
@@ -94,16 +103,10 @@ export async function GET(request: NextRequest) {
   try {
     s = await stat(workspacePath);
   } catch {
-    return NextResponse.json(
-      { error: `Workspace path not found: ${workspacePath}` },
-      { status: 404 }
-    );
+    return notFound(`Workspace path not found: ${workspacePath}`);
   }
   if (!s.isDirectory()) {
-    return NextResponse.json(
-      { error: `Workspace path is not a directory: ${workspacePath}` },
-      { status: 400 }
-    );
+    return badRequest(`Workspace path is not a directory: ${workspacePath}`);
   }
 
   const files: WorkspaceFileRow[] = [];
@@ -116,4 +119,5 @@ export async function GET(request: NextRequest) {
     truncated,
     files,
   });
-}
+  },
+);

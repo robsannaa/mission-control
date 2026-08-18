@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "fs/promises";
-import { join, normalize, resolve } from "path";
+import { normalize, resolve } from "path";
 import { getDefaultWorkspace } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
+import { apiError, badRequest, notFound } from "@/lib/api-errors";
+import { workspaceFileGetQuerySchema, type WorkspaceFileGetQuery } from "@/lib/schemas/workspace";
 
 const IMAGE_EXTENSIONS = new Set([
   ".png",
@@ -18,15 +21,19 @@ const IMAGE_EXTENSIONS = new Set([
  * GET /api/workspace/file?path=relative/path/to/file.png
  * Serves a single file from the workspace (e.g. for kanban task attachments).
  * Path must be relative to workspace root; no directory traversal (..) allowed.
+ *
+ * T-02-55 (Information Disclosure): `path` is bounded, traversal-rejecting
+ * and absolute-prefix-rejecting in `workspaceFileGetQuerySchema` before this
+ * handler runs — no filesystem read is attempted for a rejected path. The
+ * `resolve()`/`startsWith()` containment check below stays as
+ * defense-in-depth (same precedent as the docs route in plan 02-08).
  */
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const rawPath = (searchParams.get("path") || "").trim();
+export const GET = withRoute<unknown, WorkspaceFileGetQuery>(
+  { name: "/api/workspace/file", querySchema: workspaceFileGetQuerySchema },
+  async (_request: NextRequest, ctx) => {
+  const rawPath = (ctx.query.path || "").trim();
   if (!rawPath) {
-    return NextResponse.json(
-      { error: "Missing required query param: path" },
-      { status: 400 }
-    );
+    return badRequest("Missing required query param: path");
   }
 
   const normalized = normalize(rawPath).replace(/\\/g, "/");
@@ -35,7 +42,7 @@ export async function GET(request: NextRequest) {
     const workspace = await getDefaultWorkspace();
     const resolved = resolve(workspace, normalized);
     if (!resolved.startsWith(workspace)) {
-      return NextResponse.json({ error: "Invalid path" }, { status: 403 });
+      return apiError("Invalid path", 403);
     }
     const fullPath = resolved;
     const content = await readFile(fullPath);
@@ -59,9 +66,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch {
-    return NextResponse.json(
-      { error: "File not found or not readable" },
-      { status: 404 }
-    );
+    return notFound("File not found or not readable");
   }
-}
+  },
+);

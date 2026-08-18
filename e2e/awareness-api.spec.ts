@@ -14,6 +14,16 @@ import {
 
 let directory = "";
 
+/**
+ * `withRoute` (src/lib/api-route.ts) requires a second `{ params: Promise<...> }`
+ * argument on every wrapped handler — even for these three routes, none of
+ * which have a dynamic segment — matching Next.js's own generated route
+ * type-check. This file calls the handlers directly (not through
+ * `testApiHandler`), so it supplies the empty-params context Next.js would
+ * normally construct itself.
+ */
+const noParams = { params: Promise.resolve({}) };
+
 function request(url: string, body: unknown, headers?: Record<string, string>) {
   return new NextRequest(url, {
     method: "POST",
@@ -51,7 +61,7 @@ test.describe.serial("interaction API", () => {
       "http://127.0.0.1:3100/api/interactions/intake",
       { interaction: interaction("intake-local") },
       { host: "127.0.0.1:3100" },
-    ));
+    ), noParams);
     expect(response.status).toBe(201);
     expect((await response.json()).interaction.status).toBe("open");
   });
@@ -61,7 +71,7 @@ test.describe.serial("interaction API", () => {
       "https://mission.example/api/interactions/intake",
       { interaction: interaction("intake-remote") },
       { host: "mission.example" },
-    ));
+    ), noParams);
     expect(response.status).toBe(503);
   });
 
@@ -71,7 +81,7 @@ test.describe.serial("interaction API", () => {
       "https://mission.example/api/interactions/intake",
       { interaction: interaction("missing-token") },
       { host: "mission.example" },
-    ));
+    ), noParams);
     expect(response.status).toBe(401);
   });
 
@@ -80,7 +90,7 @@ test.describe.serial("interaction API", () => {
       "https://mission.example/api/interactions/intake",
       { interaction: interaction("valid-token") },
       { host: "mission.example", authorization: "Bearer secret-value" },
-    ));
+    ), noParams);
     expect(response.status).toBe(201);
     delete process.env.MISSION_CONTROL_AWARENESS_TOKEN;
   });
@@ -89,13 +99,13 @@ test.describe.serial("interaction API", () => {
     const response = await interactionApi(request(
       "http://127.0.0.1:3100/api/interactions",
       { action: "create", interaction: interaction("browser-create") },
-    ));
+    ), noParams);
     expect(response.status).toBe(201);
     expect((await response.json()).interaction.question).toBe("Who is Alex?");
   });
 
   test("list endpoint returns active questions", async () => {
-    const response = await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=active"));
+    const response = await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=active"), noParams);
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.count).toBeGreaterThanOrEqual(3);
@@ -103,11 +113,11 @@ test.describe.serial("interaction API", () => {
   });
 
   test("chat deep links can load one durable question by id", async () => {
-    const list = await (await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=active"))).json();
+    const list = await (await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=active"), noParams)).json();
     const target = list.interactions.find((item: { idempotencyKey: string }) => item.idempotencyKey === "browser-create");
     const response = await listApi(new NextRequest(
       `http://127.0.0.1:3100/api/interactions?id=${encodeURIComponent(target.id)}`,
-    ));
+    ), noParams);
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.interaction.id).toBe(target.id);
@@ -117,17 +127,17 @@ test.describe.serial("interaction API", () => {
   test("unknown question deep links return not found", async () => {
     const response = await listApi(new NextRequest(
       "http://127.0.0.1:3100/api/interactions?id=00000000-0000-4000-8000-000000000000",
-    ));
+    ), noParams);
     expect(response.status).toBe(404);
   });
 
   test("answer endpoint accepts an answer without a resumable session", async () => {
-    const list = await (await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=active"))).json();
+    const list = await (await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=active"), noParams)).json();
     const target = list.interactions.find((item: { idempotencyKey: string }) => item.idempotencyKey === "browser-create");
     const response = await interactionApi(request(
       "http://127.0.0.1:3100/api/interactions",
       { action: "answer", id: target.id, answer: "Alex is my accountant" },
-    ));
+    ), noParams);
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.accepted).toBe(true);
@@ -136,23 +146,23 @@ test.describe.serial("interaction API", () => {
   });
 
   test("a duplicate answer returns conflict", async () => {
-    const all = await (await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=all"))).json();
+    const all = await (await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=all"), noParams)).json();
     const target = all.interactions.find((item: { idempotencyKey: string }) => item.idempotencyKey === "browser-create");
     const response = await interactionApi(request(
       "http://127.0.0.1:3100/api/interactions",
       { action: "answer", id: target.id, answer: "Different" },
-    ));
+    ), noParams);
     expect(response.status).toBe(409);
     expect((await response.json()).accepted).toBe(false);
   });
 
   test("skip endpoint removes a question from the active list", async () => {
-    const list = await (await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=active"))).json();
+    const list = await (await listApi(new NextRequest("http://127.0.0.1:3100/api/interactions?status=active"), noParams)).json();
     const target = list.interactions.find((item: { idempotencyKey: string }) => item.idempotencyKey === "intake-local");
     const response = await interactionApi(request(
       "http://127.0.0.1:3100/api/interactions",
       { action: "skip", id: target.id },
-    ));
+    ), noParams);
     expect(response.status).toBe(200);
     expect((await response.json()).interaction.status).toBe("skipped");
   });
@@ -165,7 +175,7 @@ test.describe.serial("interaction API", () => {
       "http://127.0.0.1:3100/api/interactions/intake",
       { action: "complete", id: created.id, success: true, runId: "resumed-run" },
       { host: "127.0.0.1:3100" },
-    ));
+    ), noParams);
     expect(response.status).toBe(200);
     expect((await response.json()).interaction.status).toBe("completed");
   });
@@ -175,7 +185,7 @@ test.describe.serial("interaction API", () => {
       "http://127.0.0.1:3100/api/interactions/intake",
       { action: "pause" },
       { host: "127.0.0.1:3100" },
-    ));
+    ), noParams);
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe("jobId is required");
   });
@@ -184,7 +194,7 @@ test.describe.serial("interaction API", () => {
     const response = await interactionApi(request(
       "http://127.0.0.1:3100/api/interactions",
       { action: "explode" },
-    ));
+    ), noParams);
     expect(response.status).toBe(400);
   });
 });

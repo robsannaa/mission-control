@@ -3,39 +3,51 @@ import { answerAndResume, reEnableCronIfSettled, requestClarification } from "@/
 import { resolveInteractionScope } from "@/lib/awareness/scope";
 import { getInteraction, listInteractions, transitionInteraction } from "@/lib/awareness/store";
 import type { InteractionStatus, WorkflowSourceKind } from "@/lib/awareness/types";
+import { withRoute } from "@/lib/api-route";
+import { apiError, badRequest, notFound, serverError } from "@/lib/api-errors";
+import {
+  interactionsGetQuerySchema,
+  interactionsPostSchema,
+  type InteractionsGetQuery,
+  type InteractionsPostInput,
+} from "@/lib/schemas/workspace";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute<unknown, InteractionsGetQuery>(
+  { name: "/api/interactions", querySchema: interactionsGetQuerySchema },
+  async (request: NextRequest, ctx) => {
   try {
     const scope = resolveInteractionScope(request);
-    const params = request.nextUrl.searchParams;
-    const id = params.get("id")?.trim();
+    const id = ctx.query.id?.trim();
     if (id) {
       const interaction = await getInteraction(id, scope.tenantId);
       if (!interaction) {
-        return NextResponse.json({ error: "Interaction not found" }, { status: 404 });
+        return notFound("Interaction not found");
       }
       return NextResponse.json({ interaction });
     }
-    const status = (params.get("status") || "active") as InteractionStatus | "active" | "all";
+    const status = (ctx.query.status || "active") as InteractionStatus | "active" | "all";
     const interactions = await listInteractions({
       tenantId: scope.tenantId,
       userId: scope.userId,
       status,
-      sourceKind: (params.get("source") || undefined) as WorkflowSourceKind | undefined,
-      limit: Number(params.get("limit") || 50),
+      sourceKind: (ctx.query.source || undefined) as WorkflowSourceKind | undefined,
+      limit: Number(ctx.query.limit || 50),
     });
     return NextResponse.json({ interactions, count: interactions.length });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return serverError(error instanceof Error ? error.message : String(error));
   }
-}
+  },
+);
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute<InteractionsPostInput>(
+  { name: "/api/interactions", bodySchema: interactionsPostSchema },
+  async (request: NextRequest, ctx) => {
   try {
     const scope = resolveInteractionScope(request);
-    const body = await request.json() as Record<string, unknown>;
+    const body = ctx.body as Record<string, unknown>;
     const action = String(body.action || "");
     if (action === "create") {
       const interaction = await requestClarification({
@@ -49,7 +61,7 @@ export async function POST(request: NextRequest) {
       const id = String(body.id || "");
       const answer = String(body.answer || "");
       if (!id || !answer.trim()) {
-        return NextResponse.json({ error: "id and answer are required" }, { status: 400 });
+        return badRequest("id and answer are required");
       }
       const result = await answerAndResume({
         id,
@@ -63,7 +75,7 @@ export async function POST(request: NextRequest) {
     }
     if (action === "skip" || action === "cancel") {
       const id = String(body.id || "");
-      if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+      if (!id) return badRequest("id is required");
       const interaction = await transitionInteraction({
         id,
         tenantId: scope.tenantId,
@@ -73,10 +85,11 @@ export async function POST(request: NextRequest) {
       await reEnableCronIfSettled(interaction);
       return NextResponse.json({ ok: true, interaction });
     }
-    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    return badRequest("Unknown action");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = /not found/i.test(message) ? 404 : /required|characters|transition/i.test(message) ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return apiError(message, status);
   }
-}
+  },
+);

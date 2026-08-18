@@ -6,58 +6,64 @@ import {
   sendNudge,
   type Commitment,
 } from "@/lib/commitments";
+import { withRoute } from "@/lib/api-route";
+import { apiError, badRequest, serverError } from "@/lib/api-errors";
+import {
+  commitmentsGetQuerySchema,
+  commitmentsPostSchema,
+  type CommitmentsGetQuery,
+  type CommitmentsPostInput,
+} from "@/lib/schemas/workspace";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
-  const status = request.nextUrl.searchParams.get("status")?.trim() || "pending";
+export const GET = withRoute<unknown, CommitmentsGetQuery>(
+  { name: "/api/commitments", querySchema: commitmentsGetQuerySchema },
+  async (_request: NextRequest, ctx) => {
+  const status = ctx.query.status?.trim() || "pending";
   try {
     const result = await listCommitments(status);
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return serverError(error instanceof Error ? error.message : String(error));
   }
-}
+  },
+);
 
-export async function POST(request: NextRequest) {
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+export const POST = withRoute<CommitmentsPostInput>(
+  { name: "/api/commitments", bodySchema: commitmentsPostSchema },
+  async (_request: NextRequest, ctx) => {
+  const body = ctx.body as Record<string, unknown>;
   const action = String(body.action || "");
   try {
     if (action === "dismiss") {
       const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(String) : [];
-      if (ids.length === 0) return NextResponse.json({ error: "ids are required" }, { status: 400 });
+      if (ids.length === 0) return badRequest("ids are required");
       await dismissCommitments(ids);
     } else if (action === "answer") {
       const commitment = body.commitment as Commitment | undefined;
       const answer = String(body.answer || "");
-      if (!commitment?.id) return NextResponse.json({ error: "commitment is required" }, { status: 400 });
-      if (!answer.trim()) return NextResponse.json({ error: "answer is required" }, { status: 400 });
+      if (!commitment?.id) return badRequest("commitment is required");
+      if (!answer.trim()) return badRequest("answer is required");
       await answerCommitment(commitment, answer);
       const result = await listCommitments("pending");
       return NextResponse.json({ ok: true, ...result });
     } else if (action === "send") {
       const commitment = body.commitment as Commitment | undefined;
-      if (!commitment?.id) return NextResponse.json({ error: "commitment is required" }, { status: 400 });
+      if (!commitment?.id) return badRequest("commitment is required");
       const result = await sendNudge(commitment, Boolean(body.dryRun));
       // After sending, drop the open loop so it doesn't linger.
       if (!body.dryRun) await dismissCommitments([commitment.id]).catch(() => {});
       return NextResponse.json({ ok: true, ...result });
     } else {
-      return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+      return badRequest(`Unknown action: ${action}`);
     }
     const result = await listCommitments("pending");
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = /required|no channel|no recipient|no suggested|no session/i.test(message) ? 400 : 500;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiError(message, status);
   }
-}
+  },
+);

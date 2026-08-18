@@ -6,33 +6,30 @@ import {
   setExecMode,
   type ExecMode,
 } from "@/lib/exec-approvals";
+import { withRoute } from "@/lib/api-route";
+import { apiError, badRequest, serverError } from "@/lib/api-errors";
+import { approvalsPostSchema, type ApprovalsPostInput } from "@/lib/schemas/workspace";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/approvals" }, async () => {
   try {
     return NextResponse.json(await getApprovals());
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return serverError(error instanceof Error ? error.message : String(error));
   }
-}
+});
 
-export async function POST(request: NextRequest) {
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+export const POST = withRoute<ApprovalsPostInput>(
+  { name: "/api/approvals", bodySchema: approvalsPostSchema },
+  async (_request: NextRequest, ctx) => {
+  const body = ctx.body as Record<string, unknown>;
   const action = String(body.action || "");
   try {
     if (action === "set-mode") {
       const mode = String(body.mode || "") as ExecMode;
       if (mode !== "autonomous" && mode !== "guarded") {
-        return NextResponse.json({ error: "mode must be 'autonomous' or 'guarded'" }, { status: 400 });
+        return badRequest("mode must be 'autonomous' or 'guarded'");
       }
       await setExecMode(mode);
     } else if (action === "allowlist-add") {
@@ -40,12 +37,13 @@ export async function POST(request: NextRequest) {
     } else if (action === "allowlist-remove") {
       await allowlistRemove(String(body.pattern || ""), String(body.agent || "*"));
     } else {
-      return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+      return badRequest(`Unknown action: ${action}`);
     }
     return NextResponse.json({ ok: true, ...(await getApprovals()) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = /required|must be/i.test(message) ? 400 : 500;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiError(message, status);
   }
-}
+  },
+);

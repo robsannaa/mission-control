@@ -4,6 +4,9 @@ import { reEnableCronIfSettled, requestClarification } from "@/lib/awareness/eng
 import { resolveInteractionScope } from "@/lib/awareness/scope";
 import { transitionInteraction } from "@/lib/awareness/store";
 import { gatewayCall } from "@/lib/openclaw";
+import { withRoute } from "@/lib/api-route";
+import { apiError, badRequest, unauthorized } from "@/lib/api-errors";
+import { interactionsIntakePostSchema, type InteractionsIntakePostInput } from "@/lib/schemas/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -16,27 +19,36 @@ function loopbackHost(request: NextRequest): boolean {
   }
 }
 
-/** Machine-to-machine intake used by the OpenClaw awareness plugin. */
-export async function POST(request: NextRequest) {
+/**
+ * Machine-to-machine intake used by the OpenClaw awareness plugin.
+ *
+ * `interactionsIntakePostSchema` (src/lib/schemas/workspace.ts) stays a
+ * loose optional `action` string — not in this plan's threat register for
+ * enumeration, and the Bearer-token check below (not the body shape) is
+ * this route's actual authorization boundary. Schema validation still runs
+ * before that check (the same `withRoute` ordering already accepted for
+ * `POST /api/auth/login` in plan 02-05), but the schema is loose enough
+ * that only a genuinely malformed JSON body is affected.
+ */
+export const POST = withRoute<InteractionsIntakePostInput>(
+  { name: "/api/interactions/intake", bodySchema: interactionsIntakePostSchema },
+  async (request: NextRequest, ctx) => {
   const configured = String(process.env.MISSION_CONTROL_AWARENESS_TOKEN || "").trim();
   const presented = String(request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
 
   if (configured) {
     if (!presented || !(await constantTimeEquals(presented, configured))) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      return unauthorized("unauthorized");
     }
   } else if (getAuthMode() !== "off" || !loopbackHost(request)) {
-    return NextResponse.json(
-      { error: "MISSION_CONTROL_AWARENESS_TOKEN is required outside loopback local mode" },
-      { status: 503 },
-    );
+    return apiError("MISSION_CONTROL_AWARENESS_TOKEN is required outside loopback local mode", 503);
   }
 
   // Tenant/user come from the SERVER, never the request body. (B2)
   const scope = resolveInteractionScope(request);
 
   try {
-    const body = await request.json() as {
+    const body = ctx.body as {
       action?: "create" | "complete" | "pause";
       id?: string;
       jobId?: string;
@@ -46,7 +58,7 @@ export async function POST(request: NextRequest) {
       interaction?: Parameters<typeof requestClarification>[0];
     };
     if (body.action === "pause") {
-      if (!body.jobId) return NextResponse.json({ error: "jobId is required" }, { status: 400 });
+      if (!body.jobId) return badRequest("jobId is required");
       await gatewayCall(
         "cron.update",
         { id: body.jobId, patch: { enabled: false } },
@@ -55,7 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, jobId: body.jobId, schedulePaused: true });
     }
     if (body.action === "complete") {
-      if (!body.id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+      if (!body.id) return badRequest("id is required");
       const interaction = await transitionInteraction({
         id: body.id,
         tenantId: scope.tenantId,
@@ -70,15 +82,12 @@ export async function POST(request: NextRequest) {
       await reEnableCronIfSettled(interaction);
       return NextResponse.json({ ok: true, interaction });
     }
-    if (!body.interaction) return NextResponse.json({ error: "interaction is required" }, { status: 400 });
+    if (!body.interaction) return badRequest("interaction is required");
     // Bug fix 2026-08-16: validate `source` before delegating. Without it, the
     // awareness engine throws "Cannot read properties of undefined (reading
     // 'runId')" and surfaces as a generic 500. Surface a precise 400 instead.
     if (!body.interaction.source || typeof body.interaction.source !== "object") {
-      return NextResponse.json(
-        { error: "interaction.source is required (kind, id, label, and optional sessionKey/agentId)" },
-        { status: 400 },
-      );
+      return badRequest("interaction.source is required (kind, id, label, and optional sessionKey/agentId)");
     }
     // Overwrite any caller-supplied tenant/user with the server-resolved scope.
     const interaction = await requestClarification({
@@ -96,6 +105,7 @@ export async function POST(request: NextRequest) {
     // "must not contain", "must start with", "must contain only".
     const isClientError =
       /required|characters|must be a string|must not contain|must start with|must contain only/i.test(message);
-    return NextResponse.json({ error: message }, { status: isClientError ? 400 : 500 });
+    return apiError(message, isClientError ? 400 : 500);
   }
-}
+  },
+);

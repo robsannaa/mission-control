@@ -18,14 +18,23 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { listDoctorRuns, deleteDoctorRun, getTrend } from "@/lib/doctor-history";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, notFound } from "@/lib/api-errors";
+import {
+  doctorHistoryGetQuerySchema,
+  doctorHistoryDeleteQuerySchema,
+  type DoctorHistoryGetQuery,
+  type DoctorHistoryDeleteQuery,
+} from "@/lib/schemas/workspace";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
-  const params = new URL(request.url).searchParams;
-  const limit = Math.min(Math.max(parseInt(params.get("limit") || "20", 10) || 20, 1), 50);
-  const offset = Math.max(parseInt(params.get("offset") || "0", 10) || 0, 0);
-  const summaryOnly = params.get("summary") === "1";
+export const GET = withRoute<unknown, DoctorHistoryGetQuery>(
+  { name: "/api/doctor/history", querySchema: doctorHistoryGetQuerySchema },
+  async (_request: NextRequest, ctx) => {
+  const limit = Math.min(Math.max(parseInt(ctx.query.limit || "20", 10) || 20, 1), 50);
+  const offset = Math.max(parseInt(ctx.query.offset || "0", 10) || 0, 0);
+  const summaryOnly = ctx.query.summary === "1";
 
   const [result, trend] = await Promise.all([
     listDoctorRuns(limit, offset),
@@ -43,13 +52,17 @@ export async function GET(request: NextRequest) {
     : result.runs;
 
   return NextResponse.json({ ...result, runs, trend });
-}
+  },
+);
 
-export async function DELETE(request: NextRequest) {
-  const id = new URL(request.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id parameter required" }, { status: 400 });
+export const DELETE = withRoute<unknown, DoctorHistoryDeleteQuery>(
+  { name: "/api/doctor/history", querySchema: doctorHistoryDeleteQuerySchema },
+  async (_request: NextRequest, ctx) => {
+  const id = ctx.query.id;
+  if (!id) return badRequest("id parameter required");
 
   const deleted = await deleteDoctorRun(id);
-  if (!deleted) return NextResponse.json({ error: "Run not found" }, { status: 404 });
+  if (!deleted) return notFound("Run not found");
   return NextResponse.json({ ok: true });
-}
+  },
+);

@@ -19,15 +19,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSnapshot, peekTranscript } from "@/lib/doctor-snapshot";
 import { renderReportMarkdown } from "@/lib/doctor-share-report";
+import { withRoute } from "@/lib/api-route";
+import { doctorReportGetQuerySchema, type DoctorReportGetQuery } from "@/lib/schemas/workspace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
 
-export async function GET(request: NextRequest) {
-  const params = new URL(request.url).searchParams;
-  const format = params.get("format") === "json" ? "json" : "markdown";
-  const includeTranscript = params.get("transcript") === "1";
-  const force = params.get("refresh") === "1";
+export const GET = withRoute<unknown, DoctorReportGetQuery>(
+  { name: "/api/doctor/report", querySchema: doctorReportGetQuerySchema },
+  async (_request: NextRequest, ctx) => {
+  const format = ctx.query.format === "json" ? "json" : "markdown";
+  const includeTranscript = ctx.query.transcript === "1";
+  const force = ctx.query.refresh === "1";
 
   const snapshot = await getSnapshot({ force });
   const markdown = renderReportMarkdown(snapshot, {
@@ -45,4 +48,5 @@ export async function GET(request: NextRequest) {
       "Cache-Control": "no-store",
     },
   });
-}
+  },
+);
