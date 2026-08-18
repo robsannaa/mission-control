@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   MAX_LOOKUP_PATHS_PER_REQUEST,
   lookupConfigPath,
@@ -6,7 +6,8 @@ import {
   type ConfigLookupOutcome,
   type NormalizedConfigLookup,
 } from "@/lib/config-schema-lookup";
-import { logRequest, logError } from "@/lib/request-log";
+import { withRoute } from "@/lib/api-route";
+import { badRequest, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -86,8 +87,7 @@ function sharedReason(outcomes: ConfigLookupOutcome[]): string | undefined {
     : undefined;
 }
 
-export async function GET(request: NextRequest) {
-  const start = Date.now();
+export const GET = withRoute({ name: "/api/config/lookup" }, async (request, ctx) => {
   const { searchParams } = new URL(request.url);
   const requested = collectRequestedPaths(searchParams);
   // `?paths=` (even with a single value) always answers in the map form, so
@@ -96,22 +96,15 @@ export async function GET(request: NextRequest) {
 
   try {
     if (requested.length === 0) {
-      return NextResponse.json(
-        {
-          error:
-            'Provide ?path=gateway.port for one field, or ?paths=gateway.port,agents.defaults.model for several.',
-        },
-        { status: 400 },
+      return badRequest(
+        'Provide ?path=gateway.port for one field, or ?paths=gateway.port,agents.defaults.model for several.',
       );
     }
 
     if (requested.length > MAX_LOOKUP_PATHS_PER_REQUEST) {
-      return NextResponse.json(
-        {
-          error: `Too many paths: ${requested.length}. This endpoint looks up at most ${MAX_LOOKUP_PATHS_PER_REQUEST} paths per request — split the request.`,
-          max: MAX_LOOKUP_PATHS_PER_REQUEST,
-        },
-        { status: 400 },
+      return badRequest(
+        `Too many paths: ${requested.length}. This endpoint looks up at most ${MAX_LOOKUP_PATHS_PER_REQUEST} paths per request — split the request.`,
+        { max: MAX_LOOKUP_PATHS_PER_REQUEST },
       );
     }
 
@@ -122,10 +115,6 @@ export async function GET(request: NextRequest) {
         lookup: outcome.lookup,
         ...(outcome.reason ? { reason: outcome.reason } : {}),
       };
-      logRequest("/api/config/lookup", 200, Date.now() - start, {
-        path: outcome.path,
-        found: outcome.lookup ? "1" : "0",
-      });
       return NextResponse.json(body);
     }
 
@@ -143,13 +132,13 @@ export async function GET(request: NextRequest) {
       ...(Object.keys(reasons).length > 0 ? { reasons } : {}),
       ...(shared ? { reason: shared } : {}),
     };
-    logRequest("/api/config/lookup", 200, Date.now() - start, {
-      paths: String(outcomes.length),
-    });
     return NextResponse.json(body);
   } catch (err) {
     // lookupConfigPath* never throw; this is a genuine server fault.
-    logError("/api/config/lookup", err, { paths: requested.join(",") });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error(
+      { err: err instanceof Error ? err.message : String(err), paths: requested.join(",") },
+      "config lookup failed unexpectedly",
+    );
+    return serverError(String(err));
   }
-}
+});

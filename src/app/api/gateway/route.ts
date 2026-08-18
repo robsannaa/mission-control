@@ -7,7 +7,9 @@ import {
   isOpenClawVersionSupported,
 } from "@/lib/gateway-protocol";
 import { triggerResponsesEndpointSetup } from "@/lib/responses-endpoint";
-import { logRequest, logError } from "@/lib/request-log";
+import { withRoute } from "@/lib/api-route";
+import { gatewayActionSchema } from "@/lib/schemas/gateway";
+import { badRequest, serverError } from "@/lib/api-errors";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
@@ -131,19 +133,14 @@ async function computeGatewayPayload(): Promise<GatewayPayload> {
  *   3. Return online/offline based on the probe; include full health
  *      data when RPC completes in time.
  */
-export async function GET() {
+export const GET = withRoute({ name: "/api/gateway" }, async (_request, ctx) => {
   const start = Date.now();
   try {
     const cached = getCachedGatewayPayload(start);
     if (cached) {
-      logRequest("/api/gateway", 200, Date.now() - start, {
-        gateway: cached.status,
-        cached: true,
-      });
       return NextResponse.json(cached);
     }
 
-    const joinedInFlight = gatewayResponseInFlight !== null;
     if (!gatewayResponseInFlight) {
       gatewayResponseInFlight = computeGatewayPayload()
         .then((payload) => {
@@ -161,21 +158,16 @@ export async function GET() {
     }
 
     const payload = await gatewayResponseInFlight;
-    logRequest("/api/gateway", 200, Date.now() - start, {
-      gateway: payload.status,
-      coalesced: joinedInFlight,
-    });
     return NextResponse.json({ ...payload, stale: false });
   } catch (err) {
-    logError("/api/gateway", err, { phase: "get" });
+    ctx.log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "gateway status check failed",
+    );
 
     // Serve stale cache during gateway restart window rather than erroring.
     const stale = getStaleCachedGatewayPayload(start);
     if (stale) {
-      logRequest("/api/gateway", 200, Date.now() - start, {
-        gateway: stale.status,
-        stale: true,
-      });
       return NextResponse.json({ ...stale, stale: true, restarting: true });
     }
 
@@ -187,11 +179,13 @@ export async function GET() {
       restarting: true,
     });
   }
-}
-export async function POST(req: Request) {
+});
+
+export const POST = withRoute(
+  { name: "/api/gateway", bodySchema: gatewayActionSchema },
+  async (_request, ctx) => {
   try {
-    const body = await req.json();
-    const action = body.action as string;
+    const { action } = ctx.body;
 
     if (action === "restart" || action === "stop") {
       // Prefer service-manager commands (launchd/systemd/schtasks).
@@ -271,15 +265,13 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json(
-      { error: `Unknown action: ${action}` },
-      { status: 400 }
-    );
+    return badRequest(`Unknown action: ${String(action)}`);
   } catch (err) {
-    logError("/api/gateway", err);
-    return NextResponse.json(
-      { error: String(err) },
-      { status: 500 }
+    ctx.log.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      "gateway POST failed unexpectedly",
     );
+    return serverError(String(err));
   }
-}
+  },
+);

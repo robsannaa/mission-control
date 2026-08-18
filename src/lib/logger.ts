@@ -1,8 +1,9 @@
 /**
- * Structured request/error logger — replaces `src/lib/request-log.ts`.
+ * Structured request/error logger — replaces the former hand-rolled
+ * request logger module (retired in 02-04, see docs/API-CONTRACT.md).
  *
  * pino is the underlying engine; `safeLog` carries forward the exact
- * never-crash-a-request-over-logging contract `request-log.ts` already
+ * never-crash-a-request-over-logging contract the retired module already
  * implemented (a log-sink failure must never fail the request it describes).
  *
  * `createLogger(destination?)` exists so tests can capture NDJSON output
@@ -84,7 +85,7 @@ export function childLogger(bindings: Record<string, unknown>): pino.Logger {
 /**
  * Invoke `fn` for its logging side effect, swallowing any throw. A broken
  * log sink (disk full, pipe closed) must never fail the request it is
- * describing — the same contract `request-log.ts`'s `emit()` implemented.
+ * describing — the same contract the retired module's `emit()` implemented.
  */
 export function safeLog(fn: () => void): void {
   try {

@@ -3,6 +3,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { gatewayCall } from "@/lib/openclaw";
 import { getOpenClawBin } from "@/lib/paths";
+import { withRoute } from "@/lib/api-route";
 
 export const dynamic = "force-dynamic";
 
@@ -281,7 +282,7 @@ function buildStatusHighlights(status: GatewayStatusPayload): Highlight[] {
   return out;
 }
 
-export async function GET() {
+export const GET = withRoute({ name: "/api/gateway/diagnostics" }, async () => {
   let status: GatewayStatusPayload | null = null;
   let statusErr: string | null = null;
 
@@ -346,4 +347,4 @@ export async function GET() {
     summary: summarize(highlights),
     highlights,
   });
-}
+});
