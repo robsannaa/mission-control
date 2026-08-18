@@ -1,6 +1,13 @@
-import { NextRequest } from "next/server";
 import { spawn, execSync, type ChildProcessWithoutNullStreams } from "child_process";
 import { getOpenClawHome } from "@/lib/paths";
+import { withPassthroughRoute } from "@/lib/api-route";
+import { badRequest, notFound } from "@/lib/api-errors";
+import {
+  terminalGetQuerySchema,
+  terminalPostSchema,
+  type TerminalGetQuery,
+  type TerminalPostInput,
+} from "@/lib/schemas/streaming";
 
 export const dynamic = "force-dynamic";
 
@@ -264,133 +271,148 @@ function createSession(cols = 80, rows = 24): string {
 
 /* ── GET: SSE stream of terminal output ── */
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const action = searchParams.get("action") || "stream";
-  const sessionId = searchParams.get("session") || "";
+export const GET = withPassthroughRoute<unknown, TerminalGetQuery>(
+  { name: "/api/terminal", querySchema: terminalGetQuerySchema },
+  async (request, ctx) => {
+    const action = ctx.query.action || "stream";
+    const sessionId = ctx.query.session || "";
 
-  if (action === "list") {
-    const list = [...sessions.entries()].map(([id, s]) => ({
-      id,
-      alive: s.alive,
-      created: s.created,
-      age: Math.round((Date.now() - s.created) / 1000),
-    }));
-    return Response.json({ sessions: list });
-  }
+    if (action === "list") {
+      const list = [...sessions.entries()].map(([id, s]) => ({
+        id,
+        alive: s.alive,
+        created: s.created,
+        age: Math.round((Date.now() - s.created) / 1000),
+      }));
+      return Response.json({ sessions: list });
+    }
 
-  // SSE stream
-  if (!sessionId || !sessions.has(sessionId)) {
-    return Response.json({ error: "Invalid session" }, { status: 404 });
-  }
+    // SSE stream
+    if (!sessionId || !sessions.has(sessionId)) {
+      return notFound("Invalid session");
+    }
 
-  const session = sessions.get(sessionId)!;
-  const encoder = new TextEncoder();
+    const session = sessions.get(sessionId)!;
+    const encoder = new TextEncoder();
 
-  const stream = new ReadableStream({
-    start(controller) {
-      // Replay buffered output for reconnection
-      if (session.buffer.length > 0) {
-        const replay = session.buffer.join("");
+    const stream = new ReadableStream({
+      start(controller) {
+        // Replay buffered output for reconnection
+        if (session.buffer.length > 0) {
+          const replay = session.buffer.join("");
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: "output", text: replay })}\n\n`),
+          );
+        }
+
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "output", text: replay })}\n\n`),
+          encoder.encode(`data: ${JSON.stringify({ type: "status", alive: session.alive })}\n\n`),
         );
-      }
 
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ type: "status", alive: session.alive })}\n\n`),
-      );
+        const listener = (event: TerminalEvent) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          } catch {
+            session.listeners.delete(listener);
+          }
+        };
 
-      const listener = (event: TerminalEvent) => {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-        } catch {
+        session.listeners.add(listener);
+
+        // Heartbeat to keep connection alive through proxies
+        const heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+          } catch {
+            clearInterval(heartbeat);
+          }
+        }, 15000);
+
+        request.signal.addEventListener("abort", () => {
           session.listeners.delete(listener);
-        }
-      };
-
-      session.listeners.add(listener);
-
-      // Heartbeat to keep connection alive through proxies
-      const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(`: heartbeat\n\n`));
-        } catch {
           clearInterval(heartbeat);
-        }
-      }, 15000);
+          try { controller.close(); } catch { /* */ }
+        });
+      },
+    });
 
-      request.signal.addEventListener("abort", () => {
-        session.listeners.delete(listener);
-        clearInterval(heartbeat);
-        try { controller.close(); } catch { /* */ }
-      });
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
-}
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
+  },
+);
 
 /* ── POST: create session, send input, resize, kill ── */
 
-export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const action = body.action as string;
+export const POST = withPassthroughRoute<TerminalPostInput>(
+  { name: "/api/terminal", bodySchema: terminalPostSchema },
+  async (_request, ctx) => {
+    const body = ctx.body;
 
-  switch (action) {
-    case "create": {
-      const cols = Number(body.cols) || 80;
-      const rows = Number(body.rows) || 24;
-      const id = createSession(cols, rows);
-      return Response.json({ ok: true, session: id });
-    }
-
-    case "input": {
-      const sessionId = body.session as string;
-      const data = body.data as string;
-      const session = sessions.get(sessionId);
-      if (!session || !session.alive) {
-        return Response.json({ error: "Session not found or dead" }, { status: 404 });
+    switch (body.action) {
+      case "create": {
+        // `||`, not `??`: a falsy-but-present 0 falls back to the default,
+        // matching the pre-migration `Number(body.cols) || 80` behavior.
+        const cols = body.cols || 80;
+        const rows = body.rows || 24;
+        const id = createSession(cols, rows);
+        return Response.json({ ok: true, session: id });
       }
-      session.lastActivity = Date.now();
-      session.proc.stdin.write(data);
-      return Response.json({ ok: true });
-    }
 
-    case "resize": {
-      const sessionId = body.session as string;
-      const cols = Number(body.cols);
-      const rows = Number(body.rows);
-      const session = sessions.get(sessionId);
-      if (!session || !session.alive) {
-        return Response.json({ error: "Session not found or dead" }, { status: 404 });
+      case "input": {
+        const sessionId = body.session ?? "";
+        // A missing `data` used to reach `stdin.write(undefined)` and throw
+        // (Rule 1 — pre-existing bug this schema-typed path now surfaces
+        // instead of masking with an `as string` cast).
+        const data = body.data ?? "";
+        const session = sessions.get(sessionId);
+        if (!session || !session.alive) {
+          return notFound("Session not found or dead");
+        }
+        session.lastActivity = Date.now();
+        session.proc.stdin.write(data);
+        return Response.json({ ok: true });
       }
-      if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols < 2 || rows < 2) {
-        return Response.json({ error: "Invalid cols/rows" }, { status: 400 });
-      }
-      // Send resize command to the Python PTY bridge via stdin
-      session.proc.stdin.write(`__RESIZE__:${cols}:${rows}\n`);
-      return Response.json({ ok: true });
-    }
 
-    case "kill": {
-      const sessionId = body.session as string;
-      const session = sessions.get(sessionId);
-      if (session) {
-        try { session.proc.kill("SIGTERM"); } catch { /* */ }
-        sessions.delete(sessionId);
+      case "resize": {
+        const sessionId = body.session ?? "";
+        const cols = body.cols;
+        const rows = body.rows;
+        const session = sessions.get(sessionId);
+        if (!session || !session.alive) {
+          return notFound("Session not found or dead");
+        }
+        if (!Number.isFinite(cols) || !Number.isFinite(rows) || (cols as number) < 2 || (rows as number) < 2) {
+          return badRequest("Invalid cols/rows");
+        }
+        // Send resize command to the Python PTY bridge via stdin
+        session.proc.stdin.write(`__RESIZE__:${cols}:${rows}\n`);
+        return Response.json({ ok: true });
       }
-      return Response.json({ ok: true });
-    }
 
-    default:
-      return Response.json({ error: `Unknown action: ${action}` }, { status: 400 });
-  }
-}
+      case "kill": {
+        const sessionId = body.session ?? "";
+        const session = sessions.get(sessionId);
+        if (session) {
+          try { session.proc.kill("SIGTERM"); } catch { /* */ }
+          sessions.delete(sessionId);
+        }
+        return Response.json({ ok: true });
+      }
+
+      default: {
+        // Unreachable: the discriminated-union schema above already rejects
+        // any `action` outside the four known literals before this handler
+        // runs (T-02-06). Kept as a typed exhaustiveness guard, not a live
+        // code path.
+        const exhaustive: never = body;
+        return badRequest(`Unknown action: ${JSON.stringify(exhaustive)}`);
+      }
+    }
+  },
+);

@@ -68,8 +68,15 @@ export function sseResponse(
   });
 }
 
+/**
+ * Canonical-envelope JSON error for the SSE routes (docs/API-CONTRACT.md
+ * §1). Signature is unchanged so existing call sites keep working; `extra`
+ * is still spread onto the body — callers pass `{ details: {...} }` rather
+ * than spreading fields at the top level, so the body stays inside the
+ * three-key envelope (`ok`, `error`, `details`).
+ */
 export function jsonError(message: string, status: number, extra: Record<string, unknown> = {}) {
-  return new Response(JSON.stringify({ error: message, ...extra }), {
+  return new Response(JSON.stringify({ ok: false, error: message, ...extra }), {
     status,
     headers: { "Content-Type": "application/json" },
   });

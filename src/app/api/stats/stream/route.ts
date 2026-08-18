@@ -5,6 +5,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { join } from "path";
 import { gatewayCall } from "@/lib/openclaw";
+import { withPassthroughRoute } from "@/lib/api-route";
+import { statsStreamQuerySchema } from "@/lib/schemas/streaming";
 
 export const dynamic = "force-dynamic";
 const exec = promisify(execFile);
@@ -512,62 +514,65 @@ async function getLatestSnapshot(home: string): Promise<Awaited<ReturnType<typeo
 
 /* ── SSE endpoint ─────────────────────────────────── */
 
-export async function GET() {
-  const home = getOpenClawHome();
+export const GET = withPassthroughRoute(
+  { name: "/api/stats/stream", querySchema: statsStreamQuerySchema },
+  async () => {
+    const home = getOpenClawHome();
 
-  const encoder = new TextEncoder();
-  let closed = false;
-  let interval: ReturnType<typeof setInterval> | undefined;
+    const encoder = new TextEncoder();
+    let closed = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (data: unknown) => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-        } catch {
-          closed = true;
-        }
-      };
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (data: unknown) => {
+          if (closed) return;
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            closed = true;
+          }
+        };
 
-      // Send initial snapshot immediately
-      try {
-        const snapshot = await getLatestSnapshot(home);
-        send(snapshot);
-      } catch (err) {
-        send({ error: String(err) });
-      }
-
-      // Then send updates every 5 seconds
-      interval = setInterval(async () => {
-        if (closed) {
-          clearInterval(interval);
-          return;
-        }
+        // Send initial snapshot immediately
         try {
           const snapshot = await getLatestSnapshot(home);
           send(snapshot);
-        } catch {
-          // skip this tick
+        } catch (err) {
+          send({ error: String(err) });
         }
-      }, STREAM_INTERVAL_MS);
 
-      // Cleanup when client disconnects
-      // The controller.close() or an error will set closed = true
-      // We also listen for the abort signal via the pull/cancel mechanism
-    },
-    cancel() {
-      closed = true;
-      if (interval) clearInterval(interval);
-    },
-  });
+        // Then send updates every 5 seconds
+        interval = setInterval(async () => {
+          if (closed) {
+            clearInterval(interval);
+            return;
+          }
+          try {
+            const snapshot = await getLatestSnapshot(home);
+            send(snapshot);
+          } catch {
+            // skip this tick
+          }
+        }, STREAM_INTERVAL_MS);
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
-}
+        // Cleanup when client disconnects
+        // The controller.close() or an error will set closed = true
+        // We also listen for the abort signal via the pull/cancel mechanism
+      },
+      cancel() {
+        closed = true;
+        if (interval) clearInterval(interval);
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
+  },
+);

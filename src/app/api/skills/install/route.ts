@@ -1,5 +1,7 @@
-import { NextRequest } from "next/server";
 import { gatewayCall } from "@/lib/openclaw";
+import { withPassthroughRoute } from "@/lib/api-route";
+import { badRequest } from "@/lib/api-errors";
+import { skillsInstallPostSchema, type SkillsInstallPostInput } from "@/lib/schemas/streaming";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // Installs can be slow (compiling formulae, etc).
@@ -50,81 +52,81 @@ function sse(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => ({}));
-  const name = typeof body?.name === "string" ? body.name.trim() : "";
-  const installId = typeof body?.installId === "string" ? body.installId.trim() : "";
+export const POST = withPassthroughRoute<SkillsInstallPostInput>(
+  { name: "/api/skills/install", bodySchema: skillsInstallPostSchema },
+  async (_request, ctx) => {
+    const body = ctx.body;
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const installId = typeof body.installId === "string" ? body.installId.trim() : "";
 
-  if (!name || !installId) {
-    return new Response(
-      JSON.stringify({ error: "name and installId are required" }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
-  }
+    if (!name || !installId) {
+      return badRequest("name and installId are required");
+    }
 
-  const agentId =
-    typeof body?.agentId === "string" && body.agentId.trim()
-      ? body.agentId.trim()
-      : undefined;
+    const agentId =
+      typeof body.agentId === "string" && body.agentId.trim()
+        ? body.agentId.trim()
+        : undefined;
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (payload: unknown) => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (payload: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(sse(payload)));
+          } catch {
+            // Client disconnected.
+          }
+        };
+
+        send({
+          type: "stdout",
+          text: `\x1b[1;36m$ openclaw skills install ${name} (${installId})\x1b[0m\n`,
+        });
+
         try {
-          controller.enqueue(encoder.encode(sse(payload)));
+          const result = await gatewayCall<SkillsInstallResult>(
+            "skills.install",
+            {
+              name,
+              installId,
+              timeoutMs: INSTALL_TIMEOUT_MS,
+              ...(agentId ? { agentId } : {}),
+            },
+            INSTALL_TIMEOUT_MS,
+          );
+
+          for (const warning of result.warnings ?? []) {
+            send({ type: "stderr", text: `${warning}\n` });
+          }
+          if (result.stdout) send({ type: "stdout", text: result.stdout });
+          if (result.stderr) send({ type: "stderr", text: result.stderr });
+          if (result.message) {
+            send({
+              type: result.ok ? "stdout" : "stderr",
+              text: `${result.message}\n`,
+            });
+          }
+          send({ type: "exit", code: result.ok ? 0 : (result.code ?? 1) });
+        } catch (err) {
+          send({ type: "error", text: String(err) });
+        }
+
+        try {
+          controller.close();
         } catch {
-          // Client disconnected.
+          // Already closed.
         }
-      };
+      },
+    });
 
-      send({
-        type: "stdout",
-        text: `\x1b[1;36m$ openclaw skills install ${name} (${installId})\x1b[0m\n`,
-      });
-
-      try {
-        const result = await gatewayCall<SkillsInstallResult>(
-          "skills.install",
-          {
-            name,
-            installId,
-            timeoutMs: INSTALL_TIMEOUT_MS,
-            ...(agentId ? { agentId } : {}),
-          },
-          INSTALL_TIMEOUT_MS,
-        );
-
-        for (const warning of result.warnings ?? []) {
-          send({ type: "stderr", text: `${warning}\n` });
-        }
-        if (result.stdout) send({ type: "stdout", text: result.stdout });
-        if (result.stderr) send({ type: "stderr", text: result.stderr });
-        if (result.message) {
-          send({
-            type: result.ok ? "stdout" : "stderr",
-            text: `${result.message}\n`,
-          });
-        }
-        send({ type: "exit", code: result.ok ? 0 : (result.code ?? 1) });
-      } catch (err) {
-        send({ type: "error", text: String(err) });
-      }
-
-      try {
-        controller.close();
-      } catch {
-        // Already closed.
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
-}
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
+  },
+);

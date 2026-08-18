@@ -71,94 +71,97 @@
  * as a green tick.
  */
 
-import { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { FIX_PLANS, fixCommand } from "@/lib/doctor-fix-catalog";
 import { previewFix, applyFix, isFixInFlight } from "@/lib/doctor-fix-runner";
 import { sseResponse, jsonError } from "@/lib/doctor-sse";
 import { redact } from "@/lib/doctor-redact";
-import { NextResponse } from "next/server";
+import { withPassthroughRoute } from "@/lib/api-route";
+import { doctorFixPostSchema, type DoctorFixPostInput } from "@/lib/schemas/streaming";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-export async function GET(request: NextRequest) {
-  const fixId = new URL(request.url).searchParams.get("fixId");
+export const GET = withPassthroughRoute(
+  { name: "/api/doctor/fix" },
+  async (request) => {
+    const fixId = request.nextUrl.searchParams.get("fixId");
 
-  if (!fixId) {
-    return NextResponse.json({
-      fixes: Object.values(FIX_PLANS).map((plan) => ({
-        id: plan.id,
+    if (!fixId) {
+      return NextResponse.json({
+        fixes: Object.values(FIX_PLANS).map((plan) => ({
+          id: plan.id,
+          label: plan.label,
+          safety: plan.safety,
+          whatItDoes: plan.whatItDoes,
+          sideEffects: plan.sideEffects,
+          requiresRestart: plan.requiresRestart,
+          requiresConfirmation: plan.safety !== "safe",
+          previewKind: plan.previewKind,
+          command: fixCommand(plan),
+        })),
+      });
+    }
+
+    const preview = await previewFix(fixId);
+    if (!preview) return jsonError(`There is no repair called "${fixId}".`, 404);
+    return NextResponse.json(preview);
+  },
+);
+
+export const POST = withPassthroughRoute<DoctorFixPostInput>(
+  { name: "/api/doctor/fix", bodySchema: doctorFixPostSchema },
+  async (_request, ctx) => {
+    const body = ctx.body;
+    const fixId = body.fixId;
+    if (!fixId) return jsonError("fixId is required.", 400, { details: { available: Object.keys(FIX_PLANS) } });
+
+    const plan = FIX_PLANS[fixId];
+    if (!plan) return jsonError(`There is no repair called "${fixId}".`, 404);
+
+    if (plan.safety !== "safe" && body.confirm !== true) {
+      return jsonError(
+        "This repair changes things that are hard or impossible to undo. Send confirm: true to proceed.",
+        400,
+        {
+          details: {
+            fixId,
+            safety: plan.safety,
+            whatItDoes: plan.whatItDoes,
+            sideEffects: plan.sideEffects,
+            previewUrl: `/api/doctor/fix?fixId=${encodeURIComponent(fixId)}`,
+          },
+        },
+      );
+    }
+
+    if (process.env.OPENCLAW_READ_ONLY === "true") {
+      return jsonError("This deployment is read-only, so repairs are disabled.", 403);
+    }
+
+    if (isFixInFlight()) return jsonError("Another repair is already running.", 409);
+
+    return sseResponse(async (writer) => {
+      writer.send({
+        type: "start",
+        fixId,
         label: plan.label,
         safety: plan.safety,
-        whatItDoes: plan.whatItDoes,
-        sideEffects: plan.sideEffects,
-        requiresRestart: plan.requiresRestart,
-        requiresConfirmation: plan.safety !== "safe",
-        previewKind: plan.previewKind,
         command: fixCommand(plan),
-      })),
+        requiresRestart: plan.requiresRestart,
+      });
+
+      const outcome = await applyFix(fixId, {
+        confirm: body.confirm === true,
+        // `generate-gateway-token` prints a fresh token on stdout, so the live
+        // stream is scrubbed before it leaves the server — not only the stored
+        // transcript.
+        onOutput: (stream, text) => writer.send({ type: "output", stream, text: redact(text) }),
+        onStage: (stage, label) => writer.send({ type: "stage", stage, label }),
+      });
+
+      writer.send({ type: "outcome", outcome });
+      writer.send({ type: "done" });
     });
-  }
-
-  const preview = await previewFix(fixId);
-  if (!preview) return jsonError(`There is no repair called "${fixId}".`, 404);
-  return NextResponse.json(preview);
-}
-
-export async function POST(request: NextRequest) {
-  let body: { fixId?: string; confirm?: boolean };
-  try {
-    body = await request.json();
-  } catch {
-    return jsonError("Expected a JSON body.", 400);
-  }
-
-  const fixId = body.fixId;
-  if (!fixId) return jsonError("fixId is required.", 400, { available: Object.keys(FIX_PLANS) });
-
-  const plan = FIX_PLANS[fixId];
-  if (!plan) return jsonError(`There is no repair called "${fixId}".`, 404);
-
-  if (plan.safety !== "safe" && body.confirm !== true) {
-    return jsonError(
-      "This repair changes things that are hard or impossible to undo. Send confirm: true to proceed.",
-      400,
-      {
-        fixId,
-        safety: plan.safety,
-        whatItDoes: plan.whatItDoes,
-        sideEffects: plan.sideEffects,
-        previewUrl: `/api/doctor/fix?fixId=${encodeURIComponent(fixId)}`,
-      },
-    );
-  }
-
-  if (process.env.OPENCLAW_READ_ONLY === "true") {
-    return jsonError("This deployment is read-only, so repairs are disabled.", 403);
-  }
-
-  if (isFixInFlight()) return jsonError("Another repair is already running.", 409);
-
-  return sseResponse(async (writer) => {
-    writer.send({
-      type: "start",
-      fixId,
-      label: plan.label,
-      safety: plan.safety,
-      command: fixCommand(plan),
-      requiresRestart: plan.requiresRestart,
-    });
-
-    const outcome = await applyFix(fixId, {
-      confirm: body.confirm === true,
-      // `generate-gateway-token` prints a fresh token on stdout, so the live
-      // stream is scrubbed before it leaves the server — not only the stored
-      // transcript.
-      onOutput: (stream, text) => writer.send({ type: "output", stream, text: redact(text) }),
-      onStage: (stage, label) => writer.send({ type: "stage", stage, label }),
-    });
-
-    writer.send({ type: "outcome", outcome });
-    writer.send({ type: "done" });
-  });
-}
+  },
+);

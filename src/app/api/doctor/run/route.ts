@@ -44,10 +44,11 @@
  * `error` events carry `{ "type":"error","message":"…" }` and are terminal.
  */
 
-import { NextRequest } from "next/server";
 import { collectSnapshot, persistRun, primeCache } from "@/lib/doctor-snapshot";
 import { diffAgainstHistory, createRunId } from "@/lib/doctor-history";
 import { sseResponse, jsonError } from "@/lib/doctor-sse";
+import { withPassthroughRoute } from "@/lib/api-route";
+import { doctorRunPostSchema, type DoctorRunPostInput } from "@/lib/schemas/streaming";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -61,68 +62,65 @@ const MODES = {
 /** One run at a time: concurrent doctor subprocesses fight over the same state. */
 let running = false;
 
-export async function POST(request: NextRequest) {
-  let body: { mode?: string; acknowledgeMutation?: boolean };
-  try {
-    body = await request.json();
-  } catch {
-    return jsonError("Expected a JSON body.", 400);
-  }
-
-  const mode = body.mode ?? "quick";
-  if (!Object.prototype.hasOwnProperty.call(MODES, mode)) {
-    return jsonError(`Unknown mode "${mode}".`, 400, { expected: Object.keys(MODES) });
-  }
-  const config = MODES[mode as keyof typeof MODES];
-
-  // The full pass writes to disk. Refusing without acknowledgement keeps the
-  // distinction real rather than documentary.
-  if (!config.readOnly && body.acknowledgeMutation !== true) {
-    return jsonError(
-      "The full check also applies OpenClaw's safe migrations, so it changes files on this machine. Send acknowledgeMutation: true to proceed, or use mode \"quick\" for a read-only check.",
-      400,
-      { mutating: true, readOnlyAlternative: "quick" },
-    );
-  }
-
-  if (!config.readOnly && process.env.OPENCLAW_READ_ONLY === "true") {
-    return jsonError("This deployment is read-only, so the full check is disabled.", 403);
-  }
-
-  if (running) {
-    return jsonError("A check is already running.", 409);
-  }
-
-  running = true;
-  const runId = createRunId();
-  const startedAt = Date.now();
-
-  return sseResponse(async (writer) => {
-    try {
-      writer.send({
-        type: "start",
-        runId,
-        mode,
-        readOnly: config.readOnly,
-        phases: config.phases,
-      });
-
-      const result = await collectSnapshot({
-        depth: config.depth,
-        onProgress: (event) => writer.send(event),
-      });
-
-      // Diff before persisting, so the comparison is against the previous run.
-      const diff = await diffAgainstHistory(result.snapshot).catch(() => null);
-      await persistRun(result, mode).catch(() => {});
-      // The run the user just watched must be what the next status read
-      // returns, or the page appears to forget what it just showed them.
-      primeCache(result);
-
-      writer.send({ type: "snapshot", snapshot: result.snapshot, diff });
-      writer.send({ type: "done", runId, durationMs: Date.now() - startedAt });
-    } finally {
-      running = false;
+export const POST = withPassthroughRoute<DoctorRunPostInput>(
+  { name: "/api/doctor/run", bodySchema: doctorRunPostSchema },
+  async (_request, ctx) => {
+    const body = ctx.body;
+    const mode = body.mode ?? "quick";
+    if (!Object.prototype.hasOwnProperty.call(MODES, mode)) {
+      return jsonError(`Unknown mode "${mode}".`, 400, { details: { expected: Object.keys(MODES) } });
     }
-  });
-}
+    const config = MODES[mode as keyof typeof MODES];
+
+    // The full pass writes to disk. Refusing without acknowledgement keeps the
+    // distinction real rather than documentary.
+    if (!config.readOnly && body.acknowledgeMutation !== true) {
+      return jsonError(
+        "The full check also applies OpenClaw's safe migrations, so it changes files on this machine. Send acknowledgeMutation: true to proceed, or use mode \"quick\" for a read-only check.",
+        400,
+        { details: { mutating: true, readOnlyAlternative: "quick" } },
+      );
+    }
+
+    if (!config.readOnly && process.env.OPENCLAW_READ_ONLY === "true") {
+      return jsonError("This deployment is read-only, so the full check is disabled.", 403);
+    }
+
+    if (running) {
+      return jsonError("A check is already running.", 409);
+    }
+
+    running = true;
+    const runId = createRunId();
+    const startedAt = Date.now();
+
+    return sseResponse(async (writer) => {
+      try {
+        writer.send({
+          type: "start",
+          runId,
+          mode,
+          readOnly: config.readOnly,
+          phases: config.phases,
+        });
+
+        const result = await collectSnapshot({
+          depth: config.depth,
+          onProgress: (event) => writer.send(event),
+        });
+
+        // Diff before persisting, so the comparison is against the previous run.
+        const diff = await diffAgainstHistory(result.snapshot).catch(() => null);
+        await persistRun(result, mode).catch(() => {});
+        // The run the user just watched must be what the next status read
+        // returns, or the page appears to forget what it just showed them.
+        primeCache(result);
+
+        writer.send({ type: "snapshot", snapshot: result.snapshot, diff });
+        writer.send({ type: "done", runId, durationMs: Date.now() - startedAt });
+      } finally {
+        running = false;
+      }
+    });
+  },
+);
