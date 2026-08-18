@@ -19,6 +19,9 @@ import type { RunCliResult } from "../openclaw-cli";
 import { getGatewayRpcChannel } from "../gateway-rpc-channel";
 import { CliTransport } from "./cli-transport";
 import { HttpTransport } from "./http-transport";
+import { childLogger } from "../logger";
+
+const log = childLogger({ source: "AutoTransport" });
 
 function errorToMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -102,7 +105,7 @@ export class AutoTransport implements OpenClawClient {
         if (res.status === 200) {
           this.execBridge = "available";
           if (previous !== "available") {
-            console.info("[AutoTransport] Gateway exec bridge available over HTTP.");
+            log.info({ status: res.status }, "Gateway exec bridge available over HTTP");
           }
         } else {
           this.execBridge = "unavailable";
@@ -111,13 +114,14 @@ export class AutoTransport implements OpenClawClient {
               res.status === 404
                 ? "exec is not exposed on POST /tools/invoke (OpenClaw denies it by default)"
                 : `HTTP ${res.status}`;
-            console.info(`[AutoTransport] Running openclaw via local CLI: ${detail}.`);
+            log.info({ status: res.status, detail }, "Running openclaw via local CLI");
           }
         }
       } catch (err) {
         this.execBridge = "unavailable";
-        console.info(
-          `[AutoTransport] Running openclaw via local CLI: gateway HTTP probe failed (${errorToMessage(err)}).`,
+        log.info(
+          { reason: errorToMessage(err) },
+          "Running openclaw via local CLI — gateway HTTP probe failed",
         );
       } finally {
         this.execBridgeCheckedAt = Date.now();
@@ -130,7 +134,7 @@ export class AutoTransport implements OpenClawClient {
 
   private markExecBridgeUnavailable(reason: string): void {
     if (this.execBridge === "available") {
-      console.warn(`[AutoTransport] Gateway exec bridge failed, using local CLI: ${reason}`);
+      log.warn({ reason }, "Gateway exec bridge failed — using local CLI");
     }
     this.execBridge = "unavailable";
     this.execBridgeCheckedAt = Date.now();

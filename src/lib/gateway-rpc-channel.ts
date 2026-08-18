@@ -16,6 +16,9 @@
 
 import { GatewayRpcClient, GatewayRpcError, type GatewayEventSink } from "./gateway-rpc";
 import { invalidateGatewayToken } from "./paths";
+import { childLogger } from "./logger";
+
+const log = childLogger({ source: "GatewayRpc" });
 
 /** Cooldown before retrying the WebSocket path after a transport failure. */
 const WS_RETRY_COOLDOWN_MS = 15_000;
@@ -215,8 +218,9 @@ export class GatewayRpcChannel {
       } catch (err) {
         if (!isTransportFailure(err)) throw err;
         this.markWsFailed(err);
-        console.warn(
-          `[GatewayRpc] WebSocket RPC unavailable (${this.lastWsError}); falling back to \`openclaw gateway call\` for ${method}.`,
+        log.warn(
+          { method, wsError: this.lastWsError },
+          "WebSocket RPC unavailable — falling back to `openclaw gateway call`",
         );
       }
     }
