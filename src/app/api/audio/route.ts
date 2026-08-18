@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { gatewayCall, runCli } from "@/lib/openclaw";
 import { runOpenResponsesText } from "@/lib/openresponses";
 import { readFile, stat } from "fs/promises";
 import { extname, join } from "path";
 import { getDefaultAgentId, getOpenClawHome } from "@/lib/paths";
 import { fetchConfig, patchConfig, gatewayConfigPatch } from "@/lib/gateway-config";
+import { withRoute } from "@/lib/api-route";
+import { audioGetQuerySchema, audioPostSchema, isWithinTmpDir } from "@/lib/schemas/media";
+import { apiError, badRequest, forbidden, notFound, serverError } from "@/lib/api-errors";
 
 /* ── Gather personal context for TTS test phrase generation ── */
 
@@ -428,20 +431,25 @@ function emptyAudioPayload(warning: string) {
  * Query: scope=status (default) | providers | stream
  *        path=<filepath>  (required for scope=stream)
  */
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const scope = searchParams.get("scope") || "status";
+export const GET = withRoute(
+  { name: "/api/audio", querySchema: audioGetQuerySchema },
+  async (_request, ctx) => {
+  const scope = ctx.query.scope || "status";
 
   try {
     // Stream an audio file for playback
     if (scope === "stream") {
-      const filePath = searchParams.get("path") || "";
+      const filePath = ctx.query.path || "";
       if (!filePath) {
-        return NextResponse.json({ error: "path required" }, { status: 400 });
+        return badRequest("path required");
       }
-      // Security: only allow temp directory audio files
-      if (!filePath.startsWith("/tmp/") && !filePath.includes("/T/tts-") && !filePath.includes("/tmp/")) {
-        return NextResponse.json({ error: "Path not allowed" }, { status: 403 });
+      // Security: only allow temp directory audio files. The schema already
+      // rejected any `..` traversal segment before this handler ran (T-02-34);
+      // this is the business-rule allow-list check (must resolve inside the
+      // OS temp dir), which stays here because it needs `isWithinTmpDir`'s
+      // resolved-path comparison, not a pure format check.
+      if (!isWithinTmpDir(filePath)) {
+        return forbidden("Path not allowed");
       }
       try {
         const info = await stat(filePath);
@@ -457,7 +465,7 @@ export async function GET(request: NextRequest) {
           },
         });
       } catch {
-        return NextResponse.json({ error: "File not found" }, { status: 404 });
+        return notFound("File not found");
       }
     }
 
@@ -582,10 +590,11 @@ export async function GET(request: NextRequest) {
       configHash: configData.hash || null,
     });
   } catch (err) {
-    console.error("Audio API GET error:", err);
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Audio API GET error");
     return NextResponse.json(emptyAudioPayload(String(err)));
   }
-}
+  },
+);
 
 /**
  * POST /api/audio - Audio/TTS management actions.
@@ -599,20 +608,19 @@ export async function GET(request: NextRequest) {
  *   { action: "test", text: "Hello world" }
  *   { action: "update-config", section: "tts" | "talk", config: { ... } }
  */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const action = body.action as string;
+export const POST = withRoute(
+  { name: "/api/audio", bodySchema: audioPostSchema },
+  async (_request, ctx) => {
+  const body = ctx.body;
+  const action = body.action;
 
+  try {
     switch (action) {
       case "set-auto-mode": {
         // Set auto-TTS mode via config patch (most reliable method)
         const mode = body.mode as string;
         if (!["off", "always", "inbound", "tagged"].includes(mode)) {
-          return NextResponse.json(
-            { error: `Invalid mode: ${mode}. Use off, always, inbound, or tagged.` },
-            { status: 400 }
-          );
+          return badRequest(`Invalid mode: ${mode}. Use off, always, inbound, or tagged.`);
         }
         try {
           const configData = await gatewayCall<Record<string, unknown>>(
@@ -625,10 +633,7 @@ export async function POST(request: NextRequest) {
           );
           return NextResponse.json({ ok: true, action, mode });
         } catch {
-          return NextResponse.json(
-            { ok: false, error: "Could not update auto-TTS mode. Is the gateway running?" },
-            { status: 502 }
-          );
+          return apiError("Could not update auto-TTS mode. Is the gateway running?", 502);
         }
       }
 
@@ -656,10 +661,7 @@ export async function POST(request: NextRequest) {
             );
             return NextResponse.json({ ok: true, action, fallback: true });
           } catch {
-            return NextResponse.json(
-              { ok: false, error: "Could not reach the gateway. Make sure it is running." },
-              { status: 502 }
-            );
+            return apiError("Could not reach the gateway. Make sure it is running.", 502);
           }
         }
       }
@@ -667,10 +669,7 @@ export async function POST(request: NextRequest) {
       case "set-provider": {
         const provider = body.provider as string;
         if (!provider) {
-          return NextResponse.json(
-            { error: "provider is required" },
-            { status: 400 }
-          );
+          return badRequest("provider is required");
         }
         try {
           const result = await gatewayCall<Record<string, unknown>>(
@@ -692,10 +691,7 @@ export async function POST(request: NextRequest) {
             );
             return NextResponse.json({ ok: true, action, provider, fallback: true });
           } catch {
-            return NextResponse.json(
-              { ok: false, error: "Could not set provider. Is the gateway running?" },
-              { status: 502 }
-            );
+            return apiError("Could not set provider. Is the gateway running?", 502);
           }
         }
       }
@@ -710,26 +706,17 @@ export async function POST(request: NextRequest) {
         const provider = String(body.provider || "").trim().toLowerCase() as AudioProviderKeyTarget;
         const apiKey = String(body.apiKey || "").trim();
         if (provider !== "openai" && provider !== "elevenlabs") {
-          return NextResponse.json(
-            { error: "provider must be openai or elevenlabs" },
-            { status: 400 }
-          );
+          return badRequest("provider must be openai or elevenlabs");
         }
         if (!apiKey) {
-          return NextResponse.json(
-            { error: "apiKey is required" },
-            { status: 400 }
-          );
+          return badRequest("apiKey is required");
         }
 
         try {
           await patchConfig(buildAudioProviderPatch(provider, apiKey));
           return NextResponse.json({ ok: true, action, provider, location: "config-tts" });
         } catch {
-          return NextResponse.json(
-            { ok: false, error: `Could not save ${provider} API key. Is the gateway running?` },
-            { status: 502 }
-          );
+          return apiError(`Could not save ${provider} API key. Is the gateway running?`, 502);
         }
       }
 
@@ -738,16 +725,10 @@ export async function POST(request: NextRequest) {
         const mode = String(body.mode || "").trim().toLowerCase();
         const envKey = String(body.envKey || "").trim();
         if (provider !== "openai" && provider !== "elevenlabs") {
-          return NextResponse.json(
-            { error: "provider must be openai or elevenlabs" },
-            { status: 400 }
-          );
+          return badRequest("provider must be openai or elevenlabs");
         }
         if (mode !== "config-tts" && mode !== "config-env") {
-          return NextResponse.json(
-            { error: "mode must be config-tts or config-env" },
-            { status: 400 }
-          );
+          return badRequest("mode must be config-tts or config-env");
         }
 
         try {
@@ -763,20 +744,14 @@ export async function POST(request: NextRequest) {
             });
           } else {
             if (!envKey) {
-              return NextResponse.json(
-                { error: "envKey is required when removing a config env key" },
-                { status: 400 }
-              );
+              return badRequest("envKey is required when removing a config env key");
             }
             const configData = await fetchConfig(10000);
             await patchConfig(removeEnvKeyFromConfig(configData.parsed, envKey));
           }
           return NextResponse.json({ ok: true, action, provider, mode });
         } catch {
-          return NextResponse.json(
-            { ok: false, error: `Could not remove the saved ${provider} key. Is the gateway running?` },
-            { status: 502 }
-          );
+          return apiError(`Could not remove the saved ${provider} key. Is the gateway running?`, 502);
         }
       }
 
@@ -815,9 +790,9 @@ export async function POST(request: NextRequest) {
           );
           return NextResponse.json({ ok: true, action, text, ...result });
         } catch {
-          return NextResponse.json(
-            { ok: false, error: "TTS generation failed. Check that the gateway is running and the provider has a valid API key." },
-            { status: 502 }
+          return apiError(
+            "TTS generation failed. Check that the gateway is running and the provider has a valid API key.",
+            502,
           );
         }
       }
@@ -826,10 +801,7 @@ export async function POST(request: NextRequest) {
         const section = body.section as string;
         const config = body.config as Record<string, unknown>;
         if (!section || !config) {
-          return NextResponse.json(
-            { error: "section and config required" },
-            { status: 400 }
-          );
+          return badRequest("section and config required");
         }
 
         try {
@@ -846,10 +818,7 @@ export async function POST(request: NextRequest) {
           } else if (section === "audio") {
             patchRaw = JSON.stringify({ tools: { media: { audio: config } } });
           } else {
-            return NextResponse.json(
-              { error: `Unknown section: ${section}` },
-              { status: 400 }
-            );
+            return badRequest(`Unknown section: ${section}`);
           }
 
           await gatewayConfigPatch(
@@ -858,29 +827,16 @@ export async function POST(request: NextRequest) {
           );
           return NextResponse.json({ ok: true, action, section });
         } catch {
-          return NextResponse.json(
-            { ok: false, error: `Could not update ${section} config. Is the gateway running?` },
-            { status: 502 }
-          );
+          return apiError(`Could not update ${section} config. Is the gateway running?`, 502);
         }
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
+        return badRequest(`Unknown action: ${action}`);
     }
   } catch (err) {
-    console.error("Audio API POST error:", err);
-    // Bug fix 2026-08-16: a malformed/empty JSON body throws a SyntaxError from
-    // `request.json()`. That is a client error, not an internal failure.
-    if (err instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: `Invalid JSON body: ${err.message}` },
-        { status: 400 },
-      );
-    }
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Audio API POST error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);

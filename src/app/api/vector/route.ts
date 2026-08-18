@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readdir, readFile, stat, unlink, writeFile } from "fs/promises";
 import { dirname, extname, join, relative, resolve, sep } from "path";
 import { runCliJson, gatewayCall } from "@/lib/openclaw";
@@ -8,6 +8,9 @@ import { gatewayConfigPatch } from "@/lib/gateway-config";
 import { buildModelsSummary } from "@/lib/models-summary";
 import { gatewayMemoryIndex } from "@/lib/gateway-tools";
 import type { ProviderAvailability } from "@/components/vector/types";
+import { withRoute } from "@/lib/api-route";
+import { vectorGetQuerySchema, vectorPostSchema } from "@/lib/schemas/media";
+import { badRequest, notFound, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -304,13 +307,14 @@ async function isLocalEmbeddingPluginInstalled(): Promise<boolean> {
 
 /* ── GET: status + search ─────────────────────────── */
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const scope = searchParams.get("scope") || "status";
+export const GET = withRoute(
+  { name: "/api/vector", querySchema: vectorGetQuerySchema },
+  async (_request, ctx) => {
+  const scope = ctx.query.scope || "status";
 
   try {
     if (scope === "status") {
-      const bypassCache = searchParams.get("fresh") === "1";
+      const bypassCache = ctx.query.fresh === "1";
       if (!bypassCache && statusCache && Date.now() < statusCache.expiresAt) {
         return NextResponse.json({ ...statusCache.data, cached: true });
       }
@@ -398,7 +402,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (scope === "documents") {
-      const bypassCache = searchParams.get("fresh") === "1";
+      const bypassCache = ctx.query.fresh === "1";
       if (!bypassCache && documentsCache && Date.now() < documentsCache.expiresAt) {
         return NextResponse.json({ ...documentsCache.data, cached: true });
       }
@@ -433,10 +437,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (scope === "search") {
-      const query = searchParams.get("q") || "";
-      const agent = searchParams.get("agent") || "";
-      const maxResults = searchParams.get("max") || "10";
-      const minScore = searchParams.get("minScore") || "";
+      const query = ctx.query.q || "";
+      const agent = ctx.query.agent || "";
+      const maxResults = ctx.query.max ?? 10;
+      const minScore = ctx.query.minScore;
 
       if (!query || query.trim().length < 2) {
         return NextResponse.json({ results: [], query });
@@ -449,10 +453,10 @@ export async function GET(request: NextRequest) {
         query.trim(),
         "--json",
         "--max-results",
-        String(parseInt(maxResults, 10) || 10),
+        String(maxResults),
       ];
       if (agent) args.push("--agent", agent);
-      if (minScore) args.push("--min-score", minScore);
+      if (minScore !== undefined) args.push("--min-score", String(minScore));
       const parsed = await runCliJson<{ results?: SearchResult[] }>(args, 30000);
       const data = { results: Array.isArray(parsed.results) ? parsed.results : [] };
 
@@ -464,20 +468,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results, query });
     }
 
-    return NextResponse.json({ error: "Unknown scope" }, { status: 400 });
+    return badRequest("Unknown scope");
   } catch (err) {
-    console.error("Vector API GET error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Vector API GET error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
 
 /* ── POST: reindex + config updates ──────────────── */
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const action = body.action as string;
+export const POST = withRoute(
+  { name: "/api/vector", bodySchema: vectorPostSchema },
+  async (_request, ctx) => {
+  const body = ctx.body;
+  const action = body.action;
 
+  try {
     switch (action) {
       case "reindex": {
         const agent = body.agent as string | undefined;
@@ -502,28 +509,19 @@ export async function POST(request: NextRequest) {
       case "delete-namespace": {
         const agent = String(body.agent || "").trim();
         if (!agent) {
-          return NextResponse.json(
-            { error: "agent required" },
-            { status: 400 }
-          );
+          return badRequest("agent required");
         }
 
         const dbPath = await resolveNamespaceDbPath(agent);
         if (!dbPath) {
-          return NextResponse.json(
-            { error: `No memory namespace found for agent ${agent}` },
-            { status: 404 }
-          );
+          return notFound(`No memory namespace found for agent ${agent}`);
         }
 
         const resolvedDbPath = resolve(dbPath);
         const allowedRoot = resolve(getOpenClawHome(), "memory");
         const dbDir = dirname(resolvedDbPath);
         if (dbDir !== allowedRoot) {
-          return NextResponse.json(
-            { error: "Refusing to delete namespace outside the OpenClaw memory directory" },
-            { status: 400 }
-          );
+          return badRequest("Refusing to delete namespace outside the OpenClaw memory directory");
         }
 
         const deletedFiles = (
@@ -535,10 +533,7 @@ export async function POST(request: NextRequest) {
         ).filter((value): value is string => Boolean(value));
 
         if (deletedFiles.length === 0) {
-          return NextResponse.json(
-            { error: `Namespace files were not found for agent ${agent}` },
-            { status: 404 }
-          );
+          return notFound(`Namespace files were not found for agent ${agent}`);
         }
 
         invalidateVectorCaches();
@@ -557,10 +552,7 @@ export async function POST(request: NextRequest) {
         const localModelPath = body.localModelPath as string | undefined;
 
         if (!setupProvider || !setupModel) {
-          return NextResponse.json(
-            { error: "provider and model required" },
-            { status: 400 }
-          );
+          return badRequest("provider and model required");
         }
 
         const setupConfig = await gatewayCall<Record<string, unknown>>(
@@ -629,10 +621,7 @@ export async function POST(request: NextRequest) {
         const cacheEnabled = body.cacheEnabled as boolean | undefined;
 
         if (!provider || !model) {
-          return NextResponse.json(
-            { error: "provider and model required" },
-            { status: 400 }
-          );
+          return badRequest("provider and model required");
         }
 
         const { hash, memorySearch: currentMemorySearch } = await getResolvedMemorySearchConfig();
@@ -796,13 +785,14 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
+        // Unreachable — vectorPostSchema's discriminated union already rejects
+        // an unrecognized action before this handler runs. Kept as a
+        // defensive fallback for switch exhaustiveness.
+        return badRequest(`Unknown action: ${String((body as { action?: string }).action)}`);
     }
   } catch (err) {
-    console.error("Vector API POST error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ctx.log.error({ err: err instanceof Error ? err.message : String(err) }, "Vector API POST error");
+    return serverError(err instanceof Error ? err.message : String(err));
   }
-}
+  },
+);
