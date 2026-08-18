@@ -193,7 +193,7 @@ const GROUP_ORDER = [
    ================================================================ */
 
 /** Get the label for a config path from hints */
-function getLabel(
+export function getLabel(
   hints: Record<string, UiHint>,
   path: string,
   fallback: string
@@ -201,16 +201,16 @@ function getLabel(
   return hints[path]?.label || fallback;
 }
 
-function getHelp(hints: Record<string, UiHint>, path: string): string {
+export function getHelp(hints: Record<string, UiHint>, path: string): string {
   return hints[path]?.help || "";
 }
 
-function isSensitivePath(hints: Record<string, UiHint>, path: string): boolean {
+export function isSensitivePath(hints: Record<string, UiHint>, path: string): boolean {
   return isSensitiveConfigPath(hints, path);
 }
 
 /** Infer field type from JSON Schema */
-function inferFieldType(
+export function inferFieldType(
   schema: JsonSchema | undefined,
   hint: UiHint | undefined
 ): "string" | "number" | "boolean" | "array" | "object" | "enum" | "unknown" {
@@ -242,7 +242,7 @@ function inferFieldType(
 }
 
 /** Extract enum values from schema */
-function extractEnumValues(schema: JsonSchema | undefined): string[] {
+export function extractEnumValues(schema: JsonSchema | undefined): string[] {
   if (!schema) return [];
   if (schema.enum) return schema.enum;
   if (schema.const !== undefined) return [String(schema.const)];
@@ -261,7 +261,7 @@ function extractEnumValues(schema: JsonSchema | undefined): string[] {
  * Seed a value for a field that has never been configured, so "Set up" lands
  * the user on a usable control instead of an empty JSON blob.
  */
-function emptyValueForType(fieldType: string, schema: JsonSchema | undefined): unknown {
+export function emptyValueForType(fieldType: string, schema: JsonSchema | undefined): unknown {
   switch (fieldType) {
     case "string":
     case "enum":
@@ -1730,7 +1730,7 @@ function NestedSection({
 }
 
 /** Normalize JSON string for dirty comparison (parse + re-stringify). */
-function normalizedJsonString(str: string): string | null {
+export function normalizedJsonString(str: string): string | null {
   try {
     return JSON.stringify(JSON.parse(str), null, 2);
   } catch {
@@ -1739,7 +1739,7 @@ function normalizedJsonString(str: string): string | null {
 }
 
 /** Redact sensitive values for display when raw masking is on. */
-function redactConfigForDisplay(
+export function redactConfigForDisplay(
   obj: unknown,
   hints: Record<string, UiHint>,
   pathPrefix = ""
