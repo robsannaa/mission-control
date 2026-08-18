@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { runDoctorReport, type DoctorReport } from "@/lib/doctor-report";
+import { withRoute } from "@/lib/api-route";
 
 /**
  * POST /api/config/doctor — verify a config change actually landed well.
@@ -70,7 +71,7 @@ function respond(report: DoctorReport, cached: boolean): NextResponse {
   return NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute({ name: "/api/config/doctor" }, async (request) => {
   // A missing or malformed body is not an error: the defaults are the point.
   let fast = true;
   try {
@@ -108,4 +109,4 @@ export async function POST(request: NextRequest) {
   inFlight = run;
 
   return respond(await run, false);
-}
+});

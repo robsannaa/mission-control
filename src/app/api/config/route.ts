@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { CONFIG_WRITE_TIMEOUT_MS, gatewayCall, runCliCaptureBoth } from "@/lib/openclaw";
 import {
   gatewayConfigApply,
@@ -16,8 +16,10 @@ import {
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { getOpenClawHome } from "@/lib/paths";
-import { logRequest, logError } from "@/lib/request-log";
 import { randomBytes } from "crypto";
+import { withRoute } from "@/lib/api-route";
+import { configWriteSchema } from "@/lib/schemas/config";
+import { badRequest, serverError } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 const OPENCLAW_HOME = getOpenClawHome();
@@ -529,8 +531,7 @@ const RESTART_DELAY_MS = 2000;
  *
  * Query: scope=config (default) | schema
  */
-export async function GET(request: NextRequest) {
-  const start = Date.now();
+export const GET = withRoute({ name: "/api/config" }, async (request, ctx) => {
   const { searchParams } = new URL(request.url);
   const scope = searchParams.get("scope") || "config";
 
@@ -572,7 +573,10 @@ export async function GET(request: NextRequest) {
       );
     } catch (err) {
       warning = formatGatewayError(err);
-      console.warn("Config schema unavailable, serving config without schema:", err);
+      ctx.log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Config schema unavailable, serving config without schema",
+      );
     }
 
     // `config.get` returns { parsed, resolved, hash, ... }. `parsed` is the
@@ -593,7 +597,6 @@ export async function GET(request: NextRequest) {
       ? (restoreRedactedValues(authored, diskConfig) as Record<string, unknown>)
       : authored;
 
-    logRequest("/api/config", 200, Date.now() - start, { scope });
     return NextResponse.json({
       config,
       meta: {
@@ -606,7 +609,10 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err) {
-    logError("/api/config", err, { scope });
+    ctx.log.warn(
+      { err: err instanceof Error ? err.message : String(err), scope },
+      "config.get failed; attempting disk fallback",
+    );
     try {
       const raw = await readFile(join(OPENCLAW_HOME, "openclaw.json"), "utf-8");
       const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -623,42 +629,21 @@ export async function GET(request: NextRequest) {
         },
       });
     } catch {
-      return NextResponse.json({ error: formatGatewayError(err) }, { status: 500 });
+      return serverError(formatGatewayError(err));
     }
   }
-}
+});
 
-/** Validate config payload before sending to gateway. */
-function validateConfigPayload(
-  raw: string | undefined,
-  patch: Record<string, unknown> | undefined
-): { ok: true; patchObj: Record<string, unknown> } | { ok: false; error: string } {
-  if (raw !== undefined) {
-    if (typeof raw !== "string") {
-      return { ok: false, error: "raw must be a JSON string" };
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return { ok: false, error: `Invalid JSON: ${msg}` };
-    }
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { ok: false, error: "Config must be a JSON object (not array or primitive)" };
-    }
-    return { ok: true, patchObj: parsed as Record<string, unknown> };
-  }
-  if (patch !== undefined) {
-    if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
-      return { ok: false, error: "patch must be a JSON object" };
-    }
-    return { ok: true, patchObj: patch };
-  }
-  return { ok: false, error: "raw or patch required" };
-}
-
-/** Fresh snapshot + hash for a 409 body, with secrets restored for the UI diff. */
+/**
+ * Fresh snapshot + hash for a 409 body, with secrets restored for the UI diff.
+ * `error`/`currentHash`/`remoteConfig`/`message` are all read directly off
+ * this body by `config-editor.tsx` (top-level fields, not nested under
+ * `details`), so this stays a manually-built response rather than going
+ * through an `@/lib/api-errors` builder — the builders only support
+ * `{ ok, error, details? }` and have no slot for this route's established
+ * extra fields. `ok: false` is added here so the body still carries the
+ * canonical envelope's marker (D-01).
+ */
 async function buildConflictBody(message: string): Promise<Record<string, unknown>> {
   let currentHash = "";
   let remoteConfig: Record<string, unknown> = {};
@@ -672,7 +657,7 @@ async function buildConflictBody(message: string): Promise<Record<string, unknow
   } catch {
     // Serve the conflict even if the re-read fails; the UI can refetch.
   }
-  return { error: "conflict", currentHash, remoteConfig, message };
+  return { ok: false, error: "conflict", currentHash, remoteConfig, message };
 }
 
 /**
@@ -700,39 +685,28 @@ async function buildConflictBody(message: string): Promise<Record<string, unknow
  *   - a restart is requested only when `config.schema.lookup` says a touched
  *     path needs one.
  */
-export async function PATCH(request: NextRequest) {
-  const start = Date.now();
+export const PATCH = withRoute(
+  { name: "/api/config", bodySchema: configWriteSchema },
+  async (_request, ctx) => {
   try {
-    const body = await request.json();
-    const { raw, patch, baseHash, replacePaths, mode } = body as {
-      raw?: string;
-      patch?: Record<string, unknown>;
-      baseHash?: string;
-      replacePaths?: string[];
-      mode?: "patch" | "apply";
-    };
+    // `configWriteSchema` (src/lib/schemas/config.ts) is the Zod port of the
+    // former hand-rolled raw/patch payload check — an invalid `raw`/`patch`
+    // body never reaches this handler; withRoute already answered it with
+    // the canonical envelope via `validationFailed()`.
+    const { patchObj, baseHash, replacePaths, mode } = ctx.body;
+    const raw = ctx.body.raw;
 
-    const validated = validateConfigPayload(raw, patch);
-    if (!validated.ok) {
-      return NextResponse.json({ error: validated.error }, { status: 400 });
-    }
     if (replacePaths !== undefined && !Array.isArray(replacePaths)) {
-      return NextResponse.json(
-        { error: "replacePaths must be an array of dotted config paths" },
-        { status: 400 }
-      );
+      return badRequest("replacePaths must be an array of dotted config paths");
     }
     if (mode !== undefined && mode !== "patch" && mode !== "apply") {
-      return NextResponse.json(
-        { error: 'mode must be "patch" or "apply"' },
-        { status: 400 }
-      );
+      return badRequest('mode must be "patch" or "apply"');
     }
 
     const rawProvided = raw !== undefined;
     const useApply = mode === "apply";
-    let workingPatchObj = validated.patchObj;
-    const requestedReplacePaths = (replacePaths ?? [])
+    let workingPatchObj = patchObj;
+    const requestedReplacePaths = ((replacePaths as string[] | undefined) ?? [])
       .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
       .map((p) => normalizeArrayPath(p.trim()));
 
@@ -832,14 +806,13 @@ export async function PATCH(request: NextRequest) {
         const conflict = await buildConflictBody(
           "This config changed in another session since you loaded it. Review the current values, then re-apply your change."
         );
-        logRequest("/api/config", 409, Date.now() - start, { method: "PATCH" });
         return NextResponse.json(conflict, { status: 409 });
       }
       if (isReplacePathsError(firstErr)) {
         const required = parseReplacePathsFromError(firstErr);
-        logRequest("/api/config", 400, Date.now() - start, { method: "PATCH" });
         return NextResponse.json(
           {
+            ok: false,
             error: friendlyPatchError(firstErr),
             details: String(firstErr),
             replacePathsRequired: required,
@@ -878,7 +851,6 @@ export async function PATCH(request: NextRequest) {
       if (fallbackCandidate.entries && fallbackCandidate.entries.length > 0) {
         const fallback = await applyConfigSetFallback(fallbackCandidate.entries);
         if (fallback.failures.length === 0) {
-          logRequest("/api/config", 200, Date.now() - start, { method: "PATCH" });
           return NextResponse.json({
             ok: true,
             hash: (await readConfigSnapshot().catch(() => ({ baseHash: "" }))).baseHash,
@@ -895,6 +867,7 @@ export async function PATCH(request: NextRequest) {
 
       const details = String(finalWriteError || "Unknown config write failure");
       const responseBody: Record<string, unknown> = {
+        ok: false,
         error: friendlyPatchError(finalWriteError || details),
         details,
       };
@@ -904,10 +877,16 @@ export async function PATCH(request: NextRequest) {
       if (isRateLimitError(finalWriteError)) {
         const retryAfterMs = extractRetryAfterMs(finalWriteError);
         if (retryAfterMs) responseBody.retryAfterMs = retryAfterMs;
-        logError("/api/config", finalWriteError, { method: "PATCH", status: 429 });
+        ctx.log.warn(
+          { err: finalWriteError instanceof Error ? finalWriteError.message : String(finalWriteError) },
+          "config write rate-limited",
+        );
         return NextResponse.json(responseBody, { status: 429 });
       }
-      logError("/api/config", finalWriteError, { method: "PATCH", status: 400 });
+      ctx.log.warn(
+        { err: finalWriteError instanceof Error ? finalWriteError.message : String(finalWriteError) },
+        "config write failed",
+      );
       return NextResponse.json(responseBody, { status: 400 });
     }
 
@@ -932,7 +911,6 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    logRequest("/api/config", 200, Date.now() - start, { method: "PATCH" });
     return NextResponse.json({
       ok: true,
       hash: after?.baseHash ?? "",
@@ -945,10 +923,11 @@ export async function PATCH(request: NextRequest) {
     });
   } catch (err) {
     const msg = String(err);
-    logError("/api/config", err, { method: "PATCH" });
-    return NextResponse.json({ error: friendlyPatchError(msg), details: msg }, { status: 400 });
+    ctx.log.error({ err: err instanceof Error ? err.message : msg }, "unexpected config PATCH failure");
+    return badRequest(friendlyPatchError(msg), msg);
   }
-}
+  },
+);
 
 /**
  * PUT /api/config — legacy full-config save.
@@ -959,8 +938,14 @@ export async function PATCH(request: NextRequest) {
  * removed. Conflicts surface as 409 like PATCH — never re-applied over a
  * concurrent edit.
  */
-export async function PUT(request: NextRequest) {
+export const PUT = withRoute({ name: "/api/config" }, async (request, ctx) => {
   try {
+    // No `bodySchema` here: PUT's own try/catch already reproduces the exact
+    // pre-migration behavior for a malformed JSON body (falls through to the
+    // generic catch below), and routing it through `readJsonBody` first would
+    // change that message. `config object required` is a plain missing-field
+    // check, kept manual per the same "required stays manual" split agents
+    // route uses (src/lib/schemas/agents.ts).
     const body = await request.json();
     const { config, baseHash } = body as {
       config: Record<string, unknown>;
@@ -968,7 +953,7 @@ export async function PUT(request: NextRequest) {
     };
 
     if (!config || typeof config !== "object" || Array.isArray(config)) {
-      return NextResponse.json({ error: "config object required" }, { status: 400 });
+      return badRequest("config object required");
     }
 
     const params: { raw: string; baseHash?: string } = {
@@ -991,9 +976,7 @@ export async function PUT(request: NextRequest) {
     }
     const msg = String(err);
     const validationMatch = msg.match(/invalid.*?:(.*)/i);
-    return NextResponse.json(
-      { error: validationMatch ? validationMatch[1].trim() : msg },
-      { status: 400 }
-    );
+    ctx.log.warn({ err: msg }, "config PUT failed");
+    return badRequest(validationMatch ? validationMatch[1].trim() : msg);
   }
-}
+});
