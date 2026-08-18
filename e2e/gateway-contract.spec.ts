@@ -17,6 +17,15 @@
  *      in plaintext today (Phase 2/6 owns the fix), so this file proves
  *      structure/typeof and never surfaces a value
  *   4. /api/g-brain — detect / catalog / overview against the real brain
+ *
+ * 02-04 (server-contract-hardening) re-pin check: all 9 pins in this file
+ * assert a success-path (200) shape only — none assert an error-response
+ * shape on /api/config or /api/gateway, the two route groups 02-04
+ * migrated onto the { ok: false, error, details? } envelope (D-01). Ran
+ * `npm run test:gateway` against the live dev instance after that
+ * migration: all 9 pins here still pass unchanged, confirming the
+ * success-path contract this file pins was not touched by the envelope
+ * change. No assertion in this file needed updating.
  */
 
 import { test, expect } from "@playwright/test";
