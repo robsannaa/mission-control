@@ -98,14 +98,14 @@ type DeliveryMode = "announce" | "webhook" | "none";
 
 /* ── helpers ──────────────────────────────────────── */
 
-function fmtDuration(ms: number | undefined): string {
+export function fmtDuration(ms: number | undefined): string {
   if (!ms) return "—";
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(0)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
-function fmtAgo(ms: number | undefined): string {
+export function fmtAgo(ms: number | undefined): string {
   if (!ms) return "—";
   const diff = Date.now() - ms;
   if (diff < 0) {
@@ -122,7 +122,7 @@ function fmtAgo(ms: number | undefined): string {
   return `${Math.floor(diff / 86400000)}d ago`;
 }
 
-function fmtDate(ms: number | undefined, timeFormat: TimeFormatPreference): string {
+export function fmtDate(ms: number | undefined, timeFormat: TimeFormatPreference): string {
   if (!ms) return "—";
   return new Date(ms).toLocaleString(
     "en-US",
@@ -138,7 +138,7 @@ function fmtDate(ms: number | undefined, timeFormat: TimeFormatPreference): stri
   );
 }
 
-function fmtFullDate(ms: number | undefined, timeFormat: TimeFormatPreference): string {
+export function fmtFullDate(ms: number | undefined, timeFormat: TimeFormatPreference): string {
   if (!ms) return "—";
   return new Date(ms).toLocaleString(
     "en-US",
@@ -158,7 +158,7 @@ function fmtFullDate(ms: number | undefined, timeFormat: TimeFormatPreference): 
 }
 
 /** Turn a cron expression into a short human-readable phrase (e.g. "Every 6 hours", "Daily at 8:00 AM"). */
-function cronToHuman(expr: string, timeFormat: TimeFormatPreference): string {
+export function cronToHuman(expr: string, timeFormat: TimeFormatPreference): string {
   const parts = expr.trim().split(/\s+/);
   if (parts.length < 5) return expr;
   const [min, hour, day, month, dow] = parts;
@@ -213,7 +213,7 @@ function cronToHuman(expr: string, timeFormat: TimeFormatPreference): string {
   return expr;
 }
 
-function scheduleDisplay(s: CronJob["schedule"], timeFormat: TimeFormatPreference): string {
+export function scheduleDisplay(s: CronJob["schedule"], timeFormat: TimeFormatPreference): string {
   if (s.kind === "cron" && s.expr) {
     const human = cronToHuman(s.expr, timeFormat);
     return human !== s.expr ? `${human}${s.tz ? ` (${s.tz})` : ""}` : `${s.expr}${s.tz ? ` (${s.tz})` : ""}`;
@@ -225,7 +225,7 @@ function scheduleDisplay(s: CronJob["schedule"], timeFormat: TimeFormatPreferenc
   return "Unknown";
 }
 
-function scheduleOptionLabel(opt: ScheduleOption, timeFormat: TimeFormatPreference): string {
+export function scheduleOptionLabel(opt: ScheduleOption, timeFormat: TimeFormatPreference): string {
   if (opt.kind === "cron" && "expr" in opt) {
     const human = cronToHuman(opt.expr, timeFormat);
     if (human !== opt.expr) return human;
@@ -239,7 +239,7 @@ function scheduleOptionLabel(opt: ScheduleOption, timeFormat: TimeFormatPreferen
   return opt.label;
 }
 
-function normalizeDeliveryMode(value: string | null | undefined): DeliveryMode {
+export function normalizeDeliveryMode(value: string | null | undefined): DeliveryMode {
   const mode = String(value || "").trim().toLowerCase();
   if (mode === "announce" || mode === "webhook" || mode === "none") {
     return mode;
@@ -247,7 +247,7 @@ function normalizeDeliveryMode(value: string | null | undefined): DeliveryMode {
   return "none";
 }
 
-function isValidWebhookUrl(value: string): boolean {
+export function isValidWebhookUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -373,7 +373,7 @@ type FailureGuide = {
   steps: string[];
 };
 
-function buildFailureGuide(error: string, delivery: CronJob["delivery"]): FailureGuide {
+export function buildFailureGuide(error: string, delivery: CronJob["delivery"]): FailureGuide {
   const raw = String(error || "").trim();
   const lower = raw.toLowerCase();
   const channelHint = delivery.channel
