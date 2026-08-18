@@ -102,9 +102,16 @@ export const GET = withRoute({ name: "/api/config/lookup" }, async (request, ctx
     }
 
     if (requested.length > MAX_LOOKUP_PATHS_PER_REQUEST) {
-      return badRequest(
-        `Too many paths: ${requested.length}. This endpoint looks up at most ${MAX_LOOKUP_PATHS_PER_REQUEST} paths per request — split the request.`,
-        { max: MAX_LOOKUP_PATHS_PER_REQUEST },
+      // `max` is a pinned top-level field (e2e/config-lookup.spec.ts), not a
+      // `details` value — build this one manually rather than through
+      // `badRequest`, whose `details` slot would move it under a nested key.
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Too many paths: ${requested.length}. This endpoint looks up at most ${MAX_LOOKUP_PATHS_PER_REQUEST} paths per request — split the request.`,
+          max: MAX_LOOKUP_PATHS_PER_REQUEST,
+        },
+        { status: 400 },
       );
     }
 
