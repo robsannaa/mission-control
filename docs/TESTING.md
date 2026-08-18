@@ -1,0 +1,107 @@
+# Testing
+
+Mission Control has two test runners and five lanes. This document is the single
+source of truth for which lanes exist, which of them block a merge, and how to
+run the ones GitHub Actions cannot run.
+
+## Two runners, five lanes
+
+| Lane | Command | Requires | Typical runtime | Where it runs |
+|------|---------|----------|------------------|----------------|
+| Vitest unit + component | `npm run test:unit` | Nothing | ~1s (117 tests) | GitHub Actions + local |
+| Vitest live | `npm run test:integration` | Dev instance | <1s (1 test) | Local only |
+| Playwright CI | `npm test` | Nothing | ~16s (406 tests) | GitHub Actions + local |
+| Playwright LIVE_GATEWAY | `npm run test:gateway` | Dev instance | ~55s | Local only |
+| Playwright LIVE_UI | `npm run test:ui` | Dev instance + Chromium | ~2.5min | Local only |
+
+"Dev instance" means the real local OpenClaw gateway (`~/instances/dev`, port 18789)
+plus Mission Control running against it. "Chromium" means `npm run test:install` has
+been run once.
+
+## What blocks what
+
+GitHub Actions blocks a pull request on two lanes: the Vitest fast lane
+(`npm run test:unit`) and the Playwright CI project (`npm test`). Both run in
+`.github/workflows/ci.yml` on every push to `main` and every pull request, before
+lint, type check, and build.
+
+The three instance-dependent lanes — Vitest live, Playwright LIVE_GATEWAY,
+Playwright LIVE_UI — do **not** run in GitHub Actions, because GitHub Actions has
+no OpenClaw gateway, no Mission Control instance, and no G-Brain. They block a
+merge through `npm run test:premerge`, run locally by a maintainer before merging.
+
+Say this plainly: that half of the suite is enforced by convention and review, not
+by the platform. `npm run test:premerge` chains `test:unit && test:integration &&
+test:live` — the first failing lane stops the run and returns a non-zero exit
+code, so it is a gate, not a report. If this convention proves unreliable, the
+deferred alternative — provisioning an ephemeral OpenClaw instance inside GitHub
+Actions — is recorded in `.planning/phases/01-test-foundation/01-CONTEXT.md`
+(Decision 2).
+
+## Running the local gate
+
+From a stopped instance:
+
+```bash
+# 1. Start the dev OpenClaw instance
+~/instances/dev/run.sh
+
+# 2. Start Mission Control against it, on port 3100
+OPENCLAW_HOME=~/instances/dev/home npm run dev -- -p 3100
+
+# 3. Install Chromium once (skip if already installed)
+npm run test:install
+
+# 4. Run the full pre-merge gate
+npm run test:premerge
+```
+
+A non-zero exit from `npm run test:premerge` blocks the merge. Fix the failing
+lane, or confirm it's a known pre-existing issue tracked in
+`.planning/phases/01-test-foundation/deferred-items.md`, before opening or
+merging a pull request.
+
+## Where tests live
+
+The filename suffix and the spec title tag are the **only** routing mechanisms.
+Getting one wrong makes a test silently not run in any lane.
+
+- `src/lib/**/*.test.ts` and `src/app/api/**/*.test.ts` → Vitest `unit` project.
+- `src/components/**/*.test.{ts,tsx}` → Vitest `component` project.
+- Any file ending `.live.test.ts` → Vitest `live` project. Never the fast lane.
+- Files in `e2e/` route by title tag:
+  - No tag → Playwright `CI` project.
+  - `@live` tag → Playwright `LIVE_GATEWAY` project.
+  - `@live @ui` tags together → Playwright `LIVE_UI` project.
+
+## Rules that are not negotiable
+
+- No gateway doubles anywhere. Tests hit the real dev instance and real
+  G-Brain — no `FakeGatewayClient`, no mocked gateway responses.
+- Never print, snapshot, or commit a raw `/api/config` body or any
+  credential-shaped string. The live config response contains unredacted
+  secrets (gateway token, provider API keys).
+- Any spec that writes config must pace itself against the shared
+  three-writes-per-sixty-seconds budget on `config.patch` (see
+  `playwright.config.ts`'s header comment and `pacedPatch()` in
+  `e2e/config-editor-write.spec.ts`).
+- The three fragile monolithic views (`agents-view.tsx`, `cron-view.tsx`,
+  `config-editor.tsx`) take export-only edits — mechanical `export` keyword
+  additions, zero logic changes — until the Phase 6 audit.
+
+## Known gaps
+
+`npm run test:premerge` does not currently exit 0 against the dev instance. Four
+pre-existing failures, unrelated to any change in this phase, are tracked in
+`.planning/phases/01-test-foundation/deferred-items.md`:
+
+- `e2e/correctness.spec.ts:48` — no model in the live catalog currently reports a
+  `contextWindow`.
+- `e2e/memory.spec.ts:53` — `GET /api/memory/extraction` is not returning 2xx on
+  this dev instance.
+- `e2e/config-editor-write.spec.ts:688` — a config field's locator times out.
+- `e2e/onboarding-live.spec.ts:266` — an onboarding wizard step times out.
+
+None of these are caused by the test infrastructure this phase built. They are
+real, pre-existing product/environment issues, deferred to a future audit per the
+scope boundary of the plans that discovered them.

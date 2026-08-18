@@ -1,19 +1,31 @@
-# Lint, type-check, build, and run the CI-safe Playwright project.
+# Lint, type-check, build, and run the two blocking-here lanes: the Vitest
+# fast lane and the CI-safe Playwright project.
 #
-# The Playwright suite is split into three projects in playwright.config.ts,
-# by tags in the test title:
-#   - CI (this workflow): specs NOT tagged @live — unit-style tests plus specs
-#     that spawn their own throwaway next servers. No OpenClaw gateway, no
-#     shared app, no browser. Equivalent to `--grep-invert @live`.
-#   - LIVE_GATEWAY: specs tagged @live (but not @ui). Need a real gateway on
-#     127.0.0.1:18789 and Mission Control on :3100. Still request-style, so
-#     still no browser. Run locally: `npm run test:gateway`.
-#   - LIVE_UI: specs tagged @ui. The only tests that drive a browser, so the
-#     only ones needing `npm run test:install`. Run locally: `npm run test:ui`.
+# There are two test runners and five lanes total. This job runs two of them:
+#   - Vitest fast lane (the `test:unit` script, this workflow): the `unit`
+#     and `component` Vitest projects. No OpenClaw gateway, no shared app, no
+#     browser. Sub-15-second feedback on pure logic.
+#   - Playwright CI project (this workflow): specs NOT tagged @live —
+#     unit-style tests plus specs that spawn their own throwaway next
+#     servers. No OpenClaw gateway, no shared app, no browser. Equivalent to
+#     `--grep-invert @live`.
 #
-# Neither live project can run here — GitHub Actions has no OpenClaw gateway
-# and no Mission Control instance — so this job deliberately installs no
-# browsers, which is also what keeps its runtime short.
+# The other three lanes deliberately do NOT run here, because GitHub Actions
+# has no OpenClaw gateway, no Mission Control instance and no G-Brain:
+#   - Vitest live project (`npm run test:integration`) — in-process route
+#     tests against the real dev gateway.
+#   - Playwright LIVE_GATEWAY (`npm run test:gateway`) — request-style specs
+#     tagged @live (but not @ui), hitting the real gateway and Mission
+#     Control on :3100. Still no browser.
+#   - Playwright LIVE_UI (`npm run test:ui`) — specs tagged @ui, the only
+#     ones driving a real browser, so the only ones needing
+#     `npm run test:install`.
+#
+# Those three instance-dependent lanes are covered instead by a local
+# pre-merge gate: run `npm run test:premerge` against the dev instance before
+# opening a pull request. See docs/TESTING.md for the full lane table and the
+# blocking-status rule. This job deliberately installs no browsers, which is
+# also what keeps its runtime short.
 name: CI
 
 on:
@@ -36,6 +48,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Vitest fast lane (unit and component projects)
+        run: npm run test:unit
 
       - name: Lint
         run: npm run lint

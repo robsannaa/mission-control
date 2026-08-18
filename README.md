@@ -245,6 +245,10 @@ npm run dev -- --port 8080
 
 Pull requests welcome. Found a bug or have an idea? [Open an issue](https://github.com/robsannaa/openclaw-mission-control/issues).
 
+Before opening a pull request, run `npm run test:premerge` against your local dev
+instance. See [`docs/TESTING.md`](docs/TESTING.md) for what each test lane needs
+and which lanes must be green before a merge.
+
 ---
 
 ## License
