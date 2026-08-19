@@ -37,6 +37,7 @@
     "dev:vpc:empty": "VPC_EMPTY=1 node scripts/dev-vpc.mjs",
     "vpc:reset": "node scripts/vpc-reset-onboarding.mjs",
     "check:contract": "node scripts/check-api-contract.mjs",
+    "check:capabilities": "node scripts/check-capability-gates.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
