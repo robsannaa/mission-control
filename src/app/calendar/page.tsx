@@ -1,12 +1,11 @@
 import { redirect } from "next/navigation";
 import { RouteSectionView } from "@/components/route-section-view";
+import { getCapabilitySnapshot } from "@/lib/capability-probes";
 
-export default function CalendarRoutePage() {
-  const isAgentbayHosted =
-    process.env.AGENTBAY_HOSTED === "true" ||
-    process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
+export default async function CalendarRoutePage() {
+  const { capabilities } = await getCapabilitySnapshot();
 
-  if (isAgentbayHosted) {
+  if (!capabilities.calendarWorkspace) {
     redirect("/dashboard");
   }
 

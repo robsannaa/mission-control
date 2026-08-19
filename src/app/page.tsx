@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { RouteSectionView } from "@/components/route-section-view";
+import { getCapabilitySnapshot } from "@/lib/capability-probes";
+import type { CapabilityKey } from "@/lib/capabilities";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -37,9 +39,14 @@ const SECTION_TO_PATH: Record<string, string> = {
   help: "/help",
 };
 
-const isAgentbayHosted =
-  process.env.AGENTBAY_HOSTED === "true" ||
-  process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
+// The two sections /calendar and /tailscale gate on directly (their own
+// dedicated pages carry the identical check) — kept as a map, not two
+// separate `if`s, so this router and the dedicated pages can never drift
+// out of sync on which capability key backs which section.
+const SECTION_CAPABILITY: Partial<Record<string, CapabilityKey>> = {
+  tailscale: "tailscaleNetworking",
+  calendar: "calendarWorkspace",
+};
 
 function firstParam(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] || null;
@@ -68,9 +75,14 @@ export default async function Home({
   const section = firstParam(paramsObj.section);
   if (section) {
     const normalizedSection = section.toLowerCase();
-    const targetPath = isAgentbayHosted && (normalizedSection === "tailscale" || normalizedSection === "calendar")
-      ? "/dashboard"
-      : (SECTION_TO_PATH[normalizedSection] || "/dashboard");
+    const requiredCapability = SECTION_CAPABILITY[normalizedSection];
+    let targetPath = SECTION_TO_PATH[normalizedSection] || "/dashboard";
+    if (requiredCapability) {
+      const { capabilities } = await getCapabilitySnapshot();
+      if (!capabilities[requiredCapability]) {
+        targetPath = "/dashboard";
+      }
+    }
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(paramsObj)) {
       if (key === "section") continue;
