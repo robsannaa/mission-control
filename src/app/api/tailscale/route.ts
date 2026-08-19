@@ -3,6 +3,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { withRoute } from "@/lib/api-route";
 import { tailscalePostSchema, type TailscalePostInput } from "@/lib/schemas/updates";
+import { requireCapability } from "@/lib/capability-probes";
 
 const exec = promisify(execFile);
 
@@ -103,6 +104,8 @@ function formatExecError(err: unknown): string {
 }
 
 export const GET = withRoute({ name: "/api/tailscale" }, async () => {
+  const refusal = await requireCapability("tailscaleNetworking");
+  if (refusal) return refusal;
   try {
     const ver = await runTailscale(["version"], 6000).catch(() => null);
     if (!ver) {
@@ -194,6 +197,8 @@ export const GET = withRoute({ name: "/api/tailscale" }, async () => {
 export const POST = withRoute<TailscalePostInput>(
   { name: "/api/tailscale", bodySchema: tailscalePostSchema },
   async (_request, ctx) => {
+  const refusal = await requireCapability("tailscaleNetworking");
+  if (refusal) return refusal;
   try {
     const { action } = ctx.body;
 

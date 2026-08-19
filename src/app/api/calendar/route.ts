@@ -10,24 +10,17 @@ import {
 import { buildCalendarSnapshot, syncCalendarAccount } from "@/lib/calendar-sync";
 import { withRoute } from "@/lib/api-route";
 import { calendarGetQuerySchema, calendarPostSchema } from "@/lib/schemas/knowledge";
-import { badRequest, notFound, serverError } from "@/lib/api-errors";
+import { badRequest, serverError } from "@/lib/api-errors";
+import { requireCapability } from "@/lib/capability-probes";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function isHostedCalendarDisabled(): boolean {
-  return (
-    process.env.AGENTBAY_HOSTED === "true" ||
-    process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true"
-  );
-}
-
 export const GET = withRoute(
   { name: "/api/calendar", querySchema: calendarGetQuerySchema },
   async (_request, ctx) => {
-  if (isHostedCalendarDisabled()) {
-    return notFound("Calendar is unavailable in hosted mode");
-  }
+  const refusal = await requireCapability("calendarWorkspace");
+  if (refusal) return refusal;
   try {
     const days = ctx.query.days ?? 14;
     return NextResponse.json(await buildCalendarSnapshot(days), {
@@ -46,9 +39,8 @@ export const GET = withRoute(
 export const POST = withRoute(
   { name: "/api/calendar", bodySchema: calendarPostSchema },
   async (_request, ctx) => {
-  if (isHostedCalendarDisabled()) {
-    return notFound("Calendar is unavailable in hosted mode");
-  }
+  const refusal = await requireCapability("calendarWorkspace");
+  if (refusal) return refusal;
   const body = ctx.body;
   try {
     const action = String(body?.action || "");
