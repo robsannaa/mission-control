@@ -37,6 +37,7 @@ import {
   withTimeFormat,
 } from "@/lib/time-format-preference";
 import { useGatewayStatusStore } from "@/lib/gateway-status-store";
+import { useCapabilities } from "@/hooks/use-capabilities";
 
 /* ── types ────────────────────────────────────────── */
 
@@ -129,6 +130,7 @@ export function DashboardView() {
   const [expandedCron, setExpandedCron] = useState<string | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const gwStore = useGatewayStatusStore();
+  const { capabilities, hosted } = useCapabilities();
 
   const fetchLive = useCallback(async () => {
     try {
@@ -332,7 +334,7 @@ export function DashboardView() {
           </div>
 
           {/* ── Access & pairing ─── */}
-          {process.env.NEXT_PUBLIC_AGENTBAY_HOSTED !== "true" && <div className="rounded-xl border border-border-subtle bg-card p-4 shadow-sm">
+          {capabilities.hostInfrastructure && <div className="rounded-xl border border-border-subtle bg-card p-4 shadow-sm">
             <h2 className="eyebrow mb-3 flex items-center gap-2">
               <KeyRound className="h-3.5 w-3.5" /> Access & pairing
             </h2>
@@ -774,7 +776,7 @@ export function DashboardView() {
           <ArrowRight className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
         </Link>
         {/* ── Contact & support ── */}
-        {process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true" && (
+        {hosted && (
           <div className="rounded-xl border border-border-subtle bg-card p-4 shadow-sm">
             <h2 className="eyebrow mb-2">
               Need help?

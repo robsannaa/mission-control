@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { useCapabilities } from "@/hooks/use-capabilities";
 import {
   Sheet,
   SheetClose,
@@ -118,6 +119,7 @@ function warnIssues(s: McpServerView) {
 // ── main view ────────────────────────────────────────────────────────────────
 
 export function McpView() {
+  const { capabilities } = useCapabilities();
   const [state, setState] = useState<McpState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -252,7 +254,8 @@ export function McpView() {
       <McpCatalogSheet
         open={catalogOpen}
         installedNames={new Set(servers.map((s) => s.name))}
-        isHosted={process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true"}
+        // The sheet filters connectors that need the user's own machine.
+        isHosted={!capabilities.hostInfrastructure}
         onClose={() => setCatalogOpen(false)}
         onPick={(p) => {
           setCatalogOpen(false);

@@ -8,6 +8,7 @@ import { PanelErrorBoundary } from "@/components/panel-error-boundary";
 import { GatewayOfflineBanner } from "@/components/gateway-offline-banner";
 import { ContentLoadingState } from "@/components/ui/loading-state";
 import { setChatActive } from "@/lib/chat-store";
+import { useCapabilities } from "@/hooks/use-capabilities";
 
 function SectionLoading() {
   return <ContentLoadingState />;
@@ -146,8 +147,6 @@ const ApprovalsView = dynamic(
   { loading: () => <SectionLoading /> }
 );
 
-const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
-
 export type DashboardSection =
   | "dashboard"
   | "chat"
@@ -188,7 +187,11 @@ export type DashboardSection =
   | "approvals";
 
 function SectionContent({ section }: { section: DashboardSection }) {
-  if (isAgentbayHosting && section === "tailscale") {
+  const { capabilities } = useCapabilities();
+
+  // Same decision the /tailscale page redirect makes (plan 03-03): no
+  // tailscaleNetworking capability means no Tailscale surface at all.
+  if (!capabilities.tailscaleNetworking && section === "tailscale") {
     return <DashboardView />;
   }
 
@@ -234,7 +237,9 @@ function SectionContent({ section }: { section: DashboardSection }) {
     case "tailscale":
       return <TailscaleView />;
     case "browser":
-      return <BrowserRelayView isHosted={isAgentbayHosting} />;
+      // isHosted means "no local browser extension is possible here" —
+      // supplied by !hostInfrastructure (plan 03-04 key assignment).
+      return <BrowserRelayView isHosted={!capabilities.hostInfrastructure} />;
     case "calendar":
       return <CalendarView />;
     case "integrations":
