@@ -45,6 +45,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useFocusTrap, useBodyScrollLock } from "@/hooks/use-modal-accessibility";
 import { InlineSpinner } from "@/components/ui/loading-state";
+import { useCapabilities } from "@/hooks/use-capabilities";
+import type { CapabilityKey, CapabilityMatrix } from "@/lib/capabilities";
 
 /* ── types ────────────────────────────────────────── */
 
@@ -57,15 +59,17 @@ type SearchResult = {
   source: string;
 };
 
-type QuickAction = {
+export type QuickAction = {
   id: string;
   label: string;
   group: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   keywords: string[];
-  /** Hidden on the hosted (Agentbay) deployment — mirrors sidebar.tsx. */
-  selfHostedOnly?: true;
+  /** Hidden entirely unless this capability resolves `true` — the tags here
+   * must mirror sidebar.tsx's `NavItem.requiresCapability` tags for the same
+   * feature, or a "hidden" feature stays reachable from the command palette. */
+  requiresCapability?: CapabilityKey;
 };
 
 type UnifiedItem =
@@ -82,8 +86,6 @@ type Props = {
  * same grouping, same hosted-only gaps. Ordered Chat-first so the empty-query
  * default (first 6) matches what the rail leads with. */
 
-const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
-
 const ALL_QUICK_ACTIONS: QuickAction[] = [
   { id: "chat", label: "Chat", group: "Overview", href: "/chat", icon: MessageCircle, keywords: ["message", "talk", "ping"] },
   { id: "tasks", label: "Tasks", group: "Overview", href: "/tasks", icon: ListChecks, keywords: ["todo", "jobs", "queue"] },
@@ -91,7 +93,7 @@ const ALL_QUICK_ACTIONS: QuickAction[] = [
   { id: "activity", label: "Activity", group: "Overview", href: "/activity", icon: Activity, keywords: ["log", "events", "history"] },
   { id: "usage", label: "Usage", group: "Overview", href: "/usage", icon: BarChart3, keywords: ["stats", "metrics", "analytics"] },
   { id: "sessions", label: "Sessions", group: "Overview", href: "/sessions", icon: MessageSquare, keywords: ["conversations", "threads"] },
-  { id: "calendar", label: "Calendar", group: "Overview", href: "/calendar", icon: Calendar, keywords: ["schedule", "events", "date"], selfHostedOnly: true },
+  { id: "calendar", label: "Calendar", group: "Overview", href: "/calendar", icon: Calendar, keywords: ["schedule", "events", "date"], requiresCapability: "calendarWorkspace" },
 
   { id: "agents", label: "Agents", group: "Agents", href: "/agents", icon: Users, keywords: ["bots", "assistants"] },
   { id: "models", label: "Models", group: "Agents", href: "/agents?tab=models", icon: Cpu, keywords: ["llm", "ai", "gpt", "claude"] },
@@ -108,23 +110,29 @@ const ALL_QUICK_ACTIONS: QuickAction[] = [
   { id: "channels", label: "Channels", group: "Connections", href: "/channels", icon: Radio, keywords: ["telegram", "discord", "slack"] },
   { id: "integrations", label: "Integrations", group: "Connections", href: "/integrations", icon: Puzzle, keywords: ["connect", "apps", "plugins", "gmail", "drive"] },
 
-  { id: "logs", label: "Logs", group: "Settings", href: "/logs", icon: Terminal, keywords: ["output", "debug", "trace"], selfHostedOnly: true },
+  { id: "logs", label: "Logs", group: "Settings", href: "/logs", icon: Terminal, keywords: ["output", "debug", "trace"], requiresCapability: "hostInfrastructure" },
   { id: "accounts", label: "API Keys", group: "Settings", href: "/accounts", icon: KeyRound, keywords: ["credentials", "tokens", "auth", "keys", "api", "secrets"] },
   { id: "security", label: "Security", group: "Settings", href: "/security", icon: ShieldCheck, keywords: ["permissions", "access"] },
   { id: "hooks", label: "Webhooks", group: "Settings", href: "/hooks", icon: Webhook, keywords: ["events", "triggers", "automation", "hooks"] },
   { id: "settings", label: "Preferences", group: "Settings", href: "/settings", icon: Settings2, keywords: ["config", "options"] },
   { id: "doctor", label: "Doctor", group: "Settings", href: "/doctor", icon: Stethoscope, keywords: ["health", "diagnostics", "debug"] },
-  { id: "terminal", label: "Terminal", group: "Settings", href: "/terminal", icon: SquareTerminal, keywords: ["shell", "console", "cli"], selfHostedOnly: true },
-  { id: "browser", label: "Browser Automation", group: "Settings", href: "/browser", icon: Globe, keywords: ["web", "proxy", "remote", "browser relay"], selfHostedOnly: true },
-  { id: "audio", label: "Audio & Voice", group: "Settings", href: "/audio", icon: Volume2, keywords: ["speech", "microphone", "tts"], selfHostedOnly: true },
-  { id: "tailscale", label: "Tailscale", group: "Settings", href: "/tailscale", icon: Waypoints, keywords: ["vpn", "network", "tunnel"], selfHostedOnly: true },
-  { id: "config", label: "Config", group: "Settings", href: "/config", icon: Settings, keywords: ["configuration", "system"], selfHostedOnly: true },
+  { id: "terminal", label: "Terminal", group: "Settings", href: "/terminal", icon: SquareTerminal, keywords: ["shell", "console", "cli"], requiresCapability: "hostInfrastructure" },
+  { id: "browser", label: "Browser Automation", group: "Settings", href: "/browser", icon: Globe, keywords: ["web", "proxy", "remote", "browser relay"], requiresCapability: "hostInfrastructure" },
+  { id: "audio", label: "Audio & Voice", group: "Settings", href: "/audio", icon: Volume2, keywords: ["speech", "microphone", "tts"], requiresCapability: "hostInfrastructure" },
+  { id: "tailscale", label: "Tailscale", group: "Settings", href: "/tailscale", icon: Waypoints, keywords: ["vpn", "network", "tunnel"], requiresCapability: "tailscaleNetworking" },
+  { id: "config", label: "Config", group: "Settings", href: "/config", icon: Settings, keywords: ["configuration", "system"], requiresCapability: "hostInfrastructure" },
   { id: "help", label: "Help & Support", group: "Settings", href: "/help", icon: HelpCircle, keywords: ["support", "faq", "contact"] },
 ];
 
-const quickActions: QuickAction[] = ALL_QUICK_ACTIONS.filter(
-  (action) => !action.selfHostedOnly || !isAgentbayHosting,
-);
+/** Pure filter — mirrors `sidebar.tsx`'s `filterNavItemsForCapabilities`,
+ * kept separate from any context read so it is exercised the same way in
+ * tests (no rendering, no provider). */
+export function filterQuickActionsForCapabilities(
+  actions: QuickAction[],
+  capabilities: CapabilityMatrix,
+): QuickAction[] {
+  return actions.filter((action) => !action.requiresCapability || capabilities[action.requiresCapability]);
+}
 
 /* ── helpers ──────────────────────────────────────── */
 
@@ -213,6 +221,12 @@ export function SearchModal({ open, onClose }: Props) {
   const focusTrapRef = useFocusTrap(open);
   useBodyScrollLock(open);
 
+  const { capabilities } = useCapabilities();
+  const quickActions = useMemo(
+    () => filterQuickActionsForCapabilities(ALL_QUICK_ACTIONS, capabilities),
+    [capabilities],
+  );
+
   // Detect command palette mode (query starts with ">")
   const isCommandMode = query.startsWith(">");
   const commandQuery = isCommandMode ? query.slice(1).trim().toLowerCase() : "";
@@ -247,7 +261,7 @@ export function SearchModal({ open, onClose }: Props) {
       .sort((a, b) => b.score - a.score || a.action.label.localeCompare(b.action.label));
 
     return scored.map((x) => x.action);
-  }, [isCommandMode, commandQuery, query]);
+  }, [isCommandMode, commandQuery, query, quickActions]);
 
   // Build unified items list for keyboard navigation. Destinations come first:
   // they are exact, instant and local, while memory results are fuzzy.

@@ -40,6 +40,8 @@ import {
 import { getChatUnreadCount, subscribeChatStore } from "@/lib/chat-store";
 import { useSmartPoll } from "@/hooks/use-smart-poll";
 import { INTERACTIONS_CHANGED_EVENT } from "@/lib/interaction-events";
+import { useCapabilities } from "@/hooks/use-capabilities";
+import type { CapabilityKey, CapabilityMatrix } from "@/lib/capabilities";
 
 function TickingClockIcon({ className }: { className?: string }) {
   const [now, setNow] = useState<Date | null>(null);
@@ -110,19 +112,17 @@ type NavItem = {
   comingSoon?: boolean;
   beta?: boolean;
   group?: string;
-  /** Hidden entirely on the hosted (Agentbay) deployment. */
-  selfHostedOnly?: true;
+  /** Hidden entirely unless this capability resolves `true` (see `useCapabilities()`). */
+  requiresCapability?: CapabilityKey;
   /** Shown only when a G-Brain install is detected at runtime (see SidebarNav). */
   requiresGBrain?: true;
   /** Sits below the hairline separator pinned to the bottom of the rail. */
   pinnedBottom?: true;
 };
 
-const isAgentbayHosting = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
-
 /**
- * ONE nav tree. Hosted degrades by omission (via `selfHostedOnly`), never by
- * maintaining a second hand-written tree — that's how Calendar silently
+ * ONE nav tree. Hosted degrades by omission (via `requiresCapability`), never
+ * by maintaining a second hand-written tree — that's how Calendar silently
  * vanished from the old `hostedNavItems` and API Keys got promoted there
  * against its own page's advice. See e2e/sidebar-nav verification for the
  * filtered hosted set.
@@ -160,8 +160,8 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { section: "usage", label: "Usage", icon: BarChart3, href: "/usage" },
   { section: "sessions", label: "Sessions", icon: MessageSquare, href: "/sessions" },
   // Self-hosted only for now — hosted lacks a Google-connect flow. Product
-  // gap, not an oversight; the flag stays until that flow exists.
-  { section: "calendar", label: "Calendar", icon: Calendar, href: "/calendar", beta: true, selfHostedOnly: true },
+  // gap, not an oversight; the capability stays absent until that flow exists.
+  { section: "calendar", label: "Calendar", icon: Calendar, href: "/calendar", beta: true, requiresCapability: "calendarWorkspace" },
 
   // ── Agents ──
   { group: "Agents", section: "agents", label: "Agents", icon: Users, href: "/agents" },
@@ -184,23 +184,26 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { section: "integrations", label: "Integrations", icon: Puzzle, href: "/integrations", beta: true },
 
   // ── pinned bottom, below a hairline separator ──
-  { section: "logs", label: "Logs", icon: Terminal, href: "/logs", pinnedBottom: true, selfHostedOnly: true },
-  { section: "backup", label: "Backup", icon: Archive, href: "/backup", pinnedBottom: true, selfHostedOnly: true },
+  { section: "logs", label: "Logs", icon: Terminal, href: "/logs", pinnedBottom: true, requiresCapability: "hostInfrastructure" },
+  { section: "backup", label: "Backup", icon: Archive, href: "/backup", pinnedBottom: true, requiresCapability: "hostInfrastructure" },
   { section: "settings", label: "Settings", icon: Settings, href: "/settings", pinnedBottom: true },
   { section: "help", label: "Help & Support", icon: HelpCircle, href: "/help", pinnedBottom: true },
 ];
 
-/** Pure filter — kept separate from the module-level `isAgentbayHosting`
- * read so it can be exercised both ways in tests without re-importing the
- * module under a different env. */
-export function filterNavItemsForHosting(items: NavItem[], hosted: boolean): NavItem[] {
-  return items.filter((item) => !item.selfHostedOnly || !hosted);
+/** Pure filter — kept separate from any environment/context read so it can
+ * be exercised both ways in tests without rendering or a provider (see
+ * `sidebar.test.tsx`). Drops every entry whose `requiresCapability` key
+ * resolves `false`/absent in `capabilities`; entries with no
+ * `requiresCapability` field are always kept. */
+export function filterNavItemsForCapabilities(
+  items: NavItem[],
+  capabilities: CapabilityMatrix,
+): NavItem[] {
+  return items.filter((item) => !item.requiresCapability || capabilities[item.requiresCapability]);
 }
 
 export { ALL_NAV_ITEMS };
 export type { NavItem };
-
-const navItems = filterNavItemsForHosting(ALL_NAV_ITEMS, isAgentbayHosting);
 
 /** Sections that no longer have their own rail row — they live in the
  * Settings hub now, so visiting them should still light up "Settings". */
@@ -316,6 +319,9 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
   // G-Brain is a standalone install, not part of OpenClaw — its nav row only
   // appears when a brain is actually present on this machine. Detected at
   // runtime (there is no build-time flag for it); hidden until we know.
+  // This stays a separate client-side runtime probe (not the SSR-bootstrapped
+  // capability matrix) — it's a gateway-backed detection, not an env flag; see
+  // 03-02-PLAN.md's explicit non-goal note.
   const [gbrainInstalled, setGbrainInstalled] = useState<boolean | null>(null);
   useEffect(() => {
     let live = true;
@@ -325,7 +331,11 @@ function SidebarNav({ onNavigate, collapsed }: { onNavigate?: () => void; collap
       .catch(() => { if (live) setGbrainInstalled(false); });
     return () => { live = false; };
   }, []);
-  const items = gbrainInstalled ? navItems : navItems.filter((i) => !i.requiresGBrain);
+  const { capabilities } = useCapabilities();
+  const capabilityFilteredItems = filterNavItemsForCapabilities(ALL_NAV_ITEMS, capabilities);
+  const items = gbrainInstalled
+    ? capabilityFilteredItems
+    : capabilityFilteredItems.filter((i) => !i.requiresGBrain);
 
   // Subscribe to chat unread count reactively
   const chatUnread = useSyncExternalStore(
