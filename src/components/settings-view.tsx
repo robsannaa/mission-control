@@ -49,8 +49,9 @@ import {
 } from "@/lib/time-format-preference";
 import { chatStore } from "@/lib/chat-store";
 import { RELAUNCH_ONBOARDING_EVENT } from "@/components/setup-gate";
+import { useCapabilities } from "@/hooks/use-capabilities";
+import type { CapabilityKey, CapabilityMatrix } from "@/lib/capabilities";
 
-const isAgentbayHosted = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
 const missionControlVersion = process.env.NEXT_PUBLIC_APP_VERSION || "";
 const missionControlCommitHash = process.env.NEXT_PUBLIC_COMMIT_HASH || "";
 const missionControlBuildLabel = missionControlVersion
@@ -143,6 +144,8 @@ type HubRowDef = {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   description: string;
+  /** Hidden entirely unless this capability resolves `true` (see `HubGroup`). */
+  requiresCapability?: CapabilityKey;
 };
 
 /** Reopens the onboarding wizard from anywhere in the app — see setup-gate.tsx. */
@@ -163,11 +166,11 @@ const HUB_AUTOMATION: HubRowDef[] = [
 ];
 
 const HUB_INFRASTRUCTURE: HubRowDef[] = [
-  { href: "/terminal", icon: SquareTerminal, label: "Terminal", description: "Run shell commands directly on this machine." },
-  { href: "/config", icon: SettingsIcon, label: "Config", description: "Edit openclaw.json, the raw configuration file." },
-  { href: "/browser", icon: Globe, label: "Browser Automation", description: "Let agents drive a real browser for you." },
-  { href: "/audio", icon: Volume2, label: "Audio & Voice", description: "Manage voice input and spoken replies." },
-  { href: "/tailscale", icon: Waypoints, label: "Tailscale", description: "Reach this OpenClaw securely from anywhere." },
+  { href: "/terminal", icon: SquareTerminal, label: "Terminal", description: "Run shell commands directly on this machine.", requiresCapability: "hostInfrastructure" },
+  { href: "/config", icon: SettingsIcon, label: "Config", description: "Edit openclaw.json, the raw configuration file.", requiresCapability: "hostInfrastructure" },
+  { href: "/browser", icon: Globe, label: "Browser Automation", description: "Let agents drive a real browser for you.", requiresCapability: "hostInfrastructure" },
+  { href: "/audio", icon: Volume2, label: "Audio & Voice", description: "Manage voice input and spoken replies.", requiresCapability: "hostInfrastructure" },
+  { href: "/tailscale", icon: Waypoints, label: "Tailscale", description: "Reach this OpenClaw securely from anywhere.", requiresCapability: "tailscaleNetworking" },
 ];
 
 function HubRow({ href, onClick, icon: Icon, label, description }: HubRowDef) {
@@ -205,14 +208,19 @@ function HubRow({ href, onClick, icon: Icon, label, description }: HubRowDef) {
   );
 }
 
-function HubGroup({ title, rows }: { title: string; rows: HubRowDef[] }) {
+function HubGroup({ title, rows, capabilities }: { title: string; rows: HubRowDef[]; capabilities: CapabilityMatrix }) {
+  const visibleRows = rows.filter((row) => !row.requiresCapability || capabilities[row.requiresCapability]);
+  // Structural orphan-heading rule (UI-SPEC contract §5): a group whose rows
+  // are all gated off renders nothing at all, heading included — never a
+  // bare heading over an empty section.
+  if (visibleRows.length === 0) return null;
   return (
     <div>
       <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-[0.08em] text-fg-subtle">
         {title}
       </p>
       <div className="divide-y divide-border rounded-xl border border-border bg-card overflow-hidden">
-        {rows.map((row) => (
+        {visibleRows.map((row) => (
           <HubRow key={row.label} {...row} />
         ))}
       </div>
@@ -220,12 +228,13 @@ function HubGroup({ title, rows }: { title: string; rows: HubRowDef[] }) {
   );
 }
 
-function SettingsHub({ hosted }: { hosted: boolean }) {
+function SettingsHub() {
+  const { capabilities } = useCapabilities();
   return (
     <div className="space-y-5 pb-2">
-      <HubGroup title="General" rows={HUB_GENERAL} />
-      <HubGroup title="Automation" rows={HUB_AUTOMATION} />
-      {!hosted && <HubGroup title="Infrastructure" rows={HUB_INFRASTRUCTURE} />}
+      <HubGroup title="General" rows={HUB_GENERAL} capabilities={capabilities} />
+      <HubGroup title="Automation" rows={HUB_AUTOMATION} capabilities={capabilities} />
+      <HubGroup title="Infrastructure" rows={HUB_INFRASTRUCTURE} capabilities={capabilities} />
     </div>
   );
 }
@@ -241,6 +250,7 @@ function getLocalTimezone(): string {
 /* ── Component ────────────────────────────────────── */
 
 export function SettingsView() {
+  const { capabilities } = useCapabilities();
   const [onboard, setOnboard] = useState<OnboardData | null>(null);
   const [system, setSystem] = useState<SystemData | null>(null);
   const [settings, setSettings] = useState<SettingsData | null>(null);
@@ -450,7 +460,7 @@ export function SettingsView() {
         )}
 
         {/* ── Hub — a directory, done beautifully ─── */}
-        <SettingsHub hosted={isAgentbayHosted} />
+        <SettingsHub />
 
         {/* ── Preferences ──────────────────────────── */}
         <div id="settings-preferences" className="scroll-mt-6">
@@ -680,7 +690,7 @@ export function SettingsView() {
             />
           </SettingRow>
 
-          {!isAgentbayHosted && (
+          {capabilities.tailscaleNetworking && (
             <SettingRow
               label="Tailscale"
               description="Whether Tailscale connections are allowed."
