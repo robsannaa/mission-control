@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Header, AgentChatPanel } from "@/components/header";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { ThemeProvider } from "@/components/theme-provider";
+import { CapabilityProvider } from "@/components/capability-provider";
 import { ChatNotificationToast } from "@/components/chat-notification-toast";
 
 import { SetupGate } from "@/components/setup-gate";
@@ -17,6 +18,13 @@ import { ToastRenderer } from "@/components/toast-renderer";
 import { PairingBanner } from "@/components/pairing-banner";
 import { VersionSkewBanner } from "@/components/version-skew-banner";
 import { DashboardTourGate } from "@/components/dashboard-tour-gate";
+import { readHostedFlag, getCapabilitySnapshot } from "@/lib/capability-probes";
+
+// The capability snapshot is resolved per request (below, inside
+// `RootLayout`) — this route must never be statically prerendered, or
+// CAP-04 (probe results reflect the running instance, not the build) is
+// defeated by Next's static optimization.
+export const dynamic = "force-dynamic";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -28,9 +36,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const isHosted =
-  process.env.AGENTBAY_HOSTED === "true" ||
-  process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
+// `metadata` is evaluated at module scope and cannot await the async
+// capability snapshot below — branding/copy is a deployment fact, not a
+// feature gate, so the sync `readHostedFlag()` read is correct here. Do not
+// re-derive the env-flag OR expression at this call site (D-07); this and
+// `RootLayout`'s `getCapabilitySnapshot()` call are the only two facts read
+// in this file, and they resolve through the same probe module.
+const isHosted = readHostedFlag();
 
 export const metadata: Metadata = {
   title: isHosted
@@ -103,11 +115,18 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Resolved once per request (per the dynamic-render export above) and
+  // passed down as a prop — the SSR bootstrap point for every client
+  // capability decision (sidebar nav, quick actions, settings hub, and
+  // these two banners).
+  const snapshot = await getCapabilitySnapshot();
+  const canManageHostInfrastructure = snapshot.capabilities.hostInfrastructure;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -118,31 +137,36 @@ export default function RootLayout({
         className={`${inter.variable} ${geistMono.variable} antialiased`}
       >
         <ThemeProvider>
-          <SetupGate>
-            <KeyboardShortcuts />
-            <div className="flex h-screen overflow-hidden bg-muted text-foreground dark:bg-background dark:text-foreground">
-              <Sidebar />
-              <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                <Header />
-                <main
-                  data-tour="main-content"
-                  className="flex flex-1 overflow-hidden bg-muted dark:bg-background"
-                >
-                  {children}
-                </main>
+          <CapabilityProvider snapshot={snapshot}>
+            <SetupGate>
+              <KeyboardShortcuts />
+              <div className="flex h-screen overflow-hidden bg-muted text-foreground dark:bg-background dark:text-foreground">
+                <Sidebar />
+                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                  <Header />
+                  <main
+                    data-tour="main-content"
+                    className="flex flex-1 overflow-hidden bg-muted dark:bg-background"
+                  >
+                    {children}
+                  </main>
+                </div>
               </div>
-            </div>
-            <DashboardTourGate />
-            <AgentChatPanel />
-            <ChatNotificationToast />
-            {!isHosted && <OpenClawUpdateBanner />}
-            {!isHosted && <MissionControlUpdateBanner />}
-            <PairingBanner />
-            <VersionSkewBanner />
-            <UsageAlertMonitor />
-            <CommitmentNotifier />
-            <ToastRenderer />
-          </SetupGate>
+              <DashboardTourGate />
+              <AgentChatPanel />
+              <ChatNotificationToast />
+              {/* These offer to update software running on the user's own
+                  machine — they compose with hostInfrastructure, not the
+                  raw `isHosted` branding flag (T-03-07). */}
+              {canManageHostInfrastructure && <OpenClawUpdateBanner />}
+              {canManageHostInfrastructure && <MissionControlUpdateBanner />}
+              <PairingBanner />
+              <VersionSkewBanner />
+              <UsageAlertMonitor />
+              <CommitmentNotifier />
+              <ToastRenderer />
+            </SetupGate>
+          </CapabilityProvider>
         </ThemeProvider>
       </body>
     </html>
