@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { MeshGradient, type MeshVariant } from "@/components/ui/mesh-gradient";
 import { BrandMark } from "@/components/ui/brand-mark";
@@ -13,10 +13,7 @@ import { StepChat } from "@/components/onboarding/step-chat";
 import { ONBOARDING_STEP_IDS, type OnboardingStepId } from "@/components/onboarding/types";
 import { ScreenLoadingState } from "@/components/ui/loading-state";
 import { OnboardingWelcome } from "@/components/onboarding/welcome";
-
-const isHosted =
-  process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true" ||
-  process.env.AGENTBAY_HOSTED === "true";
+import { useCapability } from "@/hooks/use-capabilities";
 
 const STEP_LABELS: Record<OnboardingStepId, string> = {
   gateway: "Gateway",
@@ -34,13 +31,6 @@ const HERO_VARIANT: Record<OnboardingStepId, MeshVariant> = {
   chat: "aurora",
 };
 
-// A hosted container guarantees a running, healthy gateway — showing a step
-// that just confirms that is noise, not reassurance. Auto-passed, not hidden
-// from progress: it still counts as "done" in the rail.
-const VISIBLE_STEP_IDS: OnboardingStepId[] = isHosted
-  ? ONBOARDING_STEP_IDS.filter((id) => id !== "gateway")
-  : [...ONBOARDING_STEP_IDS];
-
 type Props = { onComplete: () => void };
 
 /**
@@ -56,11 +46,24 @@ type Props = { onComplete: () => void };
  */
 export function OnboardingWizard({ onComplete }: Props) {
   const { state, loaded, patch } = useOnboardingState();
+  const localGatewayControl = useCapability("localGatewayControl");
   // null until the user navigates — before that, resume from persisted progress
   const [chosenStep, setChosenStep] = useState<OnboardingStepId | null>(null);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const activeStep: OnboardingStepId | null = chosenStep ?? (loaded ? state?.currentStep ?? "gateway" : null);
   const autoSkippedGateway = useRef(false);
+
+  // A hosted container guarantees a running, healthy gateway — showing a step
+  // that just confirms that is noise, not reassurance. Auto-passed, not hidden
+  // from progress: it still counts as "done" in the rail. Computed per render
+  // from the capability so the step list never freezes at import time.
+  const VISIBLE_STEP_IDS: OnboardingStepId[] = useMemo(
+    () =>
+      localGatewayControl
+        ? [...ONBOARDING_STEP_IDS]
+        : ONBOARDING_STEP_IDS.filter((id) => id !== "gateway"),
+    [localGatewayControl],
+  );
 
   const advance = useCallback(
     async (from: OnboardingStepId, status: "done" | "skipped", meta?: Record<string, unknown>) => {
@@ -95,14 +98,14 @@ export function OnboardingWizard({ onComplete }: Props) {
   // that only confirms that is auto-passed rather than shown. Fires once,
   // after the welcome screen, the moment the gateway step would render.
   useEffect(() => {
-    if (!isHosted || !loaded || autoSkippedGateway.current) return;
+    if (localGatewayControl || !loaded || autoSkippedGateway.current) return;
     if (!welcomeDismissed && !state?.startedAt) return;
     if (activeStep !== "gateway") return;
     autoSkippedGateway.current = true;
     queueMicrotask(() => {
       void advance("gateway", "done", { auto: true, reason: "hosted" });
     });
-  }, [loaded, welcomeDismissed, state?.startedAt, activeStep, advance]);
+  }, [loaded, welcomeDismissed, state?.startedAt, activeStep, advance, localGatewayControl]);
 
   if (!loaded || activeStep === null) {
     return <ScreenLoadingState className="onboarding-light bg-[#f3f3f2]" />;

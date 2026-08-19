@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getFriendlyModelName } from "@/lib/model-metadata";
+import { useCapabilities, useCapability } from "@/hooks/use-capabilities";
 import { Celebration } from "./celebration";
 import {
   cardClass,
@@ -55,10 +56,6 @@ function detectProviderFromKey(key: string): string | null {
   return null;
 }
 
-const isHosted =
-  process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true" ||
-  process.env.AGENTBAY_HOSTED === "true";
-
 /* ── Local provider metadata (client-side mirror of src/lib/provider-auth.ts
  * LOCAL_PROVIDER_DEFAULTS — kept as plain constants here rather than
  * importing the server lib into a client component). ── */
@@ -100,6 +97,8 @@ export function StepModel({
   onDone: (meta?: Record<string, unknown>) => void;
   onSkip: () => void;
 }) {
+  const localModelAuth = useCapability("localModelAuth");
+  const { hosted } = useCapabilities();
   const [providers, setProviders] = useState<ProviderCatalogEntry[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [existingDefault, setExistingDefault] = useState<string | null>(null);
@@ -425,7 +424,7 @@ export function StepModel({
   // Subscription (paste-token) auth is not available on hosted/VPC instances —
   // there's no local Claude Code login to mint a setup token from.
   const supportsSubscription =
-    !isHosted && Boolean(activeProvider?.authMethods.includes("paste-token"));
+    localModelAuth && Boolean(activeProvider?.authMethods.includes("paste-token"));
 
   function switchMode(next: "cloud" | "local") {
     setMode(next);
@@ -449,7 +448,7 @@ export function StepModel({
           </h2>
         </div>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          {isHosted
+          {hosted
             ? "Paste an API key to power your agent. It stays inside your instance — we never see it."
             : "Paste an API key, connect a subscription, or point at a model already running on this machine — no paid service required."}
         </p>
@@ -475,7 +474,7 @@ export function StepModel({
       )}
 
       {/* Top-level chooser: Cloud | Subscription | Local — hosted is cloud-only */}
-      {!isHosted && (
+      {localModelAuth && (
       <div className="inline-flex items-center gap-0.5 rounded-lg border border-black/10 bg-[#f5f3f1] p-1">
         <button
           type="button"
@@ -949,7 +948,7 @@ export function StepModel({
           </button>
         )}
         {/* Hosted: an instance without a model is dead weight — no skipping */}
-        {!isHosted && (
+        {localModelAuth && (
           <button type="button" onClick={onSkip} className={skipBtnClass}>
             Skip for now
           </button>
