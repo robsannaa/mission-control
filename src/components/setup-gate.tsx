@@ -4,10 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Sparkles, X } from "lucide-react";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
 import { ScreenLoadingState } from "@/components/ui/loading-state";
+import { useCapabilities } from "@/hooks/use-capabilities";
 
-const isHosted =
-  process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true" ||
-  process.env.AGENTBAY_HOSTED === "true";
 const AUTO_RETRY_SECONDS = 8;
 
 /** Dispatched by the Settings hub's "Run setup again" row to reopen the wizard
@@ -84,6 +82,10 @@ function FinishSetupPointer({
 }
 
 export function SetupGate({ children }: { children: React.ReactNode }) {
+  // Both consumers below choose wording, not availability, so the raw
+  // deployment fact is the correct source here — the fail-closed capability
+  // rule does not apply to copy.
+  const { hosted } = useCapabilities();
   const [status, setStatus] = useState<OnboardGateStatus | null>(null);
   const [progress, setProgress] = useState<OnboardGateProgress | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,7 +127,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   }, [fetchStatus]);
 
   useEffect(() => {
-    if (!error || !isHosted) return;
+    if (!error || !hosted) return;
     setRetryIn(AUTO_RETRY_SECONDS);
     const countdown = setInterval(() => {
       setRetryIn((prev) => Math.max(prev - 1, 0));
@@ -137,7 +139,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
       clearInterval(countdown);
       clearTimeout(retryTimer);
     };
-  }, [error, fetchStatus]);
+  }, [error, fetchStatus, hosted]);
 
   // Settings' "Run setup again" reopens the wizard from anywhere in the app.
   useEffect(() => {
@@ -187,7 +189,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
     return (
       <div className="onboarding-light fixed inset-0 z-50 flex items-center justify-center bg-[#f3f3f2] px-4 text-foreground">
         <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-          {isHosted ? (
+          {hosted ? (
             <>
               <h2 className="text-sm font-semibold text-foreground">Your agent is starting up</h2>
               <p className="text-xs leading-relaxed text-muted-foreground">

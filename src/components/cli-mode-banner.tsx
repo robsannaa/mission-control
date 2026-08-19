@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { X, TriangleAlert } from "lucide-react";
 import { useGatewayStatusStore } from "@/lib/gateway-status-store";
+import { useCapability } from "@/hooks/use-capabilities";
 
 const DISMISS_KEY = "cli-mode-banner-dismissed";
 
@@ -30,13 +31,14 @@ export function CliModeBanner() {
     setDismissed(true);
   }, []);
 
-  // In AgentBay hosted mode, CLI is the expected transport — no warning needed.
-  // The gateway only exposes sessions_list/agents_list via HTTP; exec/read/write
-  // require CLI, so AutoTransport always settles into CLI mode. This is correct.
-  const isHosted = process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
+  // When the user doesn't control a local gateway, CLI is the expected
+  // transport — no warning needed. The gateway only exposes
+  // sessions_list/agents_list via HTTP; exec/read/write require CLI, so
+  // AutoTransport always settles into CLI mode. This is correct.
+  const localGatewayControl = useCapability("localGatewayControl");
 
   // Only render once we know the transport mode and the user hasn't dismissed
-  if (isHosted || !initialCheckDone || transport !== "cli" || dismissed) return null;
+  if (!localGatewayControl || !initialCheckDone || transport !== "cli" || dismissed) return null;
 
   const isForcedCli = transportReason === "forced_cli" || transportConfigured === "cli";
 
