@@ -21,6 +21,7 @@ import { access } from "fs/promises";
 import { join } from "path";
 import { runCliCaptureBoth } from "@/lib/openclaw";
 import { getOpenClawHome } from "@/lib/paths";
+import { getCapabilitySnapshot } from "@/lib/capability-probes";
 
 async function fileExists(p: string): Promise<boolean> {
   try {
@@ -35,18 +36,20 @@ export async function configFileExists(): Promise<boolean> {
   return fileExists(join(getOpenClawHome(), "openclaw.json"));
 }
 
-const isHosted =
-  process.env.AGENTBAY_HOSTED === "true" || process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
-
 export type BootstrapResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Create a working config (and, outside hosted containers, install + start
- * the local gateway service) from nothing. Safe to call repeatedly — it's a
- * no-op once `openclaw.json` exists.
+ * Create a working config (and, when this instance's local gateway is the
+ * caller's to install and start, install + start the local gateway service)
+ * from nothing. Safe to call repeatedly — it's a no-op once `openclaw.json`
+ * exists.
  */
 export async function bootstrapFreshMachine(): Promise<BootstrapResult> {
   if (await configFileExists()) return { ok: true };
+
+  // Resolved per call (not at module load, CAP-04) so a restarted container
+  // never carries a stale verdict into a daemon-install attempt (T-03-15).
+  const { capabilities } = await getCapabilitySnapshot();
 
   const args = [
     "onboard",
@@ -63,7 +66,7 @@ export async function bootstrapFreshMachine(): Promise<BootstrapResult> {
   ];
   // Hosted containers already guarantee a running gateway — installing a
   // second local service inside it would be redundant, not helpful.
-  if (isHosted) {
+  if (!capabilities.localGatewayControl) {
     args.push("--skip-health");
   } else {
     args.push("--install-daemon", "--daemon-runtime", "node");

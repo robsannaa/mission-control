@@ -28,6 +28,7 @@ import {
 import {withRoute} from "@/lib/api-route";
 import {onboardPostSchema} from "@/lib/schemas/onboarding";
 import {badRequest, serverError} from "@/lib/api-errors";
+import {getCapabilitySnapshot} from "@/lib/capability-probes";
 
 export const dynamic = "force-dynamic";
 
@@ -315,9 +316,7 @@ export const POST = withRoute(
         const home = getOpenClawHome();
         const configPath = join(home, "openclaw.json");
         const configExists = await fileExists(configPath);
-        const isHosted =
-          process.env.AGENTBAY_HOSTED === "true" ||
-          process.env.NEXT_PUBLIC_AGENTBAY_HOSTED === "true";
+        const { capabilities } = await getCapabilitySnapshot();
         const hasChannels = Boolean(telegramToken || discordToken);
 
         // ── Step 1: Bootstrap config/workspace/daemon (only when no config yet) ──
@@ -333,7 +332,7 @@ export const POST = withRoute(
             "--skip-search",  
             "--skip-ui",
           ];
-          if (isHosted) {
+          if (!capabilities.localGatewayControl) {
             onboardArgs.push("--skip-health");
           } else {
             onboardArgs.push("--install-daemon", "--daemon-runtime", "node");
