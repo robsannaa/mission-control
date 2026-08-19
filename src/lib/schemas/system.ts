@@ -220,3 +220,16 @@ export const devicesPostSchema = z.discriminatedUnion("action", [
   devicesRevokeAction,
 ]);
 export type DevicesPostInput = z.infer<typeof devicesPostSchema>;
+
+// ── GET /api/capabilities ────────────────────────────────────────────────
+//
+// `refresh` is a bare optional flag string ("1", "true", or any non-empty
+// value forces a fresh probe read) — the handler only checks truthiness, so
+// this schema just guards that a non-string query value can't reach it.
+
+export const capabilitiesGetQuerySchema = z
+  .object({
+    refresh: z.string().optional(),
+  })
+  .passthrough();
+export type CapabilitiesGetQuery = z.infer<typeof capabilitiesGetQuerySchema>;
